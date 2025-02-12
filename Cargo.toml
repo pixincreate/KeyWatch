@@ -1,0 +1,13 @@
+[package]
+name = "key-watch"
+version = "0.1.0"
+edition = "2021"
+authors = ["Pa1Nark <pa1nark@pixincreate.dev>"]
+license = "GPL-3.0"
+
+[dependencies]
+clap = { version = "4.5.29", features = ["derive"] }
+regex = "1.11.1"
+toml = "0.8.20"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.138"

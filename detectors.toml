@@ -1,0 +1,131 @@
+[[detectors]]
+name = "AWSKeyDetector"
+pattern = "\\bAKIA[0-9A-Z]{16}\\b"
+finding_type = "AWS Access Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "GoogleAPIKeyDetector"
+pattern = "\\bAIza[0-9A-Za-z\\-_]{35}\\b"
+finding_type = "Google API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "SlackTokenDetector"
+pattern = "\\bxox[pboa]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32}\\b"
+finding_type = "Slack Token"
+severity = "HIGH"
+
+[[detectors]]
+name = "GitHubTokenDetector"
+pattern = "\\b(?i)(github|ghp|gho|ghu|ghs)_[0-9a-zA-Z]{36,255}\\b"
+finding_type = "GitHub Token"
+severity = "HIGH"
+
+[[detectors]]
+name = "JWTokenDetector"
+pattern = "\\beyJ[A-Za-z0-9-_=]+\\.eyJ[A-Za-z0-9-_=]+\\.?[A-Za-z0-9-_.+/=]*\\b"
+finding_type = "JWT Token"
+severity = "MEDIUM"
+
+[[detectors]]
+name = "SSHPrivateKeyDetector"
+pattern = "-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----"
+finding_type = "SSH Private Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "PrivateKeyDetector"
+pattern = "-----BEGIN PRIVATE KEY-----"
+finding_type = "Generic Private Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "PasswordDetector"
+pattern = "(?i)(password|passwd|pwd)\\s*[:=]\\s*(?-i)[\"']?([^\"'\\n]+)[\"']?"
+finding_type = "Password"
+severity = "HIGH"
+
+[[detectors]]
+name = "EmailDetector"
+pattern = "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"
+finding_type = "Email Address"
+severity = "LOW"
+
+[[detectors]]
+name = "IPAddressDetector"
+pattern = "\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b"
+finding_type = "IP Address"
+severity = "LOW"
+
+[[detectors]]
+name = "PhoneNumberDetector"
+pattern = "\\b(\\+?1\\s*)?(\\(\\d{3}\\)|\\d{3})[-.\\s]?\\d{3}[-.\\s]?\\d{4}\\b"
+finding_type = "Phone Number"
+severity = "LOW"
+
+[[detectors]]
+name = "CreditCardDetector"
+pattern = "\\b(?:\\d[ -]*?){13,16}\\b"
+finding_type = "Credit Card Number"
+severity = "HIGH"
+
+[[detectors]]
+name = "SSNDetector"
+pattern = "\\b\\d{3}-\\d{2}-\\d{4}\\b"
+finding_type = "Social Security Number"
+severity = "HIGH"
+
+[[detectors]]
+name = "GenericKeyValueDetector"
+pattern = "(?i)(api_?key|secret|password|token|access_?key|security_?key|_key|credential|auth)\\s*[:=]\\s*(?-i)[\"']?([a-zA-Z0-9\\-_=]{10,})[\"']?"
+finding_type = "Generic Key/Secret"
+severity = "HIGH"
+
+[[detectors]]
+name = "CertificateDetector"
+pattern = "-----BEGIN CERTIFICATE-----"
+finding_type = "Certificate"
+severity = "MEDIUM"
+
+[[detectors]]
+name = "DatabaseURLDetector"
+pattern = "(?i)(mysql|postgres|mongodb|redis)://[^'\"\\s]+@[^'\"\\s]+"
+finding_type = "Database URL"
+severity = "MEDIUM"
+
+[[detectors]]
+name = "Base64Detector"
+pattern = "\\b[A-Za-z0-9+/]{20,}[=]{0,2}\\b"
+finding_type = "Base64 Encoded String"
+severity = "LOW"
+
+[[detectors]]
+name = "HighEntropyDetector"
+pattern = "\\b[a-f0-9]{32,}\\b|\\b[A-Fa-f0-9]{32,}\\b"
+finding_type = "High Entropy String"
+severity = "MEDIUM"
+
+[[detectors]]
+name = "StripeAPIKeyDetector"
+pattern = "\\b(?:sk|pk)_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
+finding_type = "Stripe API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "AdyenAPIKeyDetector"
+pattern = "\\b(?:ws|sk|pk)_[0-9a-zA-Z]{10,}@[a-zA-Z]+\\.[a-zA-Z]+\\b"
+finding_type = "Adyen API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "PaymentGatewayKeyDetector"
+pattern = "\\b(?:api_?key|secret)_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
+finding_type = "Generic Payment Gateway Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "RandomString"
+pattern = "\"[a-zA-Z0-9\\-_=]{35,}\""
+finding_type = "Random String"
+severity = "LOW"
