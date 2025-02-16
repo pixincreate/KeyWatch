@@ -31,6 +31,17 @@ KeyWatch/
     └── integration_tests.rs  // Integration tests.
 ```
 
+## Key connections
+
+```graph TD
+    A[main.rs] --> B[cli.rs]
+    A --> C[scanner.rs]
+    C --> D[detector.rs]
+    D --> E[detectors.toml]
+    C --> F[report.rs]
+    A --> G[utils.rs]
+```
+
 ## Usage
 
 ### Build the project
