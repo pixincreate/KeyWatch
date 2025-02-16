@@ -3,13 +3,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to release"
-        required: false
-        default: "v0.0.0"
-
+    
 permissions:
   contents: write
 
@@ -39,6 +33,8 @@ jobs:
             target: x86_64-pc-windows-msvc
             asset_name: windows
             arch: x86_64
+    env:
+      BINARY_NAME: keywatch-${{ matrix.platform.asset_name }}-${{ matrix.platform.arch }}${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }}
 
     steps:
       - name: Checkout repository
@@ -46,46 +42,13 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Determine the release version:
-      # If triggered by workflow_dispatch then use the input tag,
-      # otherwise extract the version from the pushed tag.
-      - name: Set Release Version
-        id: set-version
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.tag }}"
-          else
-            # Remove the leading refs/tags/ from the ref.
-            VERSION="${GITHUB_REF#refs/tags/}"
-          fi
-          echo "VERSION=${VERSION}" >> $GITHUB_ENV
-          echo "Version is ${VERSION}"
-
-      # This step sets up a simpler way to compute the binary name.
-      - name: Set Binary Name
-        id: set-binary-name
-        shell: bash
-        run: |
-          if [ "${{ matrix.platform.os }}" == "windows-latest" ]; then
-            ext=".exe"
-          else
-            ext=""
-          fi
-          BINARY_NAME="keywatch-${{ matrix.platform.asset_name }}-${{ matrix.platform.arch }}${ext}"
-          echo "BINARY_NAME=${BINARY_NAME}" >> $GITHUB_ENV
-          echo "Binary name set to ${BINARY_NAME}"
-
-      # Extract Release Notes only once (on Linux) using the updated AWK script.
       - name: Extract Release Notes
         id: release-notes
         if: matrix.platform.os == 'ubuntu-latest'
         run: |
+          VERSION=${GITHUB_REF#refs/tags/}
           NOTES=$(awk -v ver="$VERSION" '
-            /^## \[/ {
-              if (p) { exit }
-              # Expecting header format like "## [v1.2.3]"
-              if ($2 == "[" ver "]") { p=1; next }
-            }
+            /^## \[/ { if (p) { exit }; if ($2 == "['ver']") { p=1; next } }
             p { print }
           ' CHANGELOG.md)
           echo "NOTES<<EOF" >> $GITHUB_OUTPUT
@@ -110,7 +73,7 @@ jobs:
         run: |
           mkdir -p release
           cp target/${{ matrix.platform.target }}/release/key-watch${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }} \
-             release/${BINARY_NAME}
+             release/${{ env.BINARY_NAME }}
 
       # Windows: Generate checksum using cmd and Windows syntax.
       - name: Generate SHA-256 (Windows)
@@ -132,10 +95,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          name: "KeyWatch ${VERSION}"
+          name: "KeyWatch ${{ github.ref_name }}"
           files: |
-            release/${BINARY_NAME}
-            release/${BINARY_NAME}.sha256
+            release/${{ env.BINARY_NAME }}
+            release/${{ env.BINARY_NAME }}.sha256
           body: ${{ steps.release-notes.outputs.NOTES }}
           draft: false
           prerelease: false
