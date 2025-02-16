@@ -3,13 +3,7 @@ name: Release
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to release'
-        required: false
-        default: 'v0.0.0'
-
+    
 permissions:
   contents: write
 
@@ -39,9 +33,7 @@ jobs:
             target: x86_64-pc-windows-msvc
             asset_name: windows
             arch: x86_64
-
     env:
-      # Construct the binary name with ".exe" if on Windows
       BINARY_NAME: keywatch-${{ matrix.platform.asset_name }}-${{ matrix.platform.arch }}${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }}
 
     steps:
@@ -67,13 +59,9 @@ jobs:
         with:
           targets: ${{ matrix.platform.target }}
 
-      # When targeting aarch64-apple-darwin, ensure the target is added.
-      # Note: macOS runners already have clang so we do not need a custom linker.
-      - name: Install cross-compilation tools
+      - name: Add aarch64 Apple target
         if: matrix.platform.target == 'aarch64-apple-darwin'
-        run: |
-          brew install FiloSottile/musl-cross/musl-cross || true
-          rustup target add aarch64-apple-darwin
+        run: rustup target add aarch64-apple-darwin
 
       # Build the specific package
       - name: Build Binary
@@ -87,15 +75,21 @@ jobs:
           cp target/${{ matrix.platform.target }}/release/key-watch${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }} \
              release/${{ env.BINARY_NAME }}
 
-      # Create checksum
-      - name: Generate SHA-256
+      # Windows: Generate checksum using cmd and Windows syntax.
+      - name: Generate SHA-256 (Windows)
+        if: matrix.platform.os == 'windows-latest'
+        shell: cmd
         run: |
           cd release
-          if [ "${{ matrix.platform.os }}" = "windows-latest" ]; then
-            certutil -hashfile ${{ env.BINARY_NAME }} SHA256 | grep -v "hash" > ${{ env.BINARY_NAME }}.sha256
-          else
-            shasum -a 256 ${{ env.BINARY_NAME }} > ${{ env.BINARY_NAME }}.sha256
-          fi
+          certutil -hashfile %BINARY_NAME% SHA256 | findstr /V "hash" > %BINARY_NAME%.sha256
+
+      # Unix (macOS/Ubuntu): Generate checksum using bash.
+      - name: Generate SHA-256 (Unix)
+        if: matrix.platform.os != 'windows-latest'
+        shell: bash
+        run: |
+          cd release
+          shasum -a 256 "$BINARY_NAME" > "$BINARY_NAME".sha256
 
       # Create Release
       - name: Create Release
