@@ -43,6 +43,11 @@ read -p "Do you want to commit these changes and create tag v$VERSION? (y/n) " -
 echo
 if [[ $REPLY =~ ^[Yy]$ ]]
 then
+    # Stash current changes and checkout to release branch
+    git stash
+    git checkout -b release-$VERSION
+    git stash pop
+    
     # Commit changes
     git add Cargo.toml CHANGELOG.md
     git commit -m "chore: release version $VERSION"
@@ -51,8 +56,12 @@ then
     git tag -a "v$VERSION" -m "KeyWatch v$VERSION"
 
     echo "Pushing changes..."
-    git push origin main "v$VERSION"
-
+    git push origin release-$VERSION "v$VERSION"
+    
+    # Checkout to main branch and delete release branch
+    git checkout main
+    git branch -D release-$VERSION
+    
     echo "KeyWatch release v$VERSION prepared and pushed!"
 else
     # Revert changes if user doesn't confirm
