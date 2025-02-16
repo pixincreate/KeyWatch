@@ -1,0 +1,22 @@
+repos:
+  - repo: local
+    hooks:
+      - id: keywatch
+        name: KeyWatch Secret Scanner
+        entry: ./hooks/keywatch.sh
+        language: system
+        files: .*\.(rs|txt|py|js)$
+
+      - id: cargo-fmt-check
+        name: "Check Rust formatting with cargo fmt"
+        entry: cargo +nightly fmt --all -- --check
+        language: system
+        types: [rust]
+        files: .*\.(rs)$
+        
+      - id: cargo-clippy
+        name: "Check Rust code with clippy"
+        entry: cargo clippy --all-targets --all-features -- -D warnings
+        language: system
+        types: [rust]
+        files: .*\.(rs)$
