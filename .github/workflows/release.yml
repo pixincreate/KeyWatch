@@ -34,7 +34,7 @@ jobs:
             asset_name: windows
             arch: x86_64
     env:
-      BINARY_NAME: zparse-${{ matrix.platform.asset_name }}-${{ matrix.platform.arch }}${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }}
+      BINARY_NAME: keywatch-${{ matrix.platform.asset_name }}-${{ matrix.platform.arch }}${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }}
 
     steps:
       - name: Checkout repository
@@ -69,7 +69,7 @@ jobs:
       # Build the specific package
       - name: Build Binary
         run: |
-          cargo build --release --target ${{ matrix.platform.target }} -p zparse
+          cargo build --release --target ${{ matrix.platform.target }}
         env:
           CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER: aarch64-apple-darwin-gcc
 
@@ -77,7 +77,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p release
-          cp target/${{ matrix.platform.target }}/release/zparse${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }} \
+          cp target/${{ matrix.platform.target }}/release/key-watch${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }} \
              release/${{ env.BINARY_NAME }}
 
       # Create checksum
@@ -94,7 +94,7 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          name: "zParse ${{ github.ref_name }}"
+          name: "KeyWatch ${{ github.ref_name }}"
           files: |
             release/${{ env.BINARY_NAME }}
             release/${{ env.BINARY_NAME }}.sha256
