@@ -50,8 +50,6 @@ KeyWatch/
     └── integration_tests.rs  // Integration tests for end-to-end functionality.
 ```
 
-# <<<<<<< Updated upstream
-
 The relationships between key modules are illustrated below:
 
 ```mermaid
@@ -134,13 +132,10 @@ You can install KeyWatch globally so it is available from any command prompt:
         ```ps1
         Copy-Item -Path "key-watch.exe" -Destination "C:\Program Files\KeyWatch\key-watch.exe"
         ```
-
-> [!TIP]
-> You can also add the `–Force` parameter if you want to overwrite the destination file without any prompts
+        
+        You can also add the `–Force` parameter if you want to overwrite the destination file without any prompts
 
      3. Alternatively, you can add `%USERPROFILE%\.cargo\bin` to your system `PATH` if it’s not already included. This is where Cargo installs binaries by default.
-
-> > > > > > > Stashed changes
 
 ## Usage
 
@@ -213,8 +208,8 @@ Integrate KeyWatch into your development workflow by setting it up as a pre-comm
    pip install pre-commit
    ```
 
-   > [!NOTE]
-   > Make sure that you have the `pre-commit` binary in your PATH.
+> [!NOTE]
+> Make sure that you have the `pre-commit` binary in your PATH.
 
 2. **Create the Hook Script:**
 
