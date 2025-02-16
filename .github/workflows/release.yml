@@ -3,6 +3,12 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release'
+        required: false
+        default: 'v0.0.0'
 
 permissions:
   contents: write
@@ -33,7 +39,9 @@ jobs:
             target: x86_64-pc-windows-msvc
             asset_name: windows
             arch: x86_64
+
     env:
+      # Construct the binary name with ".exe" if on Windows
       BINARY_NAME: keywatch-${{ matrix.platform.asset_name }}-${{ matrix.platform.arch }}${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }}
 
     steps:
@@ -59,19 +67,18 @@ jobs:
         with:
           targets: ${{ matrix.platform.target }}
 
-      # Add cross-compilation support
+      # When targeting aarch64-apple-darwin, ensure the target is added.
+      # Note: macOS runners already have clang so we do not need a custom linker.
       - name: Install cross-compilation tools
         if: matrix.platform.target == 'aarch64-apple-darwin'
         run: |
-          brew install FiloSottile/musl-cross/musl-cross
+          brew install FiloSottile/musl-cross/musl-cross || true
           rustup target add aarch64-apple-darwin
 
       # Build the specific package
       - name: Build Binary
         run: |
           cargo build --release --target ${{ matrix.platform.target }}
-        env:
-          CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER: aarch64-apple-darwin-gcc
 
       - name: Prepare Asset
         shell: bash
