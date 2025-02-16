@@ -13,13 +13,30 @@ use std::fs;
 fn test_find_secrets_in_file() {
     // Create a temporary file in the system temp directory.
     let temp_dir = temp_dir();
-    let test_file = temp_dir.join("key_watch_temp_secret.txt");
+    let test_file = temp_dir.join("key_watch_multiple_secrets.txt");
 
+    // Create test content with various secret patterns
     let content = "\
+// AWS Key
 AKIAABCDEFGHIJKLMNOP\n\
 password = 'mySecretPassword'\n\
 email = \"user@example.com\"\n\
+// Firebase API Key
+AIzaSyC93k4n4BxvV_XYZ1234567890abcdefghijk\n\
+// SendGrid API Key
+SG.abcdefghijklmnopqrstuv.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP\n\
+// OpenAI API Key
+sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
+// Discord Token
+mfa.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP\n\
+// MongoDB Connection String
+mongodb://user:password123@mongodb0.example.com:27017\n\
+// Docker Hub Token
+dckr_pat_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ\n\
+// Square Access Token
+sq0atp-abcdefghijklmnopqrstuv\n\
 ";
+
     fs::write(&test_file, content).expect("Unable to write test file");
 
     // Build CLI options to scan the file.
@@ -33,27 +50,134 @@ email = \"user@example.com\"\n\
     // Run the scan.
     let (findings, metadata) = run_scan(&options);
 
-    // Expect the AWS key detector, Password detector, and Email detector to match.
+    // Test for specific secret types
+    let expected_types = vec![
+        "Password",
+        "Email Address",
+        "AWS Access Key",
+        "Firebase API Key",
+        "SendGrid API Key",
+        "OpenAI API Key",
+        "Discord Token",
+        "MongoDB Connection String",
+        "DockerHub Token",
+        "Square Access Token",
+    ];
+
+    for expected_type in expected_types {
+        assert!(
+            findings.iter().any(|f| f.finding_type == expected_type),
+            "Expected to find a {} but didn't.",
+            expected_type
+        );
+    }
+
+    assert_eq!(metadata.files_scanned, 1, "Should have scanned 1 file");
+    fs::remove_file(&test_file).expect("Unable to remove temporary file");
+}
+
+#[test]
+fn test_find_private_key() {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_private_key.txt");
+
+    let content = "-----BEGIN RSA PRIVATE KEY-----\n\
+MIIEpAIBAAKCAQEA1234567890abcdefghijklmnopqrstuvwxyz\n\
+ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnop\n\
+-----END RSA PRIVATE KEY-----";
+
+    fs::write(&test_file, content).expect("Unable to write test file");
+
+    let options = CliOptions {
+        file: Some(test_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+    };
+
+    let (findings, _) = run_scan(&options);
+
     assert!(
         findings
             .iter()
-            .any(|f| f.finding_type.contains("AWS Access Key")),
-        "Expected to find an AWS Access Key."
-    );
-    assert!(
-        findings.iter().any(|f| f.finding_type.contains("Password")),
-        "Expected to find a Password."
-    );
-    assert!(
-        findings
-            .iter()
-            .any(|f| f.finding_type.contains("Email Address")),
-        "Expected to find an Email Address."
+            .any(|f| f.finding_type == "Private Key Content"),
+        "Expected to find a private key"
     );
 
-    // Check metadata: exactly one file scanned.
-    assert_eq!(metadata.files_scanned, 1, "Should have scanned 1 file.");
-    // Clean up.
+    fs::remove_file(&test_file).expect("Unable to remove temporary file");
+}
+
+#[test]
+fn test_find_cloud_credentials() {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_cloud_creds.txt");
+
+    let content = "\
+// Azure Storage Account Connection String
+DefaultEndpointsProtocol=https;AccountName=mystorageaccount;AccountKey=abc123def456==\n\
+// Cloudinary URL
+cloudinary://123456789012345:abcdefghijklmnopqrstuvwxyz@mycloud\n\
+";
+
+    fs::write(&test_file, content).expect("Unable to write test file");
+
+    let options = CliOptions {
+        file: Some(test_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+    };
+
+    let (findings, _) = run_scan(&options);
+
+    let expected_types = vec!["Azure Storage Account Key", "Cloudinary URL"];
+
+    for expected_type in expected_types {
+        assert!(
+            findings.iter().any(|f| f.finding_type == expected_type),
+            "Expected to find {} but didn't.",
+            expected_type
+        );
+    }
+
+    fs::remove_file(&test_file).expect("Unable to remove temporary file");
+}
+
+#[test]
+fn test_find_api_tokens() {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_api_tokens.txt");
+
+    let content = "\
+// NPM Token
+npm_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ\n\
+// CircleCI Token
+CIRCLE_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP\n\
+// Google OAuth Token
+ya29.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP\n\
+";
+
+    fs::write(&test_file, content).expect("Unable to write test file");
+
+    let options = CliOptions {
+        file: Some(test_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+    };
+
+    let (findings, _) = run_scan(&options);
+
+    let expected_types = vec!["NPM Token", "CircleCI Token", "Google OAuth Token"];
+
+    for expected_type in expected_types {
+        assert!(
+            findings.iter().any(|f| f.finding_type == expected_type),
+            "Expected to find {} but didn't.",
+            expected_type
+        );
+    }
+
     fs::remove_file(&test_file).expect("Unable to remove temporary file");
 }
 
@@ -238,4 +362,37 @@ fn test_multiple_detections_in_line() {
 
     // Clean up.
     fs::remove_file(&temp_file_path).expect("Unable to remove multiple detection file");
+}
+
+#[test]
+fn test_severity_levels() {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_severity.txt");
+
+    let content = "\
+AKIAABCDEFGHIJKLMNOP\n\
+user@example.com\n\
+";
+
+    fs::write(&test_file, content).expect("Unable to write test file");
+
+    let options = CliOptions {
+        file: Some(test_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+    };
+
+    let (findings, _) = run_scan(&options);
+
+    assert!(
+        findings.iter().any(|f| f.severity == "HIGH"),
+        "Expected to find HIGH severity finding"
+    );
+    assert!(
+        findings.iter().any(|f| f.severity == "LOW"),
+        "Expected to find LOW severity finding"
+    );
+
+    fs::remove_file(&test_file).expect("Unable to remove temporary file");
 }

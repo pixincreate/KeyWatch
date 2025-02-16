@@ -50,8 +50,8 @@ KeyWatch/
     └── integration_tests.rs  // Integration tests for end-to-end functionality.
 ```
 
-<<<<<<< Updated upstream
-=======
+# <<<<<<< Updated upstream
+
 The relationships between key modules are illustrated below:
 
 ```mermaid
@@ -140,7 +140,8 @@ You can install KeyWatch globally so it is available from any command prompt:
 
      3. Alternatively, you can add `%USERPROFILE%\.cargo\bin` to your system `PATH` if it’s not already included. This is where Cargo installs binaries by default.
 
->>>>>>> Stashed changes
+> > > > > > > Stashed changes
+
 ## Usage
 
 ### Scanning Files and Directories
@@ -211,7 +212,7 @@ Integrate KeyWatch into your development workflow by setting it up as a pre-comm
    ```sh
    pip install pre-commit
    ```
-   
+
    > [!NOTE]
    > Make sure that you have the `pre-commit` binary in your PATH.
 
