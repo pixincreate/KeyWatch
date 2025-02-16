@@ -1,4 +1,8 @@
-[Unreleased]
+# Changelog
+
+## [Unreleased]
+
+## [1.0.0] - 2025-02-16
 
 - Initial Release
   - Support reading file, directory with verbose output in console
