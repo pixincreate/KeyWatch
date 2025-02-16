@@ -36,8 +36,8 @@ severity = "HIGH"
 
 [[detectors]]
 name = "PrivateKeyDetector"
-pattern = "-----BEGIN PRIVATE KEY-----"
-finding_type = "Generic Private Key"
+pattern = "(?s)-----BEGIN (RSA|DSA|EC|PGP)? PRIVATE KEY-----\\n[\\s\\S]*?-----END (RSA|DSA|EC|PGP)? PRIVATE KEY-----"
+finding_type = "Private Key Content"
 severity = "HIGH"
 
 [[detectors]]
@@ -129,3 +129,124 @@ name = "RandomString"
 pattern = "\"[a-zA-Z0-9\\-_=]{35,}\""
 finding_type = "Random String"
 severity = "LOW"
+
+[[detectors]]
+name = "FirebaseAPIKeyDetector"
+pattern = "AIza[0-9A-Za-z\\-_]{35}"
+finding_type = "Firebase API Key"
+severity = "HIGH"
+
+
+[[detectors]]
+name = "TwilioAPIKeyDetector"
+pattern = "SK[0-9a-fA-F]{32}"
+finding_type = "Twilio API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "SendGridAPIKeyDetector"
+pattern = "SG\\.[A-Za-z0-9]{22}\\.[A-Za-z0-9]{42,43}"
+finding_type = "SendGrid API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "MailgunAPIKeyDetector"
+pattern = "key-[0-9a-zA-Z]{32}"
+finding_type = "Mailgun API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "DigitalOceanTokenDetector"
+pattern = "dop_v1_[a-f0-9]{64}"
+finding_type = "DigitalOcean API Token"
+severity = "HIGH"
+
+[[detectors]]
+name = "HerokuAPIKeyDetector"
+pattern = "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b"
+finding_type = "Heroku API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "NPMTokenDetector"
+pattern = "npm_[0-9a-zA-Z]{36}"
+finding_type = "NPM Token"
+severity = "HIGH"
+
+[[detectors]]
+name = "DiscordTokenDetector"
+pattern = "(mfa\\.[0-9a-zA-Z_-]{84}|[\\w-]{24}\\.[\\w-]{6}\\.[\\w-]{27})"
+finding_type = "Discord Token"
+severity = "HIGH"
+
+[[detectors]]
+name = "OpenAIAPIKeyDetector"
+pattern = "sk-[0-9a-zA-Z]{48}"
+finding_type = "OpenAI API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "LinkedInSecretDetector"
+pattern = "(?i)[0-9a-z]{16}"
+finding_type = "LinkedIn Client Secret"
+severity = "HIGH"
+
+[[detectors]]
+name = "AzureStorageAccountKeyDetector"
+pattern = "DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=[^;]+"
+finding_type = "Azure Storage Account Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "MongoDBConnectionStringDetector"
+pattern = "mongodb(?:\\+srv)?://[^:]+:[^@]+@[^/]+"
+finding_type = "MongoDB Connection String"
+severity = "HIGH"
+
+[[detectors]]
+name = "CloudinaryURLDetector"
+pattern = "cloudinary://[0-9]+:[0-9A-Za-z\\-_]+@[0-9A-Za-z\\-_]+"
+finding_type = "Cloudinary URL"
+severity = "HIGH"
+
+[[detectors]]
+name = "PrivateKeyContentDetector"
+pattern = "-----BEGIN RSA PRIVATE KEY-----[\\s\\S]*?-----END RSA PRIVATE KEY-----"
+finding_type = "Private Key Content"
+severity = "HIGH"
+
+[[detectors]]
+name = "DockerHubTokenDetector"
+pattern = "dckr_pat_[0-9a-zA-Z_-]{52,56}"
+finding_type = "DockerHub Token"
+severity = "HIGH"
+
+[[detectors]]
+name = "CircleCITokenDetector"
+pattern = "CIRCLE_[0-9a-zA-Z_-]{40}"
+finding_type = "CircleCI Token"
+severity = "HIGH"
+
+[[detectors]]
+name = "SquareAccessTokenDetector"
+pattern = "sq0atp-[0-9A-Za-z\\-_]{22}"
+finding_type = "Square Access Token"
+severity = "HIGH"
+
+[[detectors]]
+name = "SquareOAuthSecretDetector"
+pattern = "sq0csp-[0-9A-Za-z\\-_]{43}"
+finding_type = "Square OAuth Secret"
+severity = "HIGH"
+
+[[detectors]]
+name = "YouTubeAPIKeyDetector"
+pattern = "AIza[0-9A-Za-z\\-_]{35}"
+finding_type = "YouTube API Key"
+severity = "HIGH"
+
+[[detectors]]
+name = "GoogleOAuthTokenDetector"
+pattern = "ya29\\.[0-9A-Za-z\\-_]+"
+finding_type = "Google OAuth Token"
+severity = "HIGH"
