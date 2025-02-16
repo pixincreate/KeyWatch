@@ -47,21 +47,21 @@ then
     git stash
     git checkout -b release-$VERSION
     git stash pop
-    
+
     # Commit changes
-    git add Cargo.toml CHANGELOG.md
-    git commit -m "chore: release version $VERSION"
+    git add Cargo.toml Cargo.lock CHANGELOG.md
+    git commit -m "chore(version): $VERSION"
 
     # Create and push tag
     git tag -a "v$VERSION" -m "KeyWatch v$VERSION"
 
     echo "Pushing changes..."
     git push origin release-$VERSION "v$VERSION"
-    
+
     # Checkout to main branch and delete release branch
     git checkout main
     git branch -D release-$VERSION
-    
+
     echo "KeyWatch release v$VERSION prepared and pushed!"
 else
     # Revert changes if user doesn't confirm
