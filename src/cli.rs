@@ -6,7 +6,7 @@ use clap::{ArgGroup, Parser};
 #[command(group(
     ArgGroup::new("target")
         .required(true)
-        .args(&["file", "dir"]),
+        .args(&["file", "dir", "install_hook"]),
 ))]
 pub struct CliOptions {
     /// Scan a single file
@@ -24,4 +24,36 @@ pub struct CliOptions {
     /// Print the scan results to the console
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
+
+    // === New Features ===
+    /// Allowed repository URLs (comma-separated)
+    /// Experimental: Push to these repos will be allowed
+    #[arg(long)]
+    pub allowed_repos: Option<String>,
+
+    /// Blocked repository URLs (comma-separated)
+    /// Experimental: Push to these repos will be blocked
+    #[arg(long)]
+    pub blocked_repos: Option<String>,
+
+    /// Paths to exclude from scanning (comma-separated, supports glob patterns)
+    #[arg(long)]
+    pub exclude: Option<String>,
+
+    /// Install KeyWatch as a git hook
+    /// Options: pre-push, pre-commit
+    #[arg(long, value_parser = ["pre-push", "pre-commit"])]
+    pub install_hook: Option<String>,
+
+    /// Exit code behavior
+    /// Options:
+    ///   - always: Always exit 0 (bypass)
+    ///   - critical: Exit 0 if only LOW/MEDIUM severity
+    ///   - strict: Exit non-zero for any finding (default)
+    #[arg(long, default_value = "strict")]
+    pub exit_mode: String,
+
+    /// Verify binary integrity on startup
+    #[arg(long, default_value_t = false)]
+    pub verify_integrity: bool,
 }

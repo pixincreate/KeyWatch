@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 /// Represents a single secret finding.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Finding {
     pub file_path: String,
     pub line_number: usize,
@@ -12,7 +12,7 @@ pub struct Finding {
 }
 
 /// Metadata about the scanning performed.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct ScanMetadata {
     pub files_scanned: usize,
     pub total_lines: usize,
@@ -37,7 +37,11 @@ pub struct Report {
 }
 
 /// create_report builds the final JSON report based on findings and metadata.
-pub fn create_report(findings: Vec<Finding>, metadata: ScanMetadata, scan_time: String) -> String {
+pub fn create_report(
+    findings: Vec<Finding>,
+    metadata: ScanMetadata,
+    scan_time: String,
+) -> Result<String, serde_json::Error> {
     let status = if findings.is_empty() { "PASS" } else { "FAIL" };
     let report_metadata = ReportMetadata {
         files_scanned: metadata.files_scanned,
@@ -51,5 +55,5 @@ pub fn create_report(findings: Vec<Finding>, metadata: ScanMetadata, scan_time: 
         scan_metadata: report_metadata,
     };
 
-    serde_json::to_string_pretty(&report).unwrap()
+    serde_json::to_string_pretty(&report)
 }

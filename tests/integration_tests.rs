@@ -45,10 +45,16 @@ sq0atp-abcdefghijklmnopqrstuv\n\
         dir: None,
         output: None,
         verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
     };
 
     // Run the scan.
-    let (findings, metadata) = run_scan(&options);
+    let (findings, metadata) = run_scan(&options).expect("scan should succeed");
 
     // Test for specific secret types
     let expected_types = vec![
@@ -93,9 +99,15 @@ ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnop\n\
         dir: None,
         output: None,
         verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
     };
 
-    let (findings, _) = run_scan(&options);
+    let (findings, _) = run_scan(&options).expect("scan should succeed");
 
     assert!(
         findings
@@ -126,9 +138,15 @@ cloudinary://123456789012345:abcdefghijklmnopqrstuvwxyz@mycloud\n\
         dir: None,
         output: None,
         verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
     };
 
-    let (findings, _) = run_scan(&options);
+    let (findings, _) = run_scan(&options).expect("scan should succeed");
 
     let expected_types = vec!["Azure Storage Account Key", "Cloudinary URL"];
 
@@ -164,9 +182,15 @@ ya29.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP\n\
         dir: None,
         output: None,
         verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
     };
 
-    let (findings, _) = run_scan(&options);
+    let (findings, _) = run_scan(&options).expect("scan should succeed");
 
     let expected_types = vec!["NPM Token", "CircleCI Token", "Google OAuth Token"];
 
@@ -214,9 +238,15 @@ fn test_directory_scan_with_exclusions() {
         dir: Some(base_temp_dir.to_str().unwrap().to_string()),
         output: None,
         verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
     };
 
-    let (findings, metadata) = run_scan(&options);
+    let (findings, metadata) = run_scan(&options).expect("scan should succeed");
 
     // We expect exactly 2 scanned files (excluding those under .git).
     assert_eq!(
@@ -259,7 +289,8 @@ fn test_create_report() {
         excluded_files: vec!["ignored_file.txt".to_string()],
     };
     // Create the report.
-    let report_json = create_report(findings, metadata, "0.1s".to_string());
+    let report_json = create_report(findings, metadata, "0.1s".to_string())
+        .expect("report creation should succeed");
     // Check that the report indicates PASS when there are no findings.
     assert!(
         report_json.contains("\"status\": \"PASS\""),
@@ -311,9 +342,15 @@ fn test_scan_no_secrets() {
         dir: None,
         output: None,
         verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
     };
 
-    let (findings, _metadata) = run_scan(&options);
+    let (findings, _metadata) = run_scan(&options).expect("scan should succeed");
     assert_eq!(
         findings.len(),
         0,
@@ -339,9 +376,15 @@ fn test_multiple_detections_in_line() {
         dir: None,
         output: None,
         verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
     };
 
-    let (findings, _metadata) = run_scan(&options);
+    let (findings, _metadata) = run_scan(&options).expect("scan should succeed");
     // We expect at least two findings from the single line.
     assert!(
         findings.len() >= 2,
@@ -381,9 +424,15 @@ user@example.com\n\
         dir: None,
         output: None,
         verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
     };
 
-    let (findings, _) = run_scan(&options);
+    let (findings, _) = run_scan(&options).expect("scan should succeed");
 
     assert!(
         findings.iter().any(|f| f.severity == "HIGH"),
@@ -395,4 +444,113 @@ user@example.com\n\
     );
 
     fs::remove_file(&test_file).expect("Unable to remove temporary file");
+}
+
+#[test]
+fn test_non_utf8_file_handling() {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_binary.bin");
+
+    let content: Vec<u8> = vec![0x80, 0x81, 0x82, 0xff, 0xfe];
+    fs::write(&test_file, content).expect("Unable to write binary test file");
+
+    let options = CliOptions {
+        file: Some(test_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let (findings, _) = run_scan(&options).expect("scan should succeed");
+    assert_eq!(
+        findings.len(),
+        0,
+        "Binary files should be skipped gracefully"
+    );
+
+    fs::remove_file(&test_file).expect("Unable to remove binary test file");
+}
+
+#[test]
+fn test_hook_generation_pre_push() {
+    let options = CliOptions {
+        file: None,
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: Some("github.com/test".to_string()),
+        blocked_repos: Some("github.com/blocked".to_string()),
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let hook = key_watch::generate_pre_push_hook(&options);
+
+    assert!(hook.contains("#!/bin/bash"));
+    assert!(hook.contains("KEYWATCH_BIN="));
+    assert!(hook.contains("command -v"));
+    assert!(hook.contains("detectors.toml"));
+    assert!(hook.contains("ALLOWED_REPOS="));
+    assert!(hook.contains("BLOCKED_REPOS="));
+}
+
+#[test]
+fn test_hook_generation_pre_commit() {
+    let options = CliOptions {
+        file: None,
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: Some("*.log,tests/*".to_string()),
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let hook = key_watch::generate_pre_commit_hook(&options);
+
+    assert!(hook.contains("#!/bin/bash"));
+    assert!(hook.contains("KEYWATCH_BIN="));
+    assert!(hook.contains("EXCLUDE_PATTERNS="));
+    assert!(hook.contains("command -v"));
+    assert!(hook.contains("detectors.toml"));
+    assert!(hook.contains("IFS= read -r"));
+}
+
+#[test]
+fn test_hook_shell_escaping() {
+    let options = CliOptions {
+        file: None,
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: Some("github.com/test'repo".to_string()),
+        blocked_repos: Some("github.com/test'repo2".to_string()),
+        exclude: Some("*.log,test'file.txt".to_string()),
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let pre_push = key_watch::generate_pre_push_hook(&options);
+    let pre_commit = key_watch::generate_pre_commit_hook(&options);
+
+    assert!(
+        !pre_push.contains("test'repo"),
+        "Single quotes should be escaped in pre-push"
+    );
+    assert!(
+        !pre_commit.contains("test'file.txt"),
+        "Single quotes should be escaped in pre-commit"
+    );
 }

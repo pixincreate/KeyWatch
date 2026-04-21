@@ -1,12 +1,10 @@
 use crate::cli::CliOptions;
 use crate::detector::initialize_detectors;
 use crate::report::{Finding, ScanMetadata};
+use glob::Pattern;
 use std::fs;
-use std::io::{BufRead, BufReader};
 
-/// run_scan executes the secret scan based on the provided CLI options.
-/// Returns a vector of findings and metadata about the scan.
-pub fn run_scan(options: &CliOptions) -> (Vec<Finding>, ScanMetadata) {
+pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), String> {
     let mut findings = Vec::new();
     let mut files_scanned = 0;
     let mut total_lines = 0;
@@ -14,68 +12,83 @@ pub fn run_scan(options: &CliOptions) -> (Vec<Finding>, ScanMetadata) {
 
     let mut target_paths = Vec::new();
 
-    // Collect target files from --file or --dir.
     if let Some(ref file_path) = options.file {
         target_paths.push(file_path.clone());
     } else if let Some(ref dir_path) = options.dir {
         collect_files(dir_path, &mut target_paths);
     }
 
-    // Initialize our improved detectors
-    let detectors = initialize_detectors();
+    let detectors = initialize_detectors().map_err(|e| e.to_string())?;
+    let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
+        .iter()
+        .partition(|detector| detector.regex.as_str().contains("(?s)"));
+
+    let exclude_patterns: Vec<Pattern> = options
+        .exclude
+        .as_ref()
+        .map(|e| {
+            e.split(',')
+                .filter(|pattern| !pattern.trim().is_empty())
+                .map(|pattern| {
+                    Pattern::new(pattern.trim())
+                        .map_err(|err| format!("Invalid exclude pattern '{}': {}", pattern, err))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
 
     for path in target_paths {
-        // Exclude files whose path contains ".git"
         if path.contains(".git") {
-            excluded_files.push(path.clone());
+            excluded_files.push(path);
+            continue;
+        }
+
+        let should_exclude = exclude_patterns
+            .iter()
+            .any(|pattern| pattern.matches(&path));
+
+        if should_exclude {
+            excluded_files.push(path);
             continue;
         }
 
         files_scanned += 1;
 
-        // Read entire file content once.
-        let full_content = fs::read_to_string(&path).unwrap_or_default();
+        let full_content = match fs::read(&path) {
+            Ok(bytes) => match String::from_utf8(bytes) {
+                Ok(s) => s,
+                Err(_) => continue,
+            },
+            Err(_) => continue,
+        };
 
-        // First pass: apply detectors that require multi-line scanning.
-        for detector in detectors.iter() {
-            // Use a simple flag choice: if the detector regex pattern contains "(?s)"
-            if detector.regex.as_str().contains("(?s)") {
-                if let Some(mat) = detector.regex.find(&full_content) {
-                    // Count the line number by counting newline characters before the match.
-                    let line_number = full_content[..mat.start()].matches('\n').count() + 1;
+        for detector in &multiline_detectors {
+            if let Some(mat) = detector.regex.find(&full_content) {
+                let line_number = full_content[..mat.start()].matches('\n').count() + 1;
+                findings.push(Finding {
+                    file_path: path.clone(),
+                    line_number,
+                    matched_content: mat.as_str().to_string(),
+                    finding_type: detector.finding_type.clone(),
+                    severity: detector.severity.clone(),
+                    plugin_name: detector.name.clone(),
+                });
+            }
+        }
+
+        for (line_idx, line) in full_content.lines().enumerate() {
+            total_lines += 1;
+            for detector in &line_detectors {
+                if let Some(mat) = detector.regex.find(line) {
                     findings.push(Finding {
                         file_path: path.clone(),
-                        line_number,
+                        line_number: line_idx + 1,
                         matched_content: mat.as_str().to_string(),
                         finding_type: detector.finding_type.clone(),
                         severity: detector.severity.clone(),
                         plugin_name: detector.name.clone(),
                     });
-                }
-            }
-        }
-
-        // Second pass: process file line-by-line for single‑line detectors.
-        if let Ok(file) = fs::File::open(&path) {
-            let reader = BufReader::new(file);
-            for (line_idx, line_result) in reader.lines().enumerate() {
-                total_lines += 1;
-                if let Ok(line) = line_result {
-                    // For each detector that is NOT marked for multi-line scanning.
-                    for detector in detectors.iter() {
-                        if !detector.regex.as_str().contains("(?s)") {
-                            if let Some(mat) = detector.regex.find(&line) {
-                                findings.push(Finding {
-                                    file_path: path.clone(),
-                                    line_number: line_idx + 1,
-                                    matched_content: mat.as_str().to_string(),
-                                    finding_type: detector.finding_type.clone(),
-                                    severity: detector.severity.clone(),
-                                    plugin_name: detector.name.clone(),
-                                });
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -87,10 +100,9 @@ pub fn run_scan(options: &CliOptions) -> (Vec<Finding>, ScanMetadata) {
         excluded_files,
     };
 
-    (findings, metadata)
+    Ok((findings, metadata))
 }
 
-/// Recursively collect files from the given directory.
 fn collect_files(dir_path: &str, files: &mut Vec<String>) {
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {

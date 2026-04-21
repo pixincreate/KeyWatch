@@ -11,10 +11,14 @@ KeyWatch is a secret scanner written in Rust that analyzes files or directories 
   - [Building from Source](#building-from-source)
   - [Installing the Binary](#installing-the-binary)
 - [Usage](#usage)
-  - [Scanning Files and Directories](#scanning-files-and-directories)
-  - [Windows Users](#windows-users)
+  - [Basic Scanning](#basic-scanning)
+  - [Repository Controls](#repository-controls)
+  - [Path Exclusions](#path-exclusions)
+  - [Exit Code Modes](#exit-code-modes)
+  - [Binary Integrity Check](#binary-integrity-check)
+  - [Installing Git Hooks](#installing-git-hooks)
+- [Windows Users](#windows-users)
 - [Adding More Detectors](#adding-more-detectors)
-- [Integration with pre-commit](#integrating-keywatch-with-pre-commit)
 - [Running Tests](#running-tests)
 - [License](#license)
 
@@ -25,6 +29,11 @@ KeyWatch is a secret scanner written in Rust that analyzes files or directories 
 - **Configurable Detectors:** The detection logic is defined in [`detectors.toml`], which is simple to extend or customize according to your needs.
 - **Output Options:** Generate JSON-formatted reports that can be directed to the console (in verbose mode) or saved to a file.
 - **Integration Ready:** Designed to integrate with CI/CD pipelines, pre-commit hooks, or any other automated workflow.
+- **Repository Controls:** Whitelist allowed repos, block specific repos
+- **Path Exclusions:** Exclude files/directories using glob patterns
+- **Git Hook Installation:** Auto-install pre-push or pre-commit hooks
+- **Exit Code Modes:** Configure exit behavior (always/critical/strict)
+- **Binary Integrity Check:** Verify binary wasn't tampered with
 
 ## Project Structure
 
@@ -139,25 +148,86 @@ You can install KeyWatch globally so it is available from any command prompt:
 
 ## Usage
 
-### Scanning Files and Directories
+### Basic Scanning
 
 After installing or building the binary, you can start scanning files for secrets:
 
-- **Scanning a Single File (Output to Console):**
+```sh
+# Scan a single file
+key-watch --file ./path/to/file
 
-  ```sh
-  cargo run -- --file ./path/to/your/file --verbose
-  ```
+# Scan a directory recursively
+key-watch --dir ./path/to/directory
 
-  This command scans the specified file and prints a detailed JSON report to the console.
+# Output to console (verbose)
+key-watch --dir ./path --verbose
 
-- **Recursively Scanning a Directory (Output to File):**
+# Output to file
+key-watch --dir ./path --output results.json
+```
 
-  ```sh
-  cargo run -- --dir ./path/to/your/directory --output results.json
-  ```
+### Repository Controls
 
-  The scanner will recursively inspect all eligible files within the directory tree, and the JSON report will be written to `results.json`.
+> ⚠️ **Note:** Repository controls are currently experimental. These flags are parsed and stored, but full runtime enforcement against remote URLs is not yet implemented.
+
+Control which repositories are allowed or blocked (for future enforcement):
+
+```sh
+# Allow only specific repos (comma-separated)
+key-watch --dir . --allowed-repos "github.com/company,gitlab.com/company"
+
+# Block specific repos
+key-watch --dir . --blocked-repos "github.com/personal"
+```
+
+### Path Exclusions
+
+Exclude files or directories using glob patterns (comma-separated):
+
+```sh
+key-watch --dir . --exclude "*.log,tests/*,docs/**,node_modules/**"
+```
+
+> ⚠️ **Limitation:** Directory scanning requires UTF-8 encoded text files. Binary files will cause scan failures.
+
+### Exit Code Modes
+
+Configure exit behavior:
+
+```sh
+# strict (default): Exit non-zero for any finding
+key-watch --dir . --exit-mode strict
+
+# critical: Exit 0 if only LOW/MEDIUM severity
+key-watch --dir . --exit-mode critical
+
+# always: Always exit 0 (bypass)
+key-watch --dir . --exit-mode always
+```
+
+### Binary Integrity Check
+
+Verify the binary hasn't been tampered with:
+
+```sh
+key-watch --verify-integrity
+```
+
+### Installing Git Hooks
+
+Auto-install KeyWatch as a git hook:
+
+```sh
+# Install pre-push hook (runs before push)
+key-watch --install-hook pre-push
+
+# Install pre-commit hook (runs before commit)
+key-watch --install-hook pre-commit
+```
+
+> ⚠️ **Important:** Generated hooks depend on `key-watch` being available on your `PATH`. Ensure the binary is installed and accessible before using hooks.
+>
+> The hook will run automatically on git commands after installation.
 
 ### Windows Users
 
@@ -196,89 +266,20 @@ KeyWatch uses a flexible detector system configured via the [`detectors.toml`] f
 
 This design means you can continuously tailor KeyWatch to meet the needs of your security policies.
 
-## Integrating KeyWatch with pre-commit
+## CLI Options Reference
 
-Integrate KeyWatch into your development workflow by setting it up as a pre-commit hook. This ensures that any secrets accidentally committed to your repository get caught immediately.
-
-1. **Install pre-commit:**
-
-   Ensure Python is installed on your system, then use pip:
-
-   ```sh
-   pip install pre-commit
-   ```
-
-> [!NOTE]
-> Make sure that you have the `pre-commit` binary in your PATH.
-
-2. **Create the Hook Script:**
-
-   1. Make a hooks directory in your project root:
-
-      ```sh
-      mkdir -p hooks
-      ```
-
-   2. Create a file named `hooks/keywatch.sh` with the following content:
-
-      ```sh
-      #!/bin/sh
-
-      EXIT_CODE=0
-      for FILE in "$@"; do
-        # Only scan text files
-        if file "$FILE" | grep -q text; then
-          echo "Scanning $FILE for secrets..."
-          REPORT=$(key-watch --file "$FILE" --verbose)
-          if echo "$REPORT" | grep -q '"status": "FAIL"'; then
-            echo "Secret found in $FILE:"
-            echo "$REPORT"
-            EXIT_CODE=1
-          fi
-        fi
-      done
-      exit $EXIT_CODE
-      ```
-
-   3. Make the script executable:
-
-      ```sh
-      chmod +x hooks/keywatch.sh
-      ```
-
-3. **Configure pre-commit:**
-
-   Create a `.pre-commit-config.yaml` file in your project root with these contents:
-
-   ```yaml
-   repos:
-     - repo: local
-       hooks:
-         - id: keywatch
-           name: KeyWatch Secret Scanner
-           entry: ./hooks/keywatch.sh
-           language: script
-           files: .*\.(rs|txt|py|js)$ # Adjust the pattern as necessary
-   ```
-
-4. **Install the pre-commit Hooks:**
-
-   Run the following command to install the hook into your local Git configuration:
-
-   ```sh
-   pre-commit install
-   ```
-
-5. **Test the Integration:**
-
-   To see the hook in action, stage files with potential secrets and try committing:
-
-   ```sh
-   git add <file-with-secret>
-   git commit -m "Test commit: should run secret scanner"
-   ```
-
-   If KeyWatch detects a secret, the commit will be blocked with a detailed error message. Correct the issue (or update your detector configuration) and try committing again.
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--file` | Scan a single file | `--file config.toml` |
+| `--dir` | Scan a directory | `--dir ./src` |
+| `--output` | Save output to file | `--output results.json` |
+| `--verbose` | Print to console | `--verbose` |
+| `--allowed-repos` | Whitelist repos | `--allowed-repos github.com/company` |
+| `--blocked-repos` | Block repos | `--blocked-repos github.com/personal` |
+| `--exclude` | Exclude paths (glob) | `--exclude "*.log,node_modules/**"` |
+| `--install-hook` | Install git hook | `--install-hook pre-push` |
+| `--exit-mode` | Exit behavior | `--exit-mode critical` |
+| `--verify-integrity` | Check binary integrity | `--verify-integrity` |
 
 ## Running Tests
 

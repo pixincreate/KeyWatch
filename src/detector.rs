@@ -11,13 +11,18 @@ pub struct Detector {
 }
 
 impl Detector {
-    pub fn new(name: &str, pattern: &str, finding_type: &str, severity: &str) -> Detector {
-        Detector {
+    pub fn new(
+        name: &str,
+        pattern: &str,
+        finding_type: &str,
+        severity: &str,
+    ) -> Result<Detector, regex::Error> {
+        Ok(Detector {
             name: name.to_string(),
-            regex: Regex::new(pattern).unwrap(),
+            regex: Regex::new(pattern)?,
             finding_type: finding_type.to_string(),
             severity: severity.to_string(),
-        }
+        })
     }
 }
 
@@ -35,18 +40,31 @@ struct DetectorConfig {
     severity: String,
 }
 
+fn find_detectors_config() -> Result<std::path::PathBuf, String> {
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            let config_path = exe_dir.join("detectors.toml");
+            if config_path.exists() {
+                return Ok(config_path);
+            }
+        }
+    }
+    Ok(std::path::PathBuf::from("detectors.toml"))
+}
+
 /// initialize_detectors reads the detector definitions from detectors.toml and returns a vector of Detector.
-/// You can adjust the path to the TOML file as needed.
-pub fn initialize_detectors() -> Vec<Detector> {
-    let toml_contents = fs::read_to_string("detectors.toml")
-        .expect("Failed to read detectors.toml configuration file");
+pub fn initialize_detectors() -> Result<Vec<Detector>, Box<dyn std::error::Error>> {
+    let config_path = find_detectors_config()?;
+    let toml_contents = fs::read_to_string(&config_path)
+        .map_err(|e| format!("Failed to read {}: {}", config_path.display(), e))?;
 
-    let config: DetectorsConfig =
-        toml::from_str(&toml_contents).expect("Failed to parse detectors.toml");
+    let config: DetectorsConfig = toml::from_str(&toml_contents)
+        .map_err(|e| format!("Failed to parse detectors.toml: {}", e))?;
 
-    config
+    Ok(config
         .detectors
         .into_iter()
         .map(|det| Detector::new(&det.name, &det.pattern, &det.finding_type, &det.severity))
-        .collect()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Invalid detector pattern: {}", e))?)
 }
