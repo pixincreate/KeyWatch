@@ -2,8 +2,6 @@
 
 ## [Unreleased]
 
-## [1.1.0] - 2026-04-21
-
 ### Security
 
 - **Shell injection protection** - Generated hooks escape user input (allowed_repos, blocked_repos, exclude patterns) with single-quote wrapping
