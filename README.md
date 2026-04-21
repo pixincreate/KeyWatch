@@ -17,9 +17,12 @@ KeyWatch is a secret scanner written in Rust that analyzes files or directories 
   - [Exit Code Modes](#exit-code-modes)
   - [Binary Integrity Check](#binary-integrity-check)
   - [Installing Git Hooks](#installing-git-hooks)
+- [Development](#development)
+  - [Just Commands](#just-commands)
+  - [Running Tests](#running-tests)
 - [Windows Users](#windows-users)
 - [Adding More Detectors](#adding-more-detectors)
-- [Running Tests](#running-tests)
+- [Security Notes](#security-notes)
 - [License](#license)
 
 ## Features
@@ -41,22 +44,25 @@ The KeyWatch project is organized as follows:
 
 ```txt
 KeyWatch/
-├── .gitignore               # Specifies intentionally untracked files to ignore.
-├── Cargo.lock               # Cargo's lock file ensuring reproducible builds.
-├── Cargo.toml               # Project manifest (dependencies, metadata, etc.)
-├── LICENSE                  # MIT License file.
-├── README.md                # This documentation file.
-├── detectors.toml           # Configuration file defining secret detectors and regex patterns.
+├── .gitignore
+├── justfile                # Just command recipes
+├── Cargo.lock
+├── Cargo.toml
+├── LICENSE
+├── README.md
+├── CHANGELOG.md
+├── detectors.toml
 ├── src
-│   ├── cli.rs             // Contains CLI definitions using clap.
-│   ├── detector.rs        // Implements secret detectors and regex patterns.
-│   ├── lib.rs             // Re-exports modules for integration testing.
-│   ├── main.rs            // Application entry point.
-│   ├── report.rs          // Generates JSON reports from scan results.
-│   ├── scanner.rs         // Implements file and directory scanning.
-│   └── utils.rs           // Contains utility functions (e.g., file I/O).
+│   ├── cli.rs             // CLI definitions
+│   ├── detector.rs        // Secret detectors
+│   ├── hooks.rs          // Hook generation
+│   ├── lib.rs            // Library exports
+│   ├── main.rs           // Entry point
+│   ├── report.rs         // JSON reports
+│   ├── scanner.rs        // File scanning
+│   └── utils.rs         // Utilities
 └── tests
-    └── integration_tests.rs  // Integration tests for end-to-end functionality.
+    └── integration_tests.rs  // Integration tests (21 total)
 ```
 
 The relationships between key modules are illustrated below:
@@ -69,6 +75,7 @@ graph TD
     D --> E[detectors.toml]
     C --> F[report.rs]
     A --> G[utils.rs]
+    A --> H[hooks.rs]
 ```
 
 ## Installation
@@ -141,7 +148,7 @@ You can install KeyWatch globally so it is available from any command prompt:
         ```ps1
         Copy-Item -Path "key-watch.exe" -Destination "C:\Program Files\KeyWatch\key-watch.exe"
         ```
-        
+
         You can also add the `–Force` parameter if you want to overwrite the destination file without any prompts
 
      3. Alternatively, you can add `%USERPROFILE%\.cargo\bin` to your system `PATH` if it’s not already included. This is where Cargo installs binaries by default.
@@ -266,10 +273,50 @@ KeyWatch uses a flexible detector system configured via the [`detectors.toml`] f
 
 This design means you can continuously tailor KeyWatch to meet the needs of your security policies.
 
+## Development
+
+### Prerequisites
+
+- [Rust](https://www.rust-lang.org/tools/install) (version 1.70 or later)
+- [`just`](https://github.com/casey/just#installation) - command runner (optional but recommended)
+
+### Just Commands
+
+```sh
+# Run the application
+just run -- --dir .
+
+# Run all tests
+just test
+
+# Format code
+just fmt
+
+# Lint with clippy
+just clippy
+
+# Full check pipeline (fmt + clippy + test)
+just check
+
+# Build release binary
+just build
+```
+
+For full list: `just --list`
+
+## Security Notes
+
+KeyWatch generated hooks are hardened against shell injection:
+
+- All user-provided values (allowed_repos, blocked_repos, exclude patterns) are single-quote wrapped
+- Hooks validate `key-watch` is on PATH before executing
+- Hooks check for `detectors.toml` before scanning
+- Non-UTF8 files are skipped gracefully to prevent crashes
+
 ## CLI Options Reference
 
 | Option | Description | Example |
-|--------|-------------|---------|
+|--------|-------------|--------|
 | `--file` | Scan a single file | `--file config.toml` |
 | `--dir` | Scan a directory | `--dir ./src` |
 | `--output` | Save output to file | `--output results.json` |
@@ -283,14 +330,14 @@ This design means you can continuously tailor KeyWatch to meet the needs of your
 
 ## Running Tests
 
-KeyWatch comes with integration tests located in the `/tests` directory. To run all tests, execute:
+KeyWatch comes with integration tests located in the `/tests` directory. To run all tests:
 
 ```sh
 cargo test
+# or
+just test
 ```
 
 This command will run the complete suite of tests ensuring that the scanning and reporting components behave as expected.
-
-## License
 
 KeyWatch is distributed under the terms of the [MIT License](LICENSE), which means you’re free to use and modify the software as long as the license terms are met.
