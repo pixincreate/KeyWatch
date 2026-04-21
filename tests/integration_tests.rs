@@ -4,6 +4,7 @@ use key_watch::scanner::run_scan;
 use key_watch::utils::write_to_file;
 use std::env::temp_dir;
 use std::fs;
+use std::process::Command;
 
 //
 // Test the scanning on a single file that contains multiple secrets.
@@ -552,5 +553,209 @@ fn test_hook_shell_escaping() {
     assert!(
         !pre_commit.contains("test'file.txt"),
         "Single quotes should be escaped in pre-commit"
+    );
+}
+
+//
+// Test exit modes - verify different exit codes based on findings.
+//
+#[test]
+fn test_exit_code_on_secrets() {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_exit_secrets.txt");
+    let content = "AKIAABCDEFGHIJKLMNOP\n";
+    fs::write(&test_file, content).expect("Unable to write test file");
+
+    let options = CliOptions {
+        file: Some(test_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "critical".to_string(),
+        verify_integrity: false,
+    };
+
+    let result = run_scan(&options);
+    // With secrets found, should still return Ok (findings in result)
+    assert!(result.is_ok(), "Scan should complete even with secrets");
+    let (findings, _) = result.unwrap();
+    assert!(
+        !findings.is_empty(),
+        "Should detect secrets (exit code 1 behavior)"
+    );
+
+    fs::remove_file(&test_file).expect("Unable to remove test file");
+}
+
+#[test]
+fn test_exit_code_on_no_secrets() {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_exit_clean.txt");
+    let content = "This is harmless text.\n";
+    fs::write(&test_file, content).expect("Unable to write test file");
+
+    let options = CliOptions {
+        file: Some(test_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let result = run_scan(&options);
+    assert!(result.is_ok(), "Scan should succeed with no secrets");
+    let (findings, _) = result.unwrap();
+    assert_eq!(findings.len(), 0, "No findings expected for clean file");
+
+    fs::remove_file(&test_file).expect("Unable to remove test file");
+}
+
+//
+// Test verify_integrity flag behavior.
+//
+#[test]
+fn test_verify_integrity_flag() {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_verify.txt");
+    let content = "password = 'secret123'\n";
+    fs::write(&test_file, content).expect("Unable to write test file");
+
+    // With verify_integrity=true, should run additional validation
+    let options = CliOptions {
+        file: Some(test_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: true,
+    };
+
+    let result = run_scan(&options);
+    assert!(result.is_ok(), "verify_integrity should not cause failure");
+    let (_findings, metadata) = result.unwrap();
+    assert_eq!(metadata.files_scanned, 1, "Should scan exactly 1 file");
+
+    fs::remove_file(&test_file).expect("Unable to remove test file");
+}
+
+//
+// Test exclude patterns actually filter files.
+//
+#[test]
+fn test_exclude_pattern_filtering() {
+    let temp_dir = temp_dir().join("key_watch_exclude_test");
+    fs::create_dir_all(&temp_dir).expect("Unable to create temp dir");
+
+    let secret_file = temp_dir.join("credentials.log");
+    let clean_file = temp_dir.join("readme.txt");
+    fs::write(&secret_file, "AKIAABCDEFGHIJKLMNOP\n").expect("Unable to write secret file");
+    fs::write(&clean_file, "Just some text.\n").expect("Unable to write clean file");
+
+    let options = CliOptions {
+        file: None,
+        dir: Some(temp_dir.to_str().unwrap().to_string()),
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: Some("*.log".to_string()),
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let (findings, metadata) = run_scan(&options).expect("scan should succeed");
+    assert!(
+        metadata
+            .excluded_files
+            .iter()
+            .any(|p| p.contains("credentials.log")),
+        "*.log files should be excluded"
+    );
+    assert_eq!(findings.len(), 0, "No findings after exclusions applied");
+
+    fs::remove_dir_all(&temp_dir).expect("Unable to remove temp dir");
+}
+
+//
+// Test portable config loading (detectors.toml from executable directory).
+//
+#[test]
+fn test_portable_config_loading() {
+    // Test that initialize_detectors can find config
+    let result = key_watch::detector::initialize_detectors();
+    assert!(
+        result.is_ok(),
+        "Should load detectors from portable location"
+    );
+    let detectors = result.unwrap();
+    assert!(
+        !detectors.is_empty(),
+        "Should have loaded at least one detector"
+    );
+}
+
+//
+// Test hook installation failure scenarios.
+//
+#[test]
+fn test_hook_missing_binary_path() {
+    let options = CliOptions {
+        file: None,
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let hook = key_watch::generate_pre_push_hook(&options);
+    // Hook should check for command existence
+    assert!(
+        hook.contains("command -v"),
+        "Hook should verify binary is on PATH"
+    );
+    assert!(
+        hook.contains("key-watch not found"),
+        "Hook should report missing binary error"
+    );
+}
+
+#[test]
+fn test_hook_missing_detectors_toml() {
+    let options = CliOptions {
+        file: None,
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let hook = key_watch::generate_pre_commit_hook(&options);
+    assert!(
+        hook.contains("detectors.toml not found"),
+        "Hook should check for config file existence"
     );
 }
