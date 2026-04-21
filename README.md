@@ -45,24 +45,27 @@ The KeyWatch project is organized as follows:
 ```txt
 KeyWatch/
 ├── .gitignore
-├── justfile                # Just command recipes
+├── justfile
 ├── Cargo.lock
 ├── Cargo.toml
 ├── LICENSE
 ├── README.md
 ├── CHANGELOG.md
 ├── detectors.toml
+├── templates
+│   ├── pre-push.sh      # Hook template
+│   └── pre-commit.sh    # Hook template
 ├── src
-│   ├── cli.rs             // CLI definitions
-│   ├── detector.rs        // Secret detectors
-│   ├── hooks.rs          // Hook generation
-│   ├── lib.rs            // Library exports
-│   ├── main.rs           // Entry point
-│   ├── report.rs         // JSON reports
-│   ├── scanner.rs        // File scanning
-│   └── utils.rs         // Utilities
+│   ├── cli.rs
+│   ├── detector.rs
+│   ├── hooks.rs
+│   ├── lib.rs
+│   ├── main.rs
+│   ├── report.rs
+│   ├── scanner.rs
+│   └── utils.rs
 └── tests
-    └── integration_tests.rs  // Integration tests (21 total)
+    └── integration_tests.rs
 ```
 
 The relationships between key modules are illustrated below:

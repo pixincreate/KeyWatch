@@ -18,6 +18,8 @@
 
 - Remove CLI help text typos ("push/push" → "push")
 - Remove non-English text from help
+- Extract hook templates to `templates/` directory
+- Rename single-char variables to meaningful names
 
 ### Testing
 

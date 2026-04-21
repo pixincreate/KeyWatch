@@ -1,107 +1,67 @@
 use crate::cli::CliOptions;
 
+const PRE_PUSH_TEMPLATE: &str = include_str!("../templates/pre-push.sh");
+const PRE_COMMIT_TEMPLATE: &str = include_str!("../templates/pre-commit.sh");
+
+const SAFE_CHARS: &str = "-_./@";
+
+fn shell_escape(input: &str) -> String {
+    input
+        .replace('\'', "'\"'\"'")
+        .chars()
+        .filter(|character| character.is_alphanumeric() || SAFE_CHARS.contains(*character))
+        .collect()
+}
+
+fn build_repo_section(allowed: Option<&str>, blocked: Option<&str>) -> String {
+    let escaped_allowed = allowed.map(shell_escape);
+    let escaped_blocked = blocked.map(shell_escape);
+
+    if escaped_allowed.is_none() && escaped_blocked.is_none() {
+        return String::new();
+    }
+
+    let allowed_line = escaped_allowed.map_or(String::new(), |escaped| {
+        format!("ALLOWED_REPOS='{}'\n", escaped)
+    });
+    let blocked_line = escaped_blocked.map_or(String::new(), |escaped| {
+        format!("BLOCKED_REPOS='{}'\n", escaped)
+    });
+    format!("{}{}", allowed_line, blocked_line)
+}
+
+fn render_template(
+    template: &str,
+    binary_name: &str,
+    repo_section: &str,
+    exclude_patterns: &str,
+) -> String {
+    template
+        .replace("{{binary_name}}", binary_name)
+        .replace("{{allowed_repos_section}}", "")
+        .replace("{{blocked_repos_section}}", repo_section)
+        .replace("{{exclude_patterns}}", exclude_patterns)
+}
+
 pub fn generate_pre_push_hook(options: &CliOptions) -> String {
-    let binary = hook_binary_name();
+    let binary_name = hook_binary_name();
+    let repo_section = build_repo_section(
+        options.allowed_repos.as_deref(),
+        options.blocked_repos.as_deref(),
+    );
 
-    let escape_shell = |s: &str| -> String {
-        s.replace('\'', "'\"'\"'")
-            .chars()
-            .filter(|c| c.is_alphanumeric() || "-_./@".contains(*c))
-            .collect()
-    };
-
-    let allowed_repos = options
-        .allowed_repos
-        .as_deref()
-        .map(escape_shell)
-        .unwrap_or_default();
-    let blocked_repos = options
-        .blocked_repos
-        .as_deref()
-        .map(escape_shell)
-        .unwrap_or_default();
-
-    let repo_section = if allowed_repos.is_empty() && blocked_repos.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "ALLOWED_REPOS='{}'\nBLOCKED_REPOS='{}'\n",
-            allowed_repos, blocked_repos
-        )
-    };
-
-    format!(
-        r#"#!/bin/bash
-# KeyWatch pre-push hook
-# Installed by KeyWatch
-
-{repo_section}KEYWATCH_BIN='{binary}'
-
-if ! command -v "$KEYWATCH_BIN" >/dev/null 2>&1; then
-    echo "Error: key-watch not found on PATH" >&2
-    exit 1
-fi
-
-if [ ! -f "detectors.toml" ]; then
-    echo "Error: detectors.toml not found in current directory" >&2
-    exit 1
-fi
-
-"$KEYWATCH_BIN" --dir . --exit-mode critical
-exit $?
-"#
-    )
+    render_template(PRE_PUSH_TEMPLATE, &binary_name, &repo_section, "")
 }
 
 pub fn generate_pre_commit_hook(options: &CliOptions) -> String {
-    let binary = hook_binary_name();
+    let binary_name = hook_binary_name();
     let exclude_patterns = options
         .exclude
         .as_deref()
-        .map(|s| s.replace('\'', "'\"'\"'"))
+        .map(shell_escape)
         .unwrap_or_default();
 
-    format!(
-        r#"#!/bin/bash
-# KeyWatch pre-commit hook
-# Installed by KeyWatch
-
-KEYWATCH_BIN='{binary}'
-EXCLUDE_PATTERNS='{exclude_patterns}'
-
-if ! command -v "$KEYWATCH_BIN" >/dev/null 2>&1; then
-    echo "Error: key-watch not found on PATH" >&2
-    exit 1
-fi
-
-if [ ! -f "detectors.toml" ]; then
-    echo "Error: detectors.toml not found in current directory" >&2
-    exit 1
-fi
-
-git diff --cached --name-only | while IFS= read -r file; do
-    if [ -z "$file" ]; then
-        continue
-    fi
-    if [ ! -f "$file" ]; then
-        continue
-    fi
-    if "$KEYWATCH_BIN" --file "$file" --exclude "$EXCLUDE_PATTERNS" 2>/dev/null; then
-        continue
-    fi
-    EXIT_CODE=$?
-    if [ $EXIT_CODE -eq 1 ]; then
-        echo "ERROR: Secret detected in $file"
-        "$KEYWATCH_BIN" --file "$file" --exclude "$EXCLUDE_PATTERNS" --verbose
-        exit 1
-    fi
-    echo "Error: key-watch failed on $file (exit code: $EXIT_CODE)" >&2
-    exit 1
-done
-
-exit 0
-"#
-    )
+    render_template(PRE_COMMIT_TEMPLATE, &binary_name, "", &exclude_patterns)
 }
 
 fn hook_binary_name() -> String {
