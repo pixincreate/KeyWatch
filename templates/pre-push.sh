@@ -2,7 +2,7 @@
 # KeyWatch pre-push hook
 # Installed by KeyWatch
 
-{{allowed_repos_section}}{{blocked_repos_section}}KEYWATCH_BIN='{{binary_name}}'
+{{repo_section}}KEYWATCH_BIN='{{binary_name}}'
 
 if ! command -v "$KEYWATCH_BIN" >/dev/null 2>&1; then
     echo "Error: key-watch not found on PATH" >&2

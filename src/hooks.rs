@@ -4,6 +4,7 @@ const PRE_PUSH_TEMPLATE: &str = include_str!("../templates/pre-push.sh");
 const PRE_COMMIT_TEMPLATE: &str = include_str!("../templates/pre-commit.sh");
 
 const SAFE_CHARS: &str = "-_./@";
+const DEFAULT_BINARY_NAME: &str = "key-watch";
 
 fn shell_escape(input: &str) -> String {
     input
@@ -30,30 +31,19 @@ fn build_repo_section(allowed: Option<&str>, blocked: Option<&str>) -> String {
     format!("{}{}", allowed_line, blocked_line)
 }
 
-fn render_template(
-    template: &str,
-    binary_name: &str,
-    repo_section: &str,
-    exclude_patterns: &str,
-) -> String {
-    template
-        .replace("{{binary_name}}", binary_name)
-        .replace("{{allowed_repos_section}}", "")
-        .replace("{{blocked_repos_section}}", repo_section)
-        .replace("{{exclude_patterns}}", exclude_patterns)
-}
-
-pub fn generate_pre_push_hook(options: &CliOptions) -> String {
+fn render_pre_push(options: &CliOptions) -> String {
     let binary_name = hook_binary_name();
     let repo_section = build_repo_section(
         options.allowed_repos.as_deref(),
         options.blocked_repos.as_deref(),
     );
 
-    render_template(PRE_PUSH_TEMPLATE, &binary_name, &repo_section, "")
+    PRE_PUSH_TEMPLATE
+        .replace("{{binary_name}}", &binary_name)
+        .replace("{{repo_section}}", &repo_section)
 }
 
-pub fn generate_pre_commit_hook(options: &CliOptions) -> String {
+fn render_pre_commit(options: &CliOptions) -> String {
     let binary_name = hook_binary_name();
     let exclude_patterns = options
         .exclude
@@ -61,7 +51,17 @@ pub fn generate_pre_commit_hook(options: &CliOptions) -> String {
         .map(shell_escape)
         .unwrap_or_default();
 
-    render_template(PRE_COMMIT_TEMPLATE, &binary_name, "", &exclude_patterns)
+    PRE_COMMIT_TEMPLATE
+        .replace("{{binary_name}}", &binary_name)
+        .replace("{{exclude_patterns}}", &exclude_patterns)
+}
+
+pub fn generate_pre_push_hook(options: &CliOptions) -> String {
+    render_pre_push(options)
+}
+
+pub fn generate_pre_commit_hook(options: &CliOptions) -> String {
+    render_pre_commit(options)
 }
 
 fn hook_binary_name() -> String {
@@ -71,5 +71,5 @@ fn hook_binary_name() -> String {
             path.file_name()
                 .map(|name| name.to_string_lossy().into_owned())
         })
-        .unwrap_or_else(|| "key-watch".to_string())
+        .unwrap_or_else(|| DEFAULT_BINARY_NAME.to_string())
 }
