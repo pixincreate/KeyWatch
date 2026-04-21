@@ -4,7 +4,6 @@ use key_watch::scanner::run_scan;
 use key_watch::utils::write_to_file;
 use std::env::temp_dir;
 use std::fs;
-use std::process::Command;
 
 //
 // Test the scanning on a single file that contains multiple secrets.
