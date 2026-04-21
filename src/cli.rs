@@ -25,7 +25,6 @@ pub struct CliOptions {
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
 
-    // === New Features ===
     /// Allowed repository URLs (comma-separated)
     /// Experimental: Push to these repos will be allowed
     #[arg(long)]
