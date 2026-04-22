@@ -122,21 +122,52 @@ You can install KeyWatch globally so it is available from any command prompt:
 > This command copies the binary to Cargo’s bin directory (typically `~/.cargo/bin` on Unix or `%USERPROFILE%\.cargo\bin` on Windows), which should be part of your `PATH` already.
 > This will let you invoke the binary simply by typing `key-watch`.
 
-2. **Manual Installation:**
+2. **Installation Scripts:**
 
-   You may manually copy the binary into a directory included in your PATH:
+   Use the provided scripts for easy installation:
 
-   - **For Unix-based systems (Linux/macOS):**
+   ```sh
+   # Build the project first
+   cargo build --release
 
-     ```sh
-     cp target/debug/key-watch /usr/local/bin
-     ```
+   # User installation (~/local/bin)
+   ./scripts/install.sh
 
-     Or create a symbolic link:
+   # System-wide installation (requires sudo)
+   ./scripts/install.sh --system
+   ```
 
-     ```sh
-     ln -s /path/to/target/release/key-watch /usr/local/bin/key-watch
-     ```
+   **Uninstallation:**
+
+   ```sh
+   # User uninstallation
+   ./scripts/uninstall.sh
+
+   # System-wide uninstallation
+   ./scripts/uninstall.sh --system
+   ```
+
+   **Manual Installation (alternative):**
+
+   If you prefer manual installation:
+
+      Or create a symbolic link:
+
+      ```sh
+      ln -s /path/to/target/release/key-watch ~/.local/bin/key-watch
+      ```
+
+    - **For Unix-based systems (Linux/macOS) - System-wide installation (requires sudo):**
+
+      ```sh
+      sudo cp target/debug/key-watch /usr/local/bin
+      ```
+
+      Or create a symbolic link:
+
+      ```sh
+      sudo ln -s /path/to/target/release/key-watch /usr/local/bin/key-watch
+      ```
 
    - **For Windows (PowerShell):**
 

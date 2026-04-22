@@ -53,6 +53,19 @@ fn run() -> Result<(), String> {
 
     if options.verbose {
         println!("{report_json}");
+    } else {
+        let severity_counts = report::get_severity_counts(&findings);
+        if findings.is_empty() {
+            println!("No secrets found.");
+        } else {
+            println!(
+                "WARNING: {} potential secret(s) detected (HIGH: {}, MEDIUM: {}, LOW: {})",
+                findings.len(),
+                severity_counts.0,
+                severity_counts.1,
+                severity_counts.2
+            );
+        }
     }
 
     if let Some(ref output_path) = options.output {

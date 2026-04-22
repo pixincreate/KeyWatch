@@ -48,3 +48,10 @@ pub fn create_report(
 
     serde_json::to_string_pretty(&report)
 }
+
+pub fn get_severity_counts(findings: &[Finding]) -> (usize, usize, usize) {
+    let high = findings.iter().filter(|f| f.severity == "HIGH").count();
+    let medium = findings.iter().filter(|f| f.severity == "MEDIUM").count();
+    let low = findings.iter().filter(|f| f.severity == "LOW").count();
+    (high, medium, low)
+}
