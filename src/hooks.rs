@@ -10,7 +10,7 @@ fn shell_escape(input: &str) -> String {
     input
         .replace('\'', "'\"'\"'")
         .chars()
-        .filter(|character| character.is_alphanumeric() || SAFE_CHARS.contains(*character))
+        .filter(|ch| ch.is_alphanumeric() || SAFE_CHARS.contains(*ch))
         .collect()
 }
 

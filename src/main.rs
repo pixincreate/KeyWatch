@@ -8,10 +8,18 @@ mod utils;
 use clap::Parser;
 use cli::CliOptions;
 use hooks::{generate_pre_commit_hook, generate_pre_push_hook};
-use report::{create_report, Finding, ScanMetadata};
+use report::Finding;
 use scanner::run_scan;
 use std::env;
 use std::time::Instant;
+
+// Constants for exit modes
+const EXIT_MODE_ALWAYS: &str = "always";
+const EXIT_MODE_CRITICAL: &str = "critical";
+const EXIT_MODE_STRICT: &str = "strict";
+
+// Constants for severity levels
+const SEVERITY_HIGH: &str = "HIGH";
 
 fn main() {
     if let Err(err) = run() {
@@ -107,16 +115,17 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &str) -> i32 {
     }
 
     match exit_mode {
-        "always" => 0,
-        "critical" => {
-            // Exit 0 if only LOW/MEDIUM severity
-            let has_high = findings.iter().any(|f| f.severity == "HIGH");
+        EXIT_MODE_ALWAYS => 0,
+        EXIT_MODE_CRITICAL => {
+            let has_high = findings
+                .iter()
+                .any(|finding| finding.severity == SEVERITY_HIGH);
             if has_high {
                 1
             } else {
                 0
             }
         }
-        _ => 1, // strict - exit non-zero for any finding
+        _ => 1,
     }
 }

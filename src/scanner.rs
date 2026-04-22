@@ -18,7 +18,7 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
         collect_files(dir_path, &mut target_paths);
     }
 
-    let detectors = initialize_detectors().map_err(|e| e.to_string())?;
+    let detectors = initialize_detectors().map_err(|err| err.to_string())?;
     let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
         .iter()
         .partition(|detector| detector.regex.as_str().contains("(?s)"));
@@ -26,8 +26,9 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
     let exclude_patterns: Vec<Pattern> = options
         .exclude
         .as_ref()
-        .map(|e| {
-            e.split(',')
+        .map(|exclude_str| {
+            exclude_str
+                .split(',')
                 .filter(|pattern| !pattern.trim().is_empty())
                 .map(|pattern| {
                     Pattern::new(pattern.trim())
@@ -57,7 +58,7 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
 
         let full_content = match fs::read(&path) {
             Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(s) => s,
+                Ok(content) => content,
                 Err(_) => continue,
             },
             Err(_) => continue,
