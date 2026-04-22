@@ -8,7 +8,7 @@ mod utils;
 use clap::Parser;
 use cli::CliOptions;
 use hooks::{generate_pre_commit_hook, generate_pre_push_hook};
-use report::Finding;
+use report::{create_report, Finding, ScanMetadata};
 use scanner::run_scan;
 use std::env;
 use std::time::Instant;
