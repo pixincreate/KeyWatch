@@ -112,10 +112,10 @@ fn collect_files(dir_path: &str, files: &mut Vec<String>) {
                 if let Some(path_str) = path.to_str() {
                     files.push(path_str.to_string());
                 }
-            } else if path.is_dir() {
-                if let Some(path_str) = path.to_str() {
-                    collect_files(path_str, files);
-                }
+            } else if path.is_dir()
+                && let Some(path_str) = path.to_str()
+            {
+                collect_files(path_str, files);
             }
         }
     }

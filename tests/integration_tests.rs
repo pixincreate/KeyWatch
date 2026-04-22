@@ -1,5 +1,5 @@
 use key_watch::cli::CliOptions;
-use key_watch::report::{create_report, ScanMetadata};
+use key_watch::report::{ScanMetadata, create_report};
 use key_watch::scanner::run_scan;
 use key_watch::utils::write_to_file;
 use std::env::temp_dir;

@@ -41,14 +41,15 @@ struct DetectorConfig {
 }
 
 fn find_detectors_config() -> Result<std::path::PathBuf, String> {
-    if let Ok(exe_path) = std::env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            let config_path = exe_dir.join("detectors.toml");
-            if config_path.exists() {
-                return Ok(config_path);
-            }
+    if let Ok(exe_path) = std::env::current_exe()
+        && let Some(exe_dir) = exe_path.parent()
+    {
+        let config_path = exe_dir.join("detectors.toml");
+        if config_path.exists() {
+            return Ok(config_path);
         }
     }
+
     Ok(std::path::PathBuf::from("detectors.toml"))
 }
 

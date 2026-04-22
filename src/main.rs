@@ -133,11 +133,7 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &str) -> i32 {
             let has_high = findings
                 .iter()
                 .any(|finding| finding.severity == SEVERITY_HIGH);
-            if has_high {
-                1
-            } else {
-                0
-            }
+            if has_high { 1 } else { 0 }
         }
         EXIT_MODE_STRICT => 1,
         _ => 1,
