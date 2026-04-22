@@ -126,6 +126,7 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &str) -> i32 {
                 0
             }
         }
+        EXIT_MODE_STRICT => 1,
         _ => 1,
     }
 }
