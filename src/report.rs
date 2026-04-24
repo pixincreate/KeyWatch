@@ -38,7 +38,7 @@ pub fn create_report(
 ) -> Result<String, serde_json::Error> {
     let status = if findings.is_empty() { "PASS" } else { "FAIL" };
     let report = Report {
-        status: status.to_string(),
+        status: status.into(),
         findings,
         files_scanned: metadata.files_scanned,
         total_lines: metadata.total_lines,
