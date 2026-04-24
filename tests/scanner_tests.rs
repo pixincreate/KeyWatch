@@ -231,7 +231,7 @@ fn test_exclude_pattern_filtering() {
         verify_integrity: false,
     };
 
-    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (_findings, metadata) = run_scan(&options).expect("run_scan should succeed");
     assert!(
         metadata
             .excluded_files
