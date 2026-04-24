@@ -50,8 +50,17 @@ pub fn create_report(
 }
 
 pub fn get_severity_counts(findings: &[Finding]) -> (usize, usize, usize) {
-    let high = findings.iter().filter(|f| f.severity == "HIGH").count();
-    let medium = findings.iter().filter(|f| f.severity == "MEDIUM").count();
-    let low = findings.iter().filter(|f| f.severity == "LOW").count();
+    let high = findings
+        .iter()
+        .filter(|finding| finding.severity == "HIGH")
+        .count();
+    let medium = findings
+        .iter()
+        .filter(|finding| finding.severity == "MEDIUM")
+        .count();
+    let low = findings
+        .iter()
+        .filter(|finding| finding.severity == "LOW")
+        .count();
     (high, medium, low)
 }
