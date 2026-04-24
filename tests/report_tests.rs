@@ -1,4 +1,4 @@
-use key_watch::report::{create_report, ScanMetadata};
+use key_watch::report::{ScanMetadata, create_report};
 
 #[test]
 fn test_create_report() {
