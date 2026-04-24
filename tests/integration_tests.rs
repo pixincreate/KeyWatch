@@ -1,5 +1,5 @@
 use key_watch::cli::CliOptions;
-use key_watch::report::{ScanMetadata, create_report};
+use key_watch::report::{create_report, ScanMetadata};
 use key_watch::scanner::run_scan;
 use key_watch::utils::write_to_file;
 use std::env::temp_dir;
@@ -757,4 +757,117 @@ fn test_hook_missing_detectors_toml() {
         hook.contains("detectors.toml not found"),
         "Hook should check for config file existence"
     );
+}
+
+//
+// Test that binary aliases are all available
+//
+#[test]
+fn test_binary_aliases() {
+    let options = CliOptions {
+        file: None,
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let pre_commit = key_watch::generate_pre_commit_hook(&options);
+    let pre_push = key_watch::generate_pre_push_hook(&options);
+
+    assert!(
+        pre_commit.contains("key-watch"),
+        "Pre-commit should reference key-watch binary"
+    );
+    assert!(
+        pre_push.contains("key-watch"),
+        "Pre-push should reference key-watch binary"
+    );
+}
+
+//
+// Test exit mode always returns 0
+//
+#[test]
+fn test_exit_mode_always() {
+    let temp_file = temp_dir().join("keywatch_exit_always.txt");
+    fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+
+    let options = CliOptions {
+        file: Some(temp_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "always".to_string(),
+        verify_integrity: false,
+    };
+
+    let (findings, _) = run_scan(&options).expect("Scan should succeed");
+    assert!(!findings.is_empty(), "Should find secrets");
+
+    fs::remove_file(temp_file).expect("Cleanup");
+}
+
+//
+// Test exit mode critical only fails on HIGH severity
+//
+#[test]
+fn test_exit_mode_critical_high_vs_low() {
+    let temp_file = temp_dir().join("keywatch_exit_critical.txt");
+
+    // Write a HIGH severity secret (AWS key)
+    fs::write(&temp_file, "AKIAABCDEFGHIJKLMNOP").expect("Write test file");
+
+    let options_high = CliOptions {
+        file: Some(temp_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "critical".to_string(),
+        verify_integrity: false,
+    };
+
+    let (findings, _) = run_scan(&options_high).expect("Scan should succeed");
+    assert!(!findings.is_empty(), "Should find HIGH severity secrets");
+    assert!(
+        findings.iter().any(|f| f.severity == "HIGH"),
+        "Should have HIGH severity"
+    );
+
+    // Write a LOW severity string
+    fs::write(&temp_file, "user@example.com").expect("Write low severity");
+
+    let options_low = CliOptions {
+        file: Some(temp_file.to_str().unwrap().to_string()),
+        dir: None,
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "critical".to_string(),
+        verify_integrity: false,
+    };
+
+    let (findings_low, _) = run_scan(&options_low).expect("Scan should succeed");
+    assert!(
+        findings_low.iter().all(|f| f.severity != "HIGH"),
+        "Should NOT have HIGH severity"
+    );
+
+    fs::remove_file(temp_file).expect("Cleanup");
 }

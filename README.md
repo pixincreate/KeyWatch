@@ -8,27 +8,27 @@ A fast secret scanner for files and directories.
 # Recommended
 cargo install --git https://github.com/pixincreate/KeyWatch.git
 
-# Or use the install script (tries cargo first, then local binary)
+# Or use the install script
 ./scripts/install.sh
 
-# Or manually: download binary, add to ~/.local/bin
+# Manual: download binary, add to PATH
 ```
 
 ## Usage
 
 ```sh
 # Scan a file
-key-watch --file secrets.txt
+keywatch --file secrets.txt
 
 # Scan a directory
-key-watch --dir .
+keywatch --dir .
 
 # Verbose output (JSON)
-key-watch --file secrets.txt --verbose
+keywatch --file secrets.txt --verbose
 
 # Install git hook
-key-watch --install-hook pre-commit
-key-watch --install-hook pre-push
+keywatch --install-hook pre-commit
+keywatch --install-hook pre-push
 ```
 
 ## Options
@@ -40,15 +40,25 @@ key-watch --install-hook pre-push
 - `--exclude <patterns>` - Comma-separated glob patterns to exclude
 - `--exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH only), `strict` (fail on any finding, default)
 - `--install-hook <type>` - Install pre-commit or pre-push hook
+- `--verify-integrity` - Check binary hasn't been tampered with
+- `--allowed-repos <urls>` - Whitelist repos (pre-push)
+- `--blocked-repos <urls>` - Block repos (pre-push)
 
 ## Aliases
 
-The following commands are equivalent: `key-watch`, `keywatch`, `watch`
+`key-watch`, `keywatch`, `watch` are equivalent.
+
+## Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | No secrets found (or `--exit-mode always`) |
+| 1 | Secret found (in strict/critical mode) |
 
 ## Default Behavior
 
-- **Repos**: No restrictions by default (all repos allowed). Use `--allowed-repos` or `--blocked-repos` to control.
-- **Exit code**: `strict` - exits non-zero if any secret is found. Use `--exit-mode` to change.
+- **Repos**: All allowed (no restrictions)
+- **Exit mode**: strict (fail on any finding)
 
 ## Development
 

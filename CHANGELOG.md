@@ -1,38 +1,40 @@
 # Changelog
 
+All notable changes to this project will be documented in this file.
+
 ## [Unreleased]
+
+### Added
+
+- Binary aliases: `keywatch`, `watch` (in addition to `key-watch`)
+- Exit code modes: `--exit-mode always|critical|strict`
+- Binary integrity verification: `--verify-integrity`
+- Repository controls: `--allowed-repos`, `--blocked-repos`
 
 ### Security
 
-- **Shell injection protection** - Generated hooks escape user input (allowed_repos, blocked_repos, exclude patterns) with single-quote wrapping
-- **Path validation** - Hooks verify `key-watch` is on PATH before executing
+- Shell injection protection in generated hooks
+- Non-UTF8 file handling (graceful skip)
 
-### Usability
+### Changed
 
-- **Portable detector loading** - Checks executable directory first, falls back to CWD for detectors.toml
-- **Non-UTF8 handling** - Binary files gracefully skipped (no crash on non-UTF8 content)
-- **Filenames with spaces** - Pre-commit hook uses `IFS= read -r` for safe handling
-- **Error distinction** - Exit code 1 = secret found, other codes = runtime error
+- Simplified README (~60 lines)
+- User-friendly output by default (summary, not JSON)
+- Default exit mode: strict
 
-### Cleanup
+### Fixed
 
-- Remove CLI help text typos ("push/push" → "push")
-- Remove non-English text from help
-- Extract hook templates to `templates/` directory
-- Rename single-char variables to meaningful names
+- Portable detector loading (exe-relative path)
+- Filenames with spaces handling
 
-### Testing
+### Removed
 
-- Add behavioral tests for exit codes, verify_integrity, exclude patterns, portable config loading, hook validation
-- 21 tests now pass
-
-### Developer Experience
-
-- Add `justfile` with common commands (`just run`, `just fmt`, `just clippy`, `just check`, etc.)
+- Legacy `hooks/keywatch.sh`
+- `.pre-commit-config.yaml`
 
 ## [1.0.0] - 2025-02-16
 
-- Initial Release
-  - Support reading file, directory with verbose output in console
-  - Output results to a file
-  - Support various types of keys / secrets / tokens and etc.,
+- Initial release
+- File/directory scanning
+- Verbose JSON output
+- Pre-commit/pre-push hooks
