@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-05
+
 ### Added
 
 - Binary aliases: `keywatch`, `watch` (in addition to `key-watch`)
