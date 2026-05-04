@@ -13,8 +13,11 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
 
     let mut target_paths = Vec::new();
 
-    if let Some(ref file_path) = options.file {
-        target_paths.push(file_path.clone());
+    if !options.file.is_empty() {
+        let mut unique_paths: Vec<String> = options.file.to_vec();
+        unique_paths.sort();
+        unique_paths.dedup();
+        target_paths.extend(unique_paths);
     } else if let Some(ref dir_path) = options.dir {
         collect_files(dir_path, &mut target_paths);
     }
