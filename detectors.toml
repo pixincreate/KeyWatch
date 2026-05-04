@@ -250,3 +250,27 @@ name = "GoogleOAuthTokenDetector"
 pattern = "ya29\\.[0-9A-Za-z\\-_]+"
 finding_type = "Google OAuth Token"
 severity = "HIGH"
+
+[[detectors]]
+name = "AadhaarCardDetector"
+pattern = "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b"
+finding_type = "Aadhaar Card Number"
+severity = "HIGH"
+
+[[detectors]]
+name = "VoterIDDetector"
+pattern = "\\b[A-Z]{3}\\d{7}\\b"
+finding_type = "Voter ID (EPIC)"
+severity = "HIGH"
+
+[[detectors]]
+name = "PANCardDetector"
+pattern = "\\b[A-Z]{5}\\d{4}[A-Z]\\b"
+finding_type = "PAN Card Number"
+severity = "HIGH"
+
+[[detectors]]
+name = "ABHADetector"
+pattern = "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{2}\\b"
+finding_type = "ABHA Health ID"
+severity = "HIGH"
