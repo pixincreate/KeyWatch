@@ -503,7 +503,8 @@ fn test_multiple_indian_ids() {
     let temp_dir = temp_dir();
     let test_file = temp_dir.join("keywatch_indian_ids.txt");
 
-    let content = "Aadhaar: 9999-8888-7777\nVoter ID: ABC1234567\nPAN: XYZZU1234A\nABHA: 1111-2222-3333-44";
+    let content =
+        "Aadhaar: 9999-8888-7777\nVoter ID: ABC1234567\nPAN: XYZZU1234A\nABHA: 1111-2222-3333-44";
     fs::write(&test_file, content).expect("Write test file");
 
     let options = CliOptions {
