@@ -1,10 +1,16 @@
 [package]
 name = "key-watch"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.85"
 authors = ["Pa1Nark <pa1nark@pixincreate.dev>"]
-license = "GPL-3.0"
+description = "A fast secret scanner for files and directories. Detects API keys, tokens, passwords, and sensitive credentials."
+repository = "https://github.com/pixincreate/KeyWatch"
+homepage = "https://github.com/pixincreate/KeyWatch"
+keywords = ["secret-scanner", "security", "credentials", "lint"]
+
+license = "GPL-3.0-only"
+license-file = "LICENSE"
 
 [[bin]]
 name = "key-watch"

@@ -8,24 +8,30 @@
 # 2. Merge the PR
 # 3. Create and push the tag:
 #   ```bash
-#   ./scripts/release.sh create_tag 1.1.0
+#   ./scripts/release.sh create_tag 1.1.0 --publish-crates
 #   ```
 
 set -euo pipefail
 
 usage() {
-    echo "Usage: $0 <function_name> <version>"
+    echo "Usage: $0 <function_name> <version> [--publish-crates|-p]"
     echo ""
     echo "Available functions: create_pr, create_tag, delete_tag"
     echo ""
+    echo "Flags: --publish-crates, -p (only valid with create_tag)"
+    echo ""
     echo "Example: $0 create_pr 1.1.0"
-    echo "Example: $0 create_tag 1.1.0"
+    echo "Example: $0 create_tag 1.1.0 --publish-crates"
 }
 
 POSITIONAL=()
+PUBLISH_CRATES=false
 
 for arg in "$@"; do
     case "$arg" in
+        --publish-crates|-p)
+            PUBLISH_CRATES=true
+            ;;
         --help|-h)
             usage
             exit 0
@@ -91,21 +97,20 @@ update_version_files() {
         exit 1
     fi
 
-sed -i.bak \
+    sed -i.bak \
         -e "s/^version = .*/version = \"$VERSION\"/" \
         Cargo.toml
     rm Cargo.toml.bak
 
-sed -i.bak \
-    -e "s/^## \[Unreleased\]$/## [Unreleased]\\
-\\
+    sed -i.bak \
+        -e "s/^## \[Unreleased\]$/## [Unreleased]\
+\
 ## [$VERSION] - $DATE/" \
-    CHANGELOG.md && rm CHANGELOG.md.bak
+        CHANGELOG.md && rm CHANGELOG.md.bak
 
     echo "Updated version to $VERSION in Cargo.toml and CHANGELOG.md"
 
-    # Update Cargo.lock
-    cargo update
+    cargo update --quiet
 }
 
 ensure_clean_master() {
@@ -162,7 +167,7 @@ create_pr() {
 
 ## Next steps
 - Merge this PR
-- Run ./scripts/release.sh create_tag $VERSION" \
+- Run ./scripts/release.sh create_tag $VERSION [--publish-crates]" \
             --head "$RELEASE_BRANCH" \
             --base "master" \
             --assignee @me \
@@ -178,7 +183,11 @@ create_pr() {
 }
 
 create_tag() {
-    ensure_clean_master
+    if [[ "$PUBLISH_CRATES" == "true" ]]; then
+        ensure_clean_master
+    else
+        ensure_clean_master
+    fi
     validate_changelog_for_tag
 
     echo "This will create and push tag v$VERSION, triggering the release workflow."
@@ -192,11 +201,22 @@ create_tag() {
     git tag -a "v$VERSION" --message "KeyWatch v$VERSION"
     git push origin "v$VERSION"
 
+    if [[ "$PUBLISH_CRATES" == "true" ]]; then
+        echo "Publishing to crates.io..."
+        cargo publish -p key-watch
+        echo "Published to crates.io!"
+    fi
+
     echo "Tag v$VERSION created and pushed!"
     echo "The release workflow should start automatically."
 }
 
 delete_tag() {
+    if [[ "$PUBLISH_CRATES" == "true" ]]; then
+        echo "Error: --publish-crates is only supported with create_tag"
+        exit 1
+    fi
+
     echo "Warning: This will delete tag v$VERSION locally and remotely."
     read -r -p "Continue? (y/N): " confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
@@ -210,7 +230,6 @@ delete_tag() {
     echo "Tag v$VERSION deleted!"
 }
 
-# Check if function exists
 if [[ "$FUNCTION" != "create_pr" && "$FUNCTION" != "create_tag" && "$FUNCTION" != "delete_tag" ]]; then
     echo "Error: Unknown function '$FUNCTION'"
     echo "Available functions: create_pr, create_tag, delete_tag"
