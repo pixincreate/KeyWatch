@@ -4,12 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-05
+
 ### Added
 
 - Binary aliases: `keywatch`, `watch` (in addition to `key-watch`)
 - Exit code modes: `--exit-mode always|critical|strict`
 - Binary integrity verification: `--verify-integrity`
 - Repository controls: `--allowed-repos`, `--blocked-repos`
+- Multiple file scanning: `--file file1.txt --file file2.txt`
+- Indian ID detectors: Aadhaar, Voter ID (EPIC), PAN Card, ABHA Health ID
 
 ### Security
 
@@ -30,6 +34,10 @@ All notable changes to this project will be documented in this file.
 - Hook repo allow/block rules are now enforced
 - Exclude globs now work correctly for directory scans
 - Runtime errors now use exit code `2` instead of `1`
+- Hook subshell bug: exit now correctly blocks commits/pushes
+- Hook detectors.toml check: removed hard CWD requirement (exe-relative works)
+- Hook error messages now use correct binary name variable
+- Duplicate file paths now deduplicated before scanning
 
 ### Removed
 
