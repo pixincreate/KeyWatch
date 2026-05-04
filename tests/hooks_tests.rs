@@ -4,7 +4,7 @@ use key_watch::hooks::{generate_pre_commit_hook, generate_pre_push_hook};
 #[test]
 fn test_hook_generation_pre_commit() {
     let options = CliOptions {
-        file: None,
+        file: vec![],
         dir: None,
         output: None,
         verbose: false,
@@ -33,7 +33,7 @@ fn test_hook_generation_pre_commit() {
 #[test]
 fn test_hook_generation_pre_push() {
     let options = CliOptions {
-        file: None,
+        file: vec![],
         dir: None,
         output: None,
         verbose: false,
@@ -61,7 +61,7 @@ fn test_hook_generation_pre_push() {
 #[test]
 fn test_hook_shell_escaping() {
     let options = CliOptions {
-        file: None,
+        file: vec![],
         dir: None,
         output: None,
         verbose: false,
@@ -83,7 +83,7 @@ fn test_hook_shell_escaping() {
 #[test]
 fn test_hook_missing_binary_path() {
     let options = CliOptions {
-        file: None,
+        file: vec![],
         dir: None,
         output: None,
         verbose: false,
@@ -109,7 +109,7 @@ fn test_hook_missing_binary_path() {
 #[test]
 fn test_hook_missing_detectors_toml() {
     let options = CliOptions {
-        file: None,
+        file: vec![],
         dir: None,
         output: None,
         verbose: false,

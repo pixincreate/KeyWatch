@@ -10,9 +10,10 @@ use clap::{ArgGroup, Parser};
         .args(&["file", "dir", "install_hook"]),
 ))]
 pub struct CliOptions {
-    /// Scan a single file
-    #[arg(short, long)]
-    pub file: Option<String>,
+    /// Scan specific file(s) - supports multiple --file flags
+    /// Example: --file file1.txt --file file2.txt
+    #[arg(short, long, alias = "files")]
+    pub file: Vec<String>,
 
     /// Scan all files in a directory (scans recursively)
     #[arg(short, long)]
