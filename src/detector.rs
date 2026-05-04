@@ -40,22 +40,22 @@ struct DetectorConfig {
     severity: String,
 }
 
-fn find_detectors_config() -> Result<std::path::PathBuf, String> {
+fn find_detectors_config() -> std::path::PathBuf {
     if let Ok(exe_path) = std::env::current_exe()
         && let Some(exe_dir) = exe_path.parent()
     {
         let config_path = exe_dir.join("detectors.toml");
         if config_path.exists() {
-            return Ok(config_path);
+            return config_path;
         }
     }
 
-    Ok(std::path::PathBuf::from("detectors.toml"))
+    std::path::PathBuf::from("detectors.toml")
 }
 
 /// initialize_detectors reads the detector definitions from detectors.toml and returns a vector of Detector.
 pub fn initialize_detectors() -> Result<Vec<Detector>, Box<dyn std::error::Error>> {
-    let config_path = find_detectors_config()?;
+    let config_path = find_detectors_config();
     let toml_contents = fs::read_to_string(&config_path)
         .map_err(|err| format!("Failed to read {}: {}", config_path.display(), err))?;
 

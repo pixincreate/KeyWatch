@@ -6,6 +6,7 @@ use clap::{ArgGroup, Parser};
 #[command(group(
     ArgGroup::new("target")
         .required(true)
+        .multiple(false)
         .args(&["file", "dir", "install_hook"]),
 ))]
 pub struct CliOptions {

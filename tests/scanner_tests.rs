@@ -239,6 +239,41 @@ fn test_exclude_pattern_filtering() {
             .any(|f| f.contains("debug.log")),
         "Should exclude *.log"
     );
+    assert_eq!(metadata.files_scanned, 1, "Should skip excluded files");
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_dot_github_directory_is_scanned() {
+    let temp_dir = temp_dir();
+    let test_dir = temp_dir.join(format!(
+        "keywatch_dotgithub_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    fs::create_dir(&test_dir).expect("Create test directory");
+    fs::create_dir_all(test_dir.join(".github")).expect("Create .github dir");
+    fs::write(test_dir.join(".github/workflow.txt"), "password=secret123").expect("Write file");
+
+    let options = CliOptions {
+        file: None,
+        dir: Some(test_dir.to_str().unwrap().to_string()),
+        output: None,
+        verbose: false,
+        allowed_repos: None,
+        blocked_repos: None,
+        exclude: None,
+        install_hook: None,
+        exit_mode: "strict".to_string(),
+        verify_integrity: false,
+    };
+
+    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    assert_eq!(metadata.files_scanned, 1, "Should scan .github files");
+    assert!(!findings.is_empty(), "Should find secrets inside .github");
 
     fs::remove_dir_all(test_dir).expect("Cleanup");
 }

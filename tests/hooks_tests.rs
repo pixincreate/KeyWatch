@@ -18,8 +18,12 @@ fn test_hook_generation_pre_commit() {
 
     let hook = generate_pre_commit_hook(&options);
     assert!(hook.contains("#!/bin/bash"), "Should be bash shebang");
-    assert!(hook.contains("key-watch"), "Should reference binary");
+    assert!(hook.contains("KEYWATCH_BIN="), "Should define binary");
     assert!(hook.contains("--exclude"), "Should pass exclude patterns");
+    assert!(
+        hook.contains("EXCLUDE_PATTERNS='*.log,*.tmp'"),
+        "Should preserve comma-separated exclude patterns"
+    );
 }
 
 #[test]
@@ -40,6 +44,10 @@ fn test_hook_generation_pre_push() {
     let hook = generate_pre_push_hook(&options);
     assert!(hook.contains("#!/bin/bash"), "Should be bash shebang");
     assert!(hook.contains("ALLOWED_REPOS"), "Should set allowed repos");
+    assert!(
+        hook.contains("CURRENT_REMOTE=$(git remote get-url --push origin"),
+        "Should enforce repo restrictions"
+    );
 }
 
 #[test]
@@ -59,7 +67,7 @@ fn test_hook_shell_escaping() {
 
     let hook = generate_pre_push_hook(&options);
     assert!(
-        !hook.contains("test'repos123"),
+        hook.contains("'ghp_test'\"'\"'repos123'"),
         "Should escape single quotes"
     );
 }
@@ -85,7 +93,7 @@ fn test_hook_missing_binary_path() {
         "Hook should verify binary is on PATH"
     );
     assert!(
-        hook.contains("key-watch not found"),
+        hook.contains("$KEYWATCH_BIN not found on PATH"),
         "Hook should report missing binary error"
     );
 }
@@ -107,7 +115,7 @@ fn test_hook_missing_detectors_toml() {
 
     let hook = generate_pre_commit_hook(&options);
     assert!(
-        hook.contains("detectors.toml not found"),
-        "Hook should check config"
+        !hook.contains("detectors.toml not found"),
+        "Hook should rely on binary config lookup"
     );
 }

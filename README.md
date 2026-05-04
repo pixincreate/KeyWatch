@@ -14,6 +14,8 @@ cargo install --git https://github.com/pixincreate/KeyWatch.git
 # Manual: download binary, add to PATH
 ```
 
+Requires Rust 1.85+ (edition 2024) when building from source.
+
 ## Usage
 
 ```sh
@@ -50,10 +52,11 @@ keywatch --install-hook pre-push
 
 ## Exit Codes
 
-| Code | Meaning |
-|------|---------|
-| 0 | No secrets found (or `--exit-mode always`) |
-| 1 | Secret found (in strict/critical mode) |
+| Code | Meaning                                    |
+| ---- | ------------------------------------------ |
+| 0    | No secrets found (or `--exit-mode always`) |
+| 1    | Secret found (in strict/critical mode)     |
+| 2    | Runtime/configuration error                |
 
 ## Default Behavior
 

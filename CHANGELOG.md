@@ -21,11 +21,15 @@ All notable changes to this project will be documented in this file.
 - Simplified README (~60 lines)
 - User-friendly output by default (summary, not JSON)
 - Default exit mode: strict
+- Source builds now require Rust 1.85+ (edition 2024)
 
 ### Fixed
 
 - Portable detector loading (exe-relative path)
 - Filenames with spaces handling
+- Hook repo allow/block rules are now enforced
+- Exclude globs now work correctly for directory scans
+- Runtime errors now use exit code `2` instead of `1`
 
 ### Removed
 

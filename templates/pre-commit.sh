@@ -2,20 +2,15 @@
 # KeyWatch pre-commit hook
 # Installed by KeyWatch
 
-KEYWATCH_BIN='{{binary_name}}'
-EXCLUDE_PATTERNS='{{exclude_patterns}}'
+KEYWATCH_BIN={{binary_name}}
+EXCLUDE_PATTERNS={{exclude_patterns}}
 
 if ! command -v "$KEYWATCH_BIN" >/dev/null 2>&1; then
-    echo "Error: key-watch not found on PATH" >&2
+    echo "Error: $KEYWATCH_BIN not found on PATH" >&2
     exit 1
 fi
 
-if [ ! -f "detectors.toml" ]; then
-    echo "Error: detectors.toml not found in current directory" >&2
-    exit 1
-fi
-
-git diff --cached --name-only | while IFS= read -r file; do
+while IFS= read -r -d '' file; do
     if [ -z "$file" ]; then
         continue
     fi
@@ -33,6 +28,6 @@ git diff --cached --name-only | while IFS= read -r file; do
     fi
     echo "Error: key-watch failed on $file (exit code: $EXIT_CODE)" >&2
     exit 1
-done
+done < <(git diff --cached --name-only -z)
 
 exit 0

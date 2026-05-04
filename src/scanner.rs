@@ -3,6 +3,7 @@ use crate::detector::initialize_detectors;
 use crate::report::{Finding, ScanMetadata};
 use glob::Pattern;
 use std::fs;
+use std::path::Path;
 
 pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), String> {
     let mut findings = Vec::new();
@@ -40,14 +41,13 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
         .unwrap_or_default();
 
     for path in target_paths {
-        if path.contains(".git") {
+        if path_has_git_dir(Path::new(&path)) {
             excluded_files.push(path);
             continue;
         }
 
-        let should_exclude = exclude_patterns
-            .iter()
-            .any(|pattern| pattern.matches(&path));
+        let should_exclude =
+            matches_exclude_patterns(&path, options.dir.as_deref(), &exclude_patterns);
 
         if should_exclude {
             excluded_files.push(path);
@@ -113,10 +113,31 @@ fn collect_files(dir_path: &str, files: &mut Vec<String>) {
                     files.push(path_str.to_string());
                 }
             } else if path.is_dir()
+                && path.file_name().is_none_or(|name| name != ".git")
                 && let Some(path_str) = path.to_str()
             {
                 collect_files(path_str, files);
             }
         }
     }
+}
+
+fn path_has_git_dir(path: &Path) -> bool {
+    path.components()
+        .any(|component| component.as_os_str() == ".git")
+}
+
+fn matches_exclude_patterns(path: &str, scan_root: Option<&str>, patterns: &[Pattern]) -> bool {
+    let path = Path::new(path);
+
+    patterns.iter().any(|pattern| {
+        pattern.matches_path(path)
+            || path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| pattern.matches(name))
+            || scan_root
+                .and_then(|root| path.strip_prefix(root).ok())
+                .is_some_and(|relative| pattern.matches_path(relative))
+    })
 }
