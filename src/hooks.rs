@@ -27,7 +27,7 @@ fn build_repo_section(allowed: Option<&str>, blocked: Option<&str>) -> String {
 }
 
 fn render_pre_push(options: &CliOptions) -> String {
-    let binary_name = hook_binary_name();
+    let binary_name = shell_escape(&hook_binary_name());
     let repo_section = build_repo_section(
         options.allowed_repos.as_deref(),
         options.blocked_repos.as_deref(),
@@ -39,7 +39,7 @@ fn render_pre_push(options: &CliOptions) -> String {
 }
 
 fn render_pre_commit(options: &CliOptions) -> String {
-    let binary_name = hook_binary_name();
+    let binary_name = shell_escape(&hook_binary_name());
     let exclude_patterns = options
         .exclude
         .as_deref()

@@ -19,6 +19,10 @@ fn test_hook_generation_pre_commit() {
     let hook = generate_pre_commit_hook(&options);
     assert!(hook.contains("#!/bin/bash"), "Should be bash shebang");
     assert!(hook.contains("KEYWATCH_BIN="), "Should define binary");
+    assert!(
+        hook.contains("KEYWATCH_BIN='"),
+        "Should shell-quote binary assignment"
+    );
     assert!(hook.contains("--exclude"), "Should pass exclude patterns");
     assert!(
         hook.contains("EXCLUDE_PATTERNS='*.log,*.tmp'"),
@@ -43,6 +47,10 @@ fn test_hook_generation_pre_push() {
 
     let hook = generate_pre_push_hook(&options);
     assert!(hook.contains("#!/bin/bash"), "Should be bash shebang");
+    assert!(
+        hook.contains("KEYWATCH_BIN='"),
+        "Should shell-quote binary assignment"
+    );
     assert!(hook.contains("ALLOWED_REPOS"), "Should set allowed repos");
     assert!(
         hook.contains("CURRENT_REMOTE=$(git remote get-url --push origin"),

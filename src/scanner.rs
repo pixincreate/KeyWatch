@@ -54,8 +54,6 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
             continue;
         }
 
-        files_scanned += 1;
-
         let full_content = match fs::read(&path) {
             Ok(bytes) => match String::from_utf8(bytes) {
                 Ok(content) => content,
@@ -63,6 +61,8 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
             },
             Err(_) => continue,
         };
+
+        files_scanned += 1;
 
         for detector in &multiline_detectors {
             if let Some(mat) = detector.regex.find(&full_content) {
