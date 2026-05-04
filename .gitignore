@@ -1,1 +1,9 @@
+# AI
+/.sisyphus
+
+# Rust builds
 /target
+
+# Environment files
+.env
+.envrc
