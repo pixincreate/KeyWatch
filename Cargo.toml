@@ -1,13 +1,27 @@
 [package]
 name = "key-watch"
 version = "1.0.0"
-edition = "2021"
+edition = "2024"
+rust-version = "1.85"
 authors = ["Pa1Nark <pa1nark@pixincreate.dev>"]
 license = "GPL-3.0"
 
+[[bin]]
+name = "key-watch"
+path = "src/main.rs"
+
+[[bin]]
+name = "keywatch"
+path = "src/bin/keywatch.rs"
+
+[[bin]]
+name = "watch"
+path = "src/bin/watch.rs"
+
 [dependencies]
-clap = { version = "4.5.40", features = ["derive"] }
-regex = "1.11.1"
-toml = "0.8.23"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.140"
+clap = { version = "4.6.1", features = ["derive"] }
+regex = "1.12.3"
+toml = "1.1.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+glob = "0.3.3"

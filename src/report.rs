@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 /// Represents a single secret finding.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct Finding {
     pub file_path: String,
     pub line_number: usize,
@@ -12,20 +12,11 @@ pub struct Finding {
 }
 
 /// Metadata about the scanning performed.
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct ScanMetadata {
     pub files_scanned: usize,
     pub total_lines: usize,
     pub excluded_files: Vec<String>,
-}
-
-/// ReportMetadata bundles scan metadata with scan_time.
-#[derive(Serialize)]
-pub struct ReportMetadata {
-    pub files_scanned: usize,
-    pub total_lines: usize,
-    pub excluded_files: Vec<String>,
-    pub scan_time: String,
 }
 
 /// The overall report.
@@ -33,23 +24,43 @@ pub struct ReportMetadata {
 pub struct Report {
     pub status: String,
     pub findings: Vec<Finding>,
-    pub scan_metadata: ReportMetadata,
+    pub files_scanned: usize,
+    pub total_lines: usize,
+    pub excluded_files: Vec<String>,
+    pub scan_time: String,
 }
 
 /// create_report builds the final JSON report based on findings and metadata.
-pub fn create_report(findings: Vec<Finding>, metadata: ScanMetadata, scan_time: String) -> String {
+pub fn create_report(
+    findings: Vec<Finding>,
+    metadata: ScanMetadata,
+    scan_time: String,
+) -> Result<String, serde_json::Error> {
     let status = if findings.is_empty() { "PASS" } else { "FAIL" };
-    let report_metadata = ReportMetadata {
+    let report = Report {
+        status: status.into(),
+        findings,
         files_scanned: metadata.files_scanned,
         total_lines: metadata.total_lines,
         excluded_files: metadata.excluded_files,
         scan_time,
     };
-    let report = Report {
-        status: status.to_string(),
-        findings,
-        scan_metadata: report_metadata,
-    };
 
-    serde_json::to_string_pretty(&report).unwrap()
+    serde_json::to_string_pretty(&report)
+}
+
+pub fn get_severity_counts(findings: &[Finding]) -> (usize, usize, usize) {
+    let high = findings
+        .iter()
+        .filter(|finding| finding.severity == "HIGH")
+        .count();
+    let medium = findings
+        .iter()
+        .filter(|finding| finding.severity == "MEDIUM")
+        .count();
+    let low = findings
+        .iter()
+        .filter(|finding| finding.severity == "LOW")
+        .count();
+    (high, medium, low)
 }
