@@ -4,11 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Simplified distribution to a single shipped binary: `key-watch`
+- Git hook installation now supports first-class global hooks via `core.hooksPath`
+- Installation guidance is now cargo-first, with manual GitHub Releases setup documented step by step
+
+### Added
+
+- Hook uninstall support for local and global Git hooks
+- `--init bash|zsh|fish|posix` to print shell aliases for `keywatch` and `kw`
+- README now documents uninstall steps for both `cargo install` and manual GitHub Releases installs
+
+### Removed
+
+- Duplicate Cargo binary wrappers for `keywatch` and `watch`
+- `scripts/install.sh` in favor of documented `cargo install` and manual release-binary setup
+
 ## [1.1.0] - 2026-05-05
 
 ### Added
 
-- Binary aliases: `keywatch`, `watch` (in addition to `key-watch`)
+- `keywatch` and `watch` aliases for `key-watch`
 - Exit code modes: `--exit-mode always|critical|strict`
 - Binary integrity verification: `--verify-integrity`
 - Repository controls: `--allowed-repos`, `--blocked-repos`
