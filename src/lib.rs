@@ -88,6 +88,10 @@ fn install_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
 
     let install_target = resolve_hook_install_target(hook_type, options.global)?;
 
+    if !install_target.is_global {
+        ensure_local_hook_target_is_safe_to_create(&install_target.path)?;
+    }
+
     if let Some(parent) = install_target.path.parent() {
         fs::create_dir_all(parent).map_err(|err| {
             format!(
@@ -143,9 +147,11 @@ fn uninstall_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
         return Ok(());
     }
 
-    if install_target.is_global {
-        ensure_global_hook_target_is_safe(&install_target.path)?;
-    }
+    ensure_hook_target_is_keywatch_managed(
+        &install_target.path,
+        install_target.is_global,
+        "remove",
+    )?;
 
     fs::remove_file(&install_target.path).map_err(|err| {
         format!(
@@ -245,7 +251,7 @@ fn resolve_hook_install_target(hook_type: &str, global: bool) -> Result<HookInst
 
 fn read_global_hooks_path() -> Result<Option<PathBuf>, String> {
     let output = Command::new("git")
-        .args(["config", "--global", "--get", "core.hooksPath"])
+        .args(["config", "--global", "--path", "--get", "core.hooksPath"])
         .output()
         .map_err(|err| format!("Failed to read git global core.hooksPath: {}", err))?;
 
@@ -301,47 +307,75 @@ fn managed_global_hooks_dir(
 }
 
 fn configure_global_hooks_path(hooks_dir: &Path) -> Result<(), String> {
-    let status = Command::new("git")
+    let output = Command::new("git")
         .args([
             "config",
             "--global",
             "core.hooksPath",
             hooks_dir.to_string_lossy().as_ref(),
         ])
-        .status()
+        .output()
         .map_err(|err| format!("Failed to configure git global core.hooksPath: {}", err))?;
 
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Err(format!(
-            "git config --global core.hooksPath {} failed",
-            hooks_dir.display()
+            "git config --global core.hooksPath {} failed: {}",
+            hooks_dir.display(),
+            stderr
         ))
     }
 }
 
 fn ensure_global_hook_target_is_safe(hook_path: &Path) -> Result<(), String> {
+    ensure_hook_target_is_keywatch_managed(hook_path, true, "overwrite")
+}
+
+fn ensure_local_hook_target_is_safe_to_create(hook_path: &Path) -> Result<(), String> {
+    let git_dir = Path::new(".git");
+
+    if !git_dir.exists() || !git_dir.is_dir() {
+        return Err(
+            "Local hook installation requires running inside a git repository with a .git directory"
+                .to_string(),
+        );
+    }
+
+    if hook_path.exists() {
+        ensure_hook_target_is_keywatch_managed(hook_path, false, "overwrite")?;
+    }
+
+    Ok(())
+}
+
+fn ensure_hook_target_is_keywatch_managed(
+    hook_path: &Path,
+    is_global: bool,
+    action: &str,
+) -> Result<(), String> {
     if !hook_path.exists() {
         return Ok(());
     }
 
     let existing_hook = fs::read_to_string(hook_path).map_err(|err| {
         format!(
-            "Failed to inspect existing global hook '{}': {}",
+            "Failed to inspect existing hook '{}': {}",
             hook_path.display(),
             err
         )
     })?;
 
     if existing_hook.contains("# Installed by KeyWatch") {
-        Ok(())
-    } else {
-        Err(format!(
-            "Refusing to overwrite existing global hook at '{}'. Merge it manually or choose a different global hooks directory.",
-            hook_path.display()
-        ))
+        return Ok(());
     }
+
+    let scope = if is_global { "global" } else { "local" };
+    Err(format!(
+        "Refusing to {action} existing {scope} hook at '{}'. Merge it manually or remove it yourself.",
+        hook_path.display()
+    ))
 }
 
 fn verify_binary_integrity() -> Result<(), String> {
@@ -386,8 +420,21 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &str) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{ensure_global_hook_target_is_safe, managed_global_hooks_dir};
+    use super::{
+        ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
+        managed_global_hooks_dir,
+    };
     use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(name: &str) -> std::path::PathBuf {
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("System time should be after Unix epoch")
+            .as_millis();
+        std::env::temp_dir().join(format!("keywatch_{name}_{timestamp}"))
+    }
 
     #[test]
     fn test_managed_global_hooks_dir_prefers_xdg() {
@@ -415,7 +462,7 @@ mod tests {
 
     #[test]
     fn test_global_hook_safety_allows_keywatch_hook() {
-        let temp_dir = std::env::temp_dir().join("keywatch-global-hook-safe");
+        let temp_dir = unique_temp_dir("global_hook_safe");
         fs::create_dir_all(&temp_dir).expect("create temp dir");
         let hook_path = temp_dir.join("pre-commit");
 
@@ -429,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_global_hook_safety_rejects_foreign_hook() {
-        let temp_dir = std::env::temp_dir().join("keywatch-global-hook-foreign");
+        let temp_dir = unique_temp_dir("global_hook_foreign");
         fs::create_dir_all(&temp_dir).expect("create temp dir");
         let hook_path = temp_dir.join("pre-commit");
 
@@ -438,6 +485,45 @@ mod tests {
         let error = ensure_global_hook_target_is_safe(&hook_path)
             .expect_err("foreign hook should be rejected");
         assert!(error.contains("Refusing to overwrite existing global hook"));
+
+        fs::remove_file(&hook_path).expect("remove hook file");
+        fs::remove_dir_all(&temp_dir).expect("remove temp dir");
+    }
+
+    #[test]
+    fn test_local_hook_install_requires_git_dir() {
+        let temp_dir = unique_temp_dir("local_hook_missing_git");
+        fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+        let original_dir = std::env::current_dir().expect("read current dir");
+        std::env::set_current_dir(&temp_dir).expect("enter temp dir");
+
+        let missing_git_hook_path = PathBuf::from(".git/hooks/pre-commit");
+        let error = ensure_local_hook_target_is_safe_to_create(&missing_git_hook_path)
+            .expect_err("local install should fail outside a git repo");
+
+        std::env::set_current_dir(original_dir).expect("restore current dir");
+        assert!(error.contains("requires running inside a git repository"));
+
+        fs::remove_dir_all(&temp_dir).expect("remove temp dir");
+    }
+
+    #[test]
+    fn test_local_hook_safety_rejects_foreign_hook() {
+        let temp_dir = unique_temp_dir("local_hook_foreign");
+        let git_hooks_dir = temp_dir.join(".git/hooks");
+        fs::create_dir_all(&git_hooks_dir).expect("create hooks dir");
+        let hook_path = git_hooks_dir.join("pre-commit");
+        fs::write(&hook_path, "#!/bin/bash\necho custom hook\n").expect("write hook file");
+
+        let original_dir = std::env::current_dir().expect("read current dir");
+        std::env::set_current_dir(&temp_dir).expect("enter temp dir");
+
+        let error = ensure_local_hook_target_is_safe_to_create(Path::new(".git/hooks/pre-commit"))
+            .expect_err("foreign local hook should be rejected");
+
+        std::env::set_current_dir(original_dir).expect("restore current dir");
+        assert!(error.contains("Refusing to overwrite existing local hook"));
 
         fs::remove_file(&hook_path).expect("remove hook file");
         fs::remove_dir_all(&temp_dir).expect("remove temp dir");
