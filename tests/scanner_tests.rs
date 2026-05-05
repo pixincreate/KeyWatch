@@ -27,6 +27,9 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -58,6 +61,9 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -90,6 +96,9 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -123,6 +132,9 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -150,6 +162,9 @@ fn test_multiple_detections_in_line() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -189,6 +204,9 @@ fn test_directory_scan_with_exclusions() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -227,6 +245,9 @@ fn test_exclude_pattern_filtering() {
         blocked_repos: None,
         exclude: Some("*.log".to_string()),
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -267,6 +288,9 @@ fn test_dot_github_directory_is_scanned() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -293,6 +317,9 @@ fn test_scan_no_secrets() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -320,6 +347,9 @@ fn test_non_utf8_file_handling() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -356,6 +386,9 @@ fn test_multiple_files_scan() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -388,6 +421,9 @@ fn test_detect_aadhaar() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -422,6 +458,9 @@ fn test_detect_voter_id() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -453,6 +492,9 @@ fn test_detect_pan_card() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -484,6 +526,9 @@ fn test_detect_abha() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
@@ -516,6 +561,9 @@ fn test_multiple_indian_ids() {
         blocked_repos: None,
         exclude: None,
         install_hook: None,
+        uninstall_hook: None,
+        global: false,
+        init: None,
         exit_mode: "strict".to_string(),
         verify_integrity: false,
     };
