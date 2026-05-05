@@ -7,7 +7,12 @@ use clap::{ArgGroup, Parser};
     ArgGroup::new("target")
         .required(true)
         .multiple(false)
-        .args(&["file", "dir", "install_hook"]),
+        .args(&["file", "dir", "install_hook", "uninstall_hook", "init"]),
+))]
+#[command(group(
+    ArgGroup::new("hook_action")
+        .multiple(false)
+        .args(&["install_hook", "uninstall_hook"]),
 ))]
 pub struct CliOptions {
     /// Scan specific file(s) - supports multiple --file flags
@@ -43,8 +48,26 @@ pub struct CliOptions {
 
     /// Install KeyWatch as a git hook
     /// Options: pre-push, pre-commit
-    #[arg(long, value_parser = ["pre-push", "pre-commit"])]
+    #[arg(long, value_parser = ["pre-push", "pre-commit"], conflicts_with = "uninstall_hook")]
     pub install_hook: Option<String>,
+
+    /// Remove a KeyWatch git hook
+    /// Options: pre-push, pre-commit
+    #[arg(long, value_parser = ["pre-push", "pre-commit"], conflicts_with = "install_hook")]
+    pub uninstall_hook: Option<String>,
+
+    /// Install the selected hook globally using git core.hooksPath
+    #[arg(
+        long,
+        conflicts_with_all = ["file", "dir", "init"],
+        requires = "hook_action",
+        default_value_t = false
+    )]
+    pub global: bool,
+
+    /// Print shell aliases for keywatch and kw
+    #[arg(long, value_parser = ["bash", "zsh", "fish", "posix"])]
+    pub init: Option<String>,
 
     /// Exit code behavior
     /// Options:
