@@ -24,6 +24,7 @@ pub const EXIT_CODE_RUNTIME_ERROR: i32 = 2;
 
 pub fn run_cli() -> Result<(), String> {
     let options = CliOptions::parse();
+    options.validate()?;
 
     match options.command {
         Command::Scan(args) => run_scan_command(&args),
@@ -128,7 +129,7 @@ fn install_hook(args: &HookInstallArgs) -> Result<(), String> {
 
 fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), String> {
     let hook_type_str = args.hook_type.as_str();
-    let install_target = resolve_hook_install_target(hook_type_str, args.global)?;
+    let install_target = resolve_hook_uninstall_target(hook_type_str, args.global)?;
 
     if !install_target.path.exists() {
         let scope = if install_target.is_global {
@@ -191,14 +192,15 @@ struct HookInstallTarget {
 }
 
 impl HookInstallTarget {
-    fn local(hook_type: &str) -> Self {
-        let hooks_dir = PathBuf::from(".git/hooks");
-        Self {
+    fn local(hook_type: &str) -> Result<Self, String> {
+        let git_dir = resolve_git_dir()?;
+        let hooks_dir = git_dir.join("hooks");
+        Ok(Self {
             path: hooks_dir.join(hook_type),
             hooks_dir,
             is_global: false,
             configured_global_path: false,
-        }
+        })
     }
 
     fn global(hook_type: &str) -> Result<Self, String> {
@@ -242,8 +244,65 @@ fn resolve_hook_install_target(hook_type: &str, global: bool) -> Result<HookInst
     if global {
         HookInstallTarget::global(hook_type)
     } else {
-        Ok(HookInstallTarget::local(hook_type))
+        HookInstallTarget::local(hook_type)
     }
+}
+
+fn resolve_hook_uninstall_target(
+    hook_type: &str,
+    global: bool,
+) -> Result<HookInstallTarget, String> {
+    if global {
+        let hooks_dir = match read_global_hooks_path()? {
+            Some(path) => path,
+            None => managed_global_hooks_dir(
+                env::var_os("XDG_CONFIG_HOME"),
+                env::var_os("HOME"),
+                env::var_os("APPDATA"),
+                env::var_os("USERPROFILE"),
+            )?,
+        };
+
+        Ok(HookInstallTarget {
+            path: hooks_dir.join(hook_type),
+            hooks_dir,
+            is_global: true,
+            configured_global_path: false,
+        })
+    } else {
+        HookInstallTarget::local(hook_type)
+    }
+}
+
+fn resolve_git_dir() -> Result<PathBuf, String> {
+    let output = ProcessCommand::new("git")
+        .args(["rev-parse", "--git-path", "hooks"])
+        .output()
+        .map_err(|err| format!("Failed to resolve git hooks directory: {}", err))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "Local hook installation requires running inside a git repository".to_string()
+        } else {
+            format!("Local hook installation requires running inside a git repository: {stderr}")
+        });
+    }
+
+    let hooks_path = String::from_utf8(output.stdout)
+        .map_err(|err| format!("Invalid UTF-8 from git rev-parse output: {}", err))?
+        .trim()
+        .to_string();
+
+    if hooks_path.is_empty() {
+        return Err("Failed to resolve git hooks directory".to_string());
+    }
+
+    let hooks_dir = PathBuf::from(hooks_path);
+    Ok(hooks_dir
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or(hooks_dir))
 }
 
 fn read_global_hooks_path() -> Result<Option<PathBuf>, String> {
@@ -331,14 +390,7 @@ fn ensure_global_hook_target_is_safe(hook_path: &Path) -> Result<(), String> {
 }
 
 fn ensure_local_hook_target_is_safe_to_create(hook_path: &Path) -> Result<(), String> {
-    let git_dir = Path::new(".git");
-
-    if !git_dir.exists() || !git_dir.is_dir() {
-        return Err(
-            "Local hook installation requires running inside a git repository with a .git directory"
-                .to_string(),
-        );
-    }
+    resolve_git_dir()?;
 
     if hook_path.exists() {
         ensure_hook_target_is_keywatch_managed(hook_path, false, "overwrite")?;
@@ -418,10 +470,11 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
 mod tests {
     use super::{
         ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
-        managed_global_hooks_dir,
+        managed_global_hooks_dir, resolve_hook_uninstall_target,
     };
+    use std::env;
     use std::fs;
-    use std::path::{Path, PathBuf};
+    use std::process::Command;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn unique_temp_dir(name: &str) -> std::path::PathBuf {
@@ -430,6 +483,16 @@ mod tests {
             .expect("System time should be after Unix epoch")
             .as_millis();
         std::env::temp_dir().join(format!("keywatch_{name}_{timestamp}"))
+    }
+
+    fn init_git_repo(path: &std::path::Path) {
+        fs::create_dir_all(path).expect("create repo dir");
+        let status = Command::new("git")
+            .args(["init", "--quiet"])
+            .current_dir(path)
+            .status()
+            .expect("run git init");
+        assert!(status.success(), "git init should succeed");
     }
 
     #[test]
@@ -487,19 +550,11 @@ mod tests {
     }
 
     #[test]
-    fn test_local_hook_install_requires_git_dir() {
+    fn test_git_init_creates_hooks_dir() {
         let temp_dir = unique_temp_dir("local_hook_missing_git");
-        fs::create_dir_all(&temp_dir).expect("create temp dir");
+        init_git_repo(&temp_dir);
 
-        let original_dir = std::env::current_dir().expect("read current dir");
-        std::env::set_current_dir(&temp_dir).expect("enter temp dir");
-
-        let missing_git_hook_path = PathBuf::from(".git/hooks/pre-commit");
-        let error = ensure_local_hook_target_is_safe_to_create(&missing_git_hook_path)
-            .expect_err("local install should fail outside a git repo");
-
-        std::env::set_current_dir(original_dir).expect("restore current dir");
-        assert!(error.contains("requires running inside a git repository"));
+        assert!(temp_dir.join(".git/hooks").exists());
 
         fs::remove_dir_all(&temp_dir).expect("remove temp dir");
     }
@@ -507,21 +562,36 @@ mod tests {
     #[test]
     fn test_local_hook_safety_rejects_foreign_hook() {
         let temp_dir = unique_temp_dir("local_hook_foreign");
-        let git_hooks_dir = temp_dir.join(".git/hooks");
+        init_git_repo(&temp_dir);
+        let git_dir = temp_dir.join(".git");
+        let git_hooks_dir = git_dir.join("hooks");
         fs::create_dir_all(&git_hooks_dir).expect("create hooks dir");
         let hook_path = git_hooks_dir.join("pre-commit");
         fs::write(&hook_path, "#!/bin/bash\necho custom hook\n").expect("write hook file");
 
-        let original_dir = std::env::current_dir().expect("read current dir");
-        std::env::set_current_dir(&temp_dir).expect("enter temp dir");
-
-        let error = ensure_local_hook_target_is_safe_to_create(Path::new(".git/hooks/pre-commit"))
+        let error = ensure_local_hook_target_is_safe_to_create(&hook_path)
             .expect_err("foreign local hook should be rejected");
-
-        std::env::set_current_dir(original_dir).expect("restore current dir");
         assert!(error.contains("Refusing to overwrite existing local hook"));
 
         fs::remove_file(&hook_path).expect("remove hook file");
         fs::remove_dir_all(&temp_dir).expect("remove temp dir");
+    }
+
+    #[test]
+    fn test_global_uninstall_target_does_not_configure_missing_hooks_path() {
+        let install_target = resolve_hook_uninstall_target("pre-commit", true)
+            .expect("global uninstall target should resolve");
+        let expected_hooks_dir = managed_global_hooks_dir(
+            env::var_os("XDG_CONFIG_HOME"),
+            env::var_os("HOME"),
+            env::var_os("APPDATA"),
+            env::var_os("USERPROFILE"),
+        )
+        .expect("managed hooks dir should resolve");
+
+        assert!(install_target.is_global);
+        assert!(!install_target.configured_global_path);
+        assert_eq!(install_target.hooks_dir, expected_hooks_dir);
+        assert_eq!(install_target.path, expected_hooks_dir.join("pre-commit"));
     }
 }

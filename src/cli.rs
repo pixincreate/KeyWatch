@@ -8,6 +8,15 @@ pub struct CliOptions {
     pub command: Command,
 }
 
+impl CliOptions {
+    pub fn validate(&self) -> Result<(), String> {
+        match &self.command {
+            Command::Hook(args) => args.validate(),
+            _ => Ok(()),
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Command {
     /// Scan files or directories
@@ -55,6 +64,15 @@ pub struct HookArgs {
     pub action: HookAction,
 }
 
+impl HookArgs {
+    fn validate(&self) -> Result<(), String> {
+        match &self.action {
+            HookAction::Install(args) => args.validate(),
+            HookAction::Uninstall(_) => Ok(()),
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum HookAction {
     /// Install a KeyWatch git hook
@@ -85,6 +103,28 @@ pub struct HookInstallArgs {
     /// Paths to exclude from scanning - pre-commit only
     #[arg(long)]
     pub exclude: Option<String>,
+}
+
+impl HookInstallArgs {
+    fn validate(&self) -> Result<(), String> {
+        match self.hook_type {
+            HookType::PreCommit => {
+                if self.allowed_repos.is_some() || self.blocked_repos.is_some() {
+                    return Err(
+                        "--allowed-repos and --blocked-repos are only supported for pre-push hooks"
+                            .to_string(),
+                    );
+                }
+            }
+            HookType::PrePush => {
+                if self.exclude.is_some() {
+                    return Err("--exclude is only supported for pre-commit hooks".to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Args, Debug)]

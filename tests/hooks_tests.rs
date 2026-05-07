@@ -119,6 +119,48 @@ fn test_cli_global_uninstall_hook_requires_hook_target() {
 }
 
 #[test]
+fn test_cli_pre_commit_rejects_repo_filters() {
+    use clap::Parser;
+
+    let options = CliOptions::try_parse_from([
+        "key-watch",
+        "hook",
+        "install",
+        "pre-commit",
+        "--allowed-repos",
+        "github.com/example/repo",
+    ])
+    .expect("clap parsing should succeed");
+
+    let error = options
+        .validate()
+        .expect_err("pre-commit should reject repo filters");
+    assert!(
+        error.contains("--allowed-repos and --blocked-repos are only supported for pre-push hooks")
+    );
+}
+
+#[test]
+fn test_cli_pre_push_rejects_exclude() {
+    use clap::Parser;
+
+    let options = CliOptions::try_parse_from([
+        "key-watch",
+        "hook",
+        "install",
+        "pre-push",
+        "--exclude",
+        "target",
+    ])
+    .expect("clap parsing should succeed");
+
+    let error = options
+        .validate()
+        .expect_err("pre-push should reject exclude patterns");
+    assert!(error.contains("--exclude is only supported for pre-commit hooks"));
+}
+
+#[test]
 fn test_cli_init_conflicts_with_scan_targets() {
     use clap::Parser;
 
