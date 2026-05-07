@@ -9,11 +9,12 @@ All notable changes to this project will be documented in this file.
 - Simplified distribution to a single shipped binary: `key-watch`
 - Git hook installation now supports first-class global hooks via `core.hooksPath`
 - Installation guidance is now cargo-first, with manual GitHub Releases setup documented step by step
+- CLI moved from flat top-level flags to subcommands: `scan`, `hook install|uninstall`, `init`, and `verify-integrity`
 
 ### Added
 
 - Hook uninstall support for local and global Git hooks
-- `--init bash|zsh|fish|posix` to print shell aliases for `keywatch` and `kw`
+- `init bash|zsh|fish|posix` to print shell aliases for `keywatch` and `kw`
 - README now documents uninstall steps for both `cargo install` and manual GitHub Releases installs
 
 ### Removed
@@ -26,10 +27,10 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - `keywatch` and `watch` aliases for `key-watch`
-- Exit code modes: `--exit-mode always|critical|strict`
-- Binary integrity verification: `--verify-integrity`
+- Exit code modes: `scan --exit-mode always|critical|strict`
+- Binary integrity verification: `verify-integrity`
 - Repository controls: `--allowed-repos`, `--blocked-repos`
-- Multiple file scanning: `--file file1.txt --file file2.txt`
+- Multiple file and directory scanning via `scan <PATH>...`
 - Indian ID detectors: Aadhaar, Voter ID (EPIC), PAN Card, ABHA Health ID
 
 ### Security

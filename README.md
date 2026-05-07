@@ -11,17 +11,17 @@ cargo install key-watch
 key-watch --version
 
 # Enable aliases for your current shell session
-eval "$(key-watch --init bash)"
+eval "$(key-watch init bash)"
 ```
 
 To make aliases persistent, add the init line to your shell config file:
 
 ```sh
 # bash
-echo 'eval "$(key-watch --init bash)"' >> ~/.bashrc
+echo 'eval "$(key-watch init bash)"' >> ~/.bashrc
 
 # zsh
-echo 'eval "$(key-watch --init zsh)"' >> ~/.zshrc
+echo 'eval "$(key-watch init zsh)"' >> ~/.zshrc
 ```
 
 ### Manual install from GitHub Releases
@@ -30,7 +30,7 @@ echo 'eval "$(key-watch --init zsh)"' >> ~/.zshrc
 2. Move it to a directory on your `PATH`, for example `~/.local/bin`.
 3. Make it executable.
 4. Verify it runs.
-5. Enable aliases with `--init`.
+5. Enable aliases with `init`.
 
 ```sh
 mkdir -p ~/.local/bin
@@ -39,13 +39,13 @@ chmod +x ~/.local/bin/key-watch
 ~/.local/bin/key-watch --version
 
 # Enable aliases for current shell session
-eval "$(~/.local/bin/key-watch --init bash)"
+eval "$(~/.local/bin/key-watch init bash)"
 ```
 
 Requires Rust 1.85+ (edition 2024) when building from source.
 
 The canonical command is `key-watch`.
-`keywatch` and `kw` are optional shell aliases exposed via `key-watch --init ...`.
+`keywatch` and `kw` are optional shell aliases exposed via `key-watch init ...`.
 
 ## Uninstall
 
@@ -59,10 +59,10 @@ If you added aliases to your shell config, remove the init line you added earlie
 
 ```sh
 # bash
-sed -i.bak '/key-watch --init bash/d' ~/.bashrc
+sed -i.bak '/key-watch init bash/d' ~/.bashrc
 
 # zsh
-sed -i.bak '/key-watch --init zsh/d' ~/.zshrc
+sed -i.bak '/key-watch init zsh/d' ~/.zshrc
 ```
 
 ### If installed manually from GitHub Releases
@@ -83,64 +83,66 @@ source ~/.bashrc
 
 ```sh
 # Scan a file
-key-watch --file secrets.txt
+key-watch scan secrets.txt
 
 # Scan a directory
-key-watch --dir .
+key-watch scan .
 
 # Verbose output (JSON)
-key-watch --file secrets.txt --verbose
+key-watch scan secrets.txt --verbose
 
 # Install git hook
-key-watch --install-hook pre-commit
-key-watch --install-hook pre-push
+key-watch hook install pre-commit
+key-watch hook install pre-push
 
 # Remove git hook
-key-watch --uninstall-hook pre-commit
-key-watch --uninstall-hook pre-push
+key-watch hook uninstall pre-commit
+key-watch hook uninstall pre-push
 
 # Install git hook globally via core.hooksPath
-key-watch --install-hook pre-commit --global
-key-watch --install-hook pre-push --global
+key-watch hook install pre-commit --global
+key-watch hook install pre-push --global
 
 # Remove global hook
-key-watch --uninstall-hook pre-commit --global
-key-watch --uninstall-hook pre-push --global
+key-watch hook uninstall pre-commit --global
+key-watch hook uninstall pre-push --global
 
 # Print shell aliases
-eval "$(key-watch --init bash)"
+eval "$(key-watch init bash)"
+
+# Verify binary integrity
+key-watch verify-integrity
 ```
 
 ## Options
 
-- `--file <path>` - Scan one or more files (repeat the flag)
-- `--dir <path>` - Scan a directory recursively
-- `--output <path>` - Save report to file
-- `--verbose` - Print full JSON output
-- `--exclude <patterns>` - Comma-separated glob patterns to exclude
-- `--exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH only), `strict` (fail on any finding, default)
-- `--install-hook <type>` - Install pre-commit or pre-push hook
-- `--uninstall-hook <type>` - Remove pre-commit or pre-push hook
-- `--global` - Use the global `core.hooksPath` directory for hook install/uninstall
-- `--init <shell>` - Print shell aliases for `keywatch` and `kw`
-- `--verify-integrity` - Check binary hasn't been tampered with
-- `--allowed-repos <urls>` - Whitelist repos (pre-push)
-- `--blocked-repos <urls>` - Block repos (pre-push)
+- `scan <path>...` - Scan one or more files or directories
+- `scan --output <path>` - Save report to file
+- `scan --verbose` - Print full JSON output
+- `scan --exclude <patterns>` - Comma-separated glob patterns to exclude
+- `scan --exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH only), `strict` (fail on any finding, default)
+- `hook install <pre-commit|pre-push> [--global]` - Install a git hook
+- `hook uninstall <pre-commit|pre-push> [--global]` - Remove a git hook
+- `hook install pre-push --allowed-repos <urls>` - Whitelist repos for pre-push hooks
+- `hook install pre-push --blocked-repos <urls>` - Block repos for pre-push hooks
+- `hook install pre-commit --exclude <patterns>` - Exclude patterns for pre-commit scans
+- `init <shell>` - Print shell aliases for `keywatch` and `kw`
+- `verify-integrity` - Check binary hasn't been tampered with
 
 ## Aliases
 
 - `key-watch` is the only shipped binary.
 - `keywatch` and `kw` are optional aliases.
-- `key-watch --init bash|zsh|fish|posix` prints shell aliases you can eval in your shell.
+- `key-watch init bash|zsh|fish|posix` prints shell aliases you can eval in your shell.
 - `watch` is intentionally not used, to avoid colliding with the standard Unix `watch` command.
 
 ## Exit Codes
 
-| Code | Meaning                                    |
-| ---- | ------------------------------------------ |
-| 0    | No secrets found (or `--exit-mode always`) |
-| 1    | Secret found (in strict/critical mode)     |
-| 2    | Runtime/configuration error                |
+| Code | Meaning                                         |
+| ---- | ----------------------------------------------- |
+| 0    | No secrets found (or `scan --exit-mode always`) |
+| 1    | Secret found (in strict/critical mode)          |
+| 2    | Runtime/configuration error                     |
 
 ## Default Behavior
 
@@ -149,10 +151,10 @@ eval "$(key-watch --init bash)"
 
 ## Git Hooks
 
-- `--install-hook pre-commit|pre-push` installs a repo-local hook into `.git/hooks/`
-- `--uninstall-hook pre-commit|pre-push` removes a KeyWatch hook from the same target
-- `--install-hook ... --global` installs into Git's global hooks directory
-- `--uninstall-hook ... --global` removes the hook from Git's global hooks directory
+- `hook install pre-commit|pre-push` installs a repo-local hook into `.git/hooks/`
+- `hook uninstall pre-commit|pre-push` removes a KeyWatch hook from the same target
+- `hook install ... --global` installs into Git's global hooks directory
+- `hook uninstall ... --global` removes the hook from Git's global hooks directory
 - If `core.hooksPath` is already configured, KeyWatch installs into that directory
 - Otherwise KeyWatch creates a managed hooks directory and configures `git config --global core.hooksPath`
 - KeyWatch refuses to overwrite a non-KeyWatch global hook file
