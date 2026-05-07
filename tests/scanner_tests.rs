@@ -457,3 +457,55 @@ fn test_multiple_indian_ids() {
 
     fs::remove_file(test_file).expect("Cleanup");
 }
+
+#[test]
+fn test_overlapping_scan_roots_with_exclusions() {
+    let temp_dir = temp_dir();
+    let root1 = temp_dir.join(format!(
+        "keywatch_overlapping_1_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    fs::create_dir(&root1).expect("Create test directory 1");
+
+    let root2 = root1.join("subdir");
+    fs::create_dir(&root2).expect("Create test directory 2");
+
+    let test_file = root2.join("secret.txt");
+    fs::write(&test_file, "password=secret123").expect("Write test file");
+
+    // The exclude pattern "subdir/secret.txt" should match relative to root1,
+    // or just "secret.txt" should match relative to root2.
+    // Let's exclude "subdir/secret.txt". It matches relative to root1.
+    // If root2 is used as the only root, "secret.txt" stripped of root2 is "secret.txt",
+    // which does NOT match "subdir/secret.txt", so it would NOT be excluded and find the secret!
+    let options = ScanArgs {
+        paths: vec![
+            root2.to_str().unwrap().to_string(), // Root 2 comes first to try to mess up order
+            root1.to_str().unwrap().to_string(),
+        ],
+        output: None,
+        verbose: false,
+        exclude: Some("subdir/secret.txt".to_string()),
+        exit_mode: ExitMode::Strict,
+    };
+
+    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+
+    // Because we exclude "subdir/secret.txt", it should be excluded via root1's perspective.
+    assert!(
+        metadata
+            .excluded_files
+            .iter()
+            .any(|f| f.contains("secret.txt")),
+        "File should be excluded despite overlapping roots"
+    );
+    assert!(
+        findings.is_empty(),
+        "No findings should be present because the file was excluded"
+    );
+
+    fs::remove_dir_all(root1).expect("Cleanup");
+}

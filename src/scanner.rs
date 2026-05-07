@@ -26,7 +26,19 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
     }
 
     target_paths.sort_by(|a, b| a.0.cmp(&b.0));
-    target_paths.dedup_by(|a, b| a.0 == b.0);
+
+    let mut unique_paths: Vec<(String, Vec<Option<String>>)> = Vec::new();
+    for (path, root) in target_paths {
+        if let Some(last) = unique_paths.last_mut() {
+            if last.0 == path {
+                if !last.1.contains(&root) {
+                    last.1.push(root);
+                }
+                continue;
+            }
+        }
+        unique_paths.push((path, vec![root]));
+    }
 
     let detectors = initialize_detectors().map_err(|err| err.to_string())?;
     let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
@@ -49,13 +61,13 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
         .transpose()?
         .unwrap_or_default();
 
-    for (path, root) in target_paths {
+    for (path, roots) in unique_paths {
         if path_has_git_dir(Path::new(&path)) {
             excluded_files.push(path);
             continue;
         }
 
-        let should_exclude = matches_exclude_patterns(&path, root.as_deref(), &exclude_patterns);
+        let should_exclude = matches_exclude_patterns(&path, &roots, &exclude_patterns);
 
         if should_exclude {
             excluded_files.push(path);
@@ -135,7 +147,11 @@ fn path_has_git_dir(path: &Path) -> bool {
         .any(|component| component.as_os_str() == ".git")
 }
 
-fn matches_exclude_patterns(path: &str, scan_root: Option<&str>, patterns: &[Pattern]) -> bool {
+fn matches_exclude_patterns(
+    path: &str,
+    scan_roots: &[Option<String>],
+    patterns: &[Pattern],
+) -> bool {
     let path = Path::new(path);
 
     patterns.iter().any(|pattern| {
@@ -144,8 +160,11 @@ fn matches_exclude_patterns(path: &str, scan_root: Option<&str>, patterns: &[Pat
                 .file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| pattern.matches(name))
-            || scan_root
-                .and_then(|root| path.strip_prefix(root).ok())
-                .is_some_and(|relative| pattern.matches_path(relative))
+            || scan_roots.iter().any(|root_opt| {
+                root_opt
+                    .as_deref()
+                    .and_then(|root| path.strip_prefix(root).ok())
+                    .is_some_and(|relative| pattern.matches_path(relative))
+            })
     })
 }
