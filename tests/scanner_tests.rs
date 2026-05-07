@@ -1,4 +1,4 @@
-use key_watch::cli::CliOptions;
+use key_watch::cli::{ExitMode, ScanArgs};
 use key_watch::scanner::run_scan;
 use std::env::temp_dir;
 use std::fs;
@@ -18,20 +18,12 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
 ";
     fs::write(&test_file, content).expect("Unable to write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -52,20 +44,12 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
 ";
     fs::write(&test_file, content).expect("Unable to write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -87,20 +71,12 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
 ";
     fs::write(&test_file, content).expect("Unable to write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -123,20 +99,12 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
 ";
     fs::write(&test_file, content).expect("Unable to write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -153,20 +121,12 @@ fn test_multiple_detections_in_line() {
     let content = "password=secret email=user@example.com key=AKIATESTKEY123";
     fs::write(&test_file, content).expect("Unable to write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -195,20 +155,12 @@ fn test_directory_scan_with_exclusions() {
     fs::create_dir_all(test_dir.join(".git")).expect("Create .git dir");
     fs::write(test_dir.join(".git/secret.txt"), "SHOULD_NOT_FIND").expect("Write git file");
 
-    let options = CliOptions {
-        file: vec![],
-        dir: Some(test_dir.to_str().unwrap().to_string()),
+    let options = ScanArgs {
+        paths: vec![test_dir.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -236,20 +188,12 @@ fn test_exclude_pattern_filtering() {
     fs::write(test_dir.join("secret.txt"), "password=secret123").expect("Write secret");
     fs::write(test_dir.join("debug.log"), "password=debug123").expect("Write log");
 
-    let options = CliOptions {
-        file: vec![],
-        dir: Some(test_dir.to_str().unwrap().to_string()),
+    let options = ScanArgs {
+        paths: vec![test_dir.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: Some("*.log".to_string()),
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (_findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -279,20 +223,12 @@ fn test_dot_github_directory_is_scanned() {
     fs::create_dir_all(test_dir.join(".github")).expect("Create .github dir");
     fs::write(test_dir.join(".github/workflow.txt"), "password=secret123").expect("Write file");
 
-    let options = CliOptions {
-        file: vec![],
-        dir: Some(test_dir.to_str().unwrap().to_string()),
+    let options = ScanArgs {
+        paths: vec![test_dir.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -308,20 +244,12 @@ fn test_scan_no_secrets() {
     let content = "This is a plain text file.\nThere is nothing secret here.";
     fs::write(&temp_file, content).expect("Unable to write no-secret file");
 
-    let options = CliOptions {
-        file: vec![temp_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![temp_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -338,20 +266,12 @@ fn test_non_utf8_file_handling() {
     let content: Vec<u8> = vec![0x80, 0x81, 0x82, 0xff, 0xfe];
     fs::write(&test_file, content).expect("Unable to write binary test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -362,11 +282,6 @@ fn test_non_utf8_file_handling() {
 
 #[test]
 fn test_multiple_files_scan() {
-    use key_watch::cli::CliOptions;
-    use key_watch::scanner::run_scan;
-    use std::env::temp_dir;
-    use std::fs;
-
     let temp_dir = temp_dir();
     let test_file1 = temp_dir.join("keywatch_multi_test1.txt");
     let test_file2 = temp_dir.join("keywatch_multi_test2.txt");
@@ -374,23 +289,15 @@ fn test_multiple_files_scan() {
     fs::write(&test_file1, "AWS_KEY=AKIATESTMULTI123").expect("Write test file 1");
     fs::write(&test_file2, "password=secretpassword123").expect("Write test file 2");
 
-    let options = CliOptions {
-        file: vec![
+    let options = ScanArgs {
+        paths: vec![
             test_file1.to_str().unwrap().to_string(),
             test_file2.to_str().unwrap().to_string(),
         ],
-        dir: None,
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -412,20 +319,12 @@ fn test_detect_aadhaar() {
     let content = "My Aadhaar: 1234-5678-9012\nBackup: 1234 5678 9012\nNo space: 123456789012";
     fs::write(&test_file, content).expect("Write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -449,20 +348,12 @@ fn test_detect_voter_id() {
     let content = "Voter ID: ABC1234567\nAnother: XYZ9876543";
     fs::write(&test_file, content).expect("Write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -483,20 +374,12 @@ fn test_detect_pan_card() {
     let content = "PAN: ABCDE1234F\nBackup PAN: PQRST5678G";
     fs::write(&test_file, content).expect("Write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -517,20 +400,12 @@ fn test_detect_abha() {
     let content = "ABHA: 1234-5678-9012-34\nMy Health ID: 9876-5432-1098-76";
     fs::write(&test_file, content).expect("Write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -552,20 +427,12 @@ fn test_multiple_indian_ids() {
         "Aadhaar: 9999-8888-7777\nVoter ID: ABC1234567\nPAN: XYZZU1234A\nABHA: 1111-2222-3333-44";
     fs::write(&test_file, content).expect("Write test file");
 
-    let options = CliOptions {
-        file: vec![test_file.to_str().unwrap().to_string()],
-        dir: None,
+    let options = ScanArgs {
+        paths: vec![test_file.to_str().unwrap().to_string()],
         output: None,
         verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
         exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
+        exit_mode: ExitMode::Strict,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");

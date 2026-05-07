@@ -33,7 +33,7 @@ fn test_exit_code_on_secrets() {
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
-        .arg("--file")
+        .arg("scan")
         .arg(&temp_file)
         .status()
         .expect("Run key-watch");
@@ -55,7 +55,7 @@ fn test_exit_code_on_no_secrets() {
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
-        .arg("--file")
+        .arg("scan")
         .arg(&temp_file)
         .status()
         .expect("Run key-watch");
@@ -77,7 +77,7 @@ fn test_runtime_errors_exit_with_code_two() {
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
-        .arg("--file")
+        .arg("scan")
         .arg(&temp_file)
         .status()
         .expect("Run key-watch");
@@ -95,7 +95,7 @@ fn test_exit_mode_always() {
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
-        .arg("--file")
+        .arg("scan")
         .arg(&temp_file)
         .arg("--exit-mode")
         .arg("always")
@@ -115,7 +115,7 @@ fn test_exit_mode_critical_high_vs_low() {
 
     let high_status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&high_dir)
-        .arg("--file")
+        .arg("scan")
         .arg(&high_file)
         .arg("--exit-mode")
         .arg("critical")
@@ -134,7 +134,7 @@ fn test_exit_mode_critical_high_vs_low() {
 
     let low_status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&low_dir)
-        .arg("--file")
+        .arg("scan")
         .arg(&low_file)
         .arg("--exit-mode")
         .arg("critical")

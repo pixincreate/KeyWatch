@@ -1,23 +1,24 @@
-use key_watch::cli::CliOptions;
+use key_watch::cli::{CliOptions, HookInstallArgs, HookType};
 use key_watch::hooks::{generate_pre_commit_hook, generate_pre_push_hook};
+
+fn hook_install_args(
+    hook_type: HookType,
+    allowed_repos: Option<&str>,
+    blocked_repos: Option<&str>,
+    exclude: Option<&str>,
+) -> HookInstallArgs {
+    HookInstallArgs {
+        hook_type,
+        global: false,
+        allowed_repos: allowed_repos.map(str::to_string),
+        blocked_repos: blocked_repos.map(str::to_string),
+        exclude: exclude.map(str::to_string),
+    }
+}
 
 #[test]
 fn test_hook_generation_pre_commit() {
-    let options = CliOptions {
-        file: vec![],
-        dir: None,
-        output: None,
-        verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
-        exclude: Some("*.log,*.tmp".to_string()),
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
-    };
+    let options = hook_install_args(HookType::PreCommit, None, None, Some("*.log,*.tmp"));
 
     let hook = generate_pre_commit_hook(&options);
     assert!(hook.contains("#!/bin/bash"), "Should be bash shebang");
@@ -31,25 +32,15 @@ fn test_hook_generation_pre_commit() {
         hook.contains("EXCLUDE_PATTERNS='*.log,*.tmp'"),
         "Should preserve comma-separated exclude patterns"
     );
+    assert!(
+        hook.contains("scan \"$file\""),
+        "Should use scan subcommand"
+    );
 }
 
 #[test]
 fn test_hook_generation_pre_push() {
-    let options = CliOptions {
-        file: vec![],
-        dir: None,
-        output: None,
-        verbose: false,
-        allowed_repos: Some("github.com".to_string()),
-        blocked_repos: None,
-        exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
-    };
+    let options = hook_install_args(HookType::PrePush, Some("github.com"), None, None);
 
     let hook = generate_pre_push_hook(&options);
     assert!(hook.contains("#!/bin/bash"), "Should be bash shebang");
@@ -59,6 +50,10 @@ fn test_hook_generation_pre_push() {
     );
     assert!(hook.contains("ALLOWED_REPOS"), "Should set allowed repos");
     assert!(
+        hook.contains("scan . --exit-mode critical"),
+        "Should use scan subcommand for pre-push"
+    );
+    assert!(
         hook.contains("CURRENT_REMOTE=$(git remote get-url --push origin"),
         "Should enforce repo restrictions"
     );
@@ -66,21 +61,12 @@ fn test_hook_generation_pre_push() {
 
 #[test]
 fn test_hook_shell_escaping() {
-    let options = CliOptions {
-        file: vec![],
-        dir: None,
-        output: None,
-        verbose: false,
-        allowed_repos: Some("ghp_test'repos123".to_string()),
-        blocked_repos: None,
-        exclude: Some("test*.txt".to_string()),
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
-    };
+    let options = hook_install_args(
+        HookType::PrePush,
+        Some("ghp_test'repos123"),
+        None,
+        Some("test*.txt"),
+    );
 
     let hook = generate_pre_push_hook(&options);
     assert!(
@@ -91,21 +77,7 @@ fn test_hook_shell_escaping() {
 
 #[test]
 fn test_hook_missing_binary_path() {
-    let options = CliOptions {
-        file: vec![],
-        dir: None,
-        output: None,
-        verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
-        exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
-    };
+    let options = hook_install_args(HookType::PrePush, None, None, None);
 
     let hook = generate_pre_push_hook(&options);
     assert!(
@@ -120,21 +92,7 @@ fn test_hook_missing_binary_path() {
 
 #[test]
 fn test_hook_missing_detectors_toml() {
-    let options = CliOptions {
-        file: vec![],
-        dir: None,
-        output: None,
-        verbose: false,
-        allowed_repos: None,
-        blocked_repos: None,
-        exclude: None,
-        install_hook: None,
-        uninstall_hook: None,
-        global: false,
-        init: None,
-        exit_mode: "strict".to_string(),
-        verify_integrity: false,
-    };
+    let options = hook_install_args(HookType::PreCommit, None, None, None);
 
     let hook = generate_pre_commit_hook(&options);
     assert!(
@@ -147,8 +105,8 @@ fn test_hook_missing_detectors_toml() {
 fn test_cli_global_hook_requires_install_hook() {
     use clap::Parser;
 
-    let result = CliOptions::try_parse_from(["key-watch", "--global", "--file", "secret.txt"]);
-    assert!(result.is_err(), "--global should require --install-hook");
+    let result = CliOptions::try_parse_from(["key-watch", "scan", "secret.txt", "--global"]);
+    assert!(result.is_err(), "--global should be rejected for scan");
 }
 
 #[test]
@@ -156,15 +114,17 @@ fn test_cli_global_uninstall_hook_requires_hook_target() {
     use clap::Parser;
 
     let result =
-        CliOptions::try_parse_from(["key-watch", "--global", "--uninstall-hook", "pre-commit"]);
-    assert!(result.is_ok(), "--global should work with --uninstall-hook");
+        CliOptions::try_parse_from(["key-watch", "hook", "uninstall", "pre-commit", "--global"]);
+    assert!(result.is_ok(), "--global should work with hook uninstall");
 }
 
 #[test]
 fn test_cli_init_conflicts_with_scan_targets() {
     use clap::Parser;
 
-    let result =
-        CliOptions::try_parse_from(["key-watch", "--init", "bash", "--file", "secret.txt"]);
-    assert!(result.is_err(), "--init should conflict with scan targets");
+    let result = CliOptions::try_parse_from(["key-watch", "init", "bash", "secret.txt"]);
+    assert!(
+        result.is_err(),
+        "init should reject extra positional scan targets"
+    );
 }
