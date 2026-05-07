@@ -26,11 +26,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- `keywatch` and `watch` aliases for `key-watch`
-- Exit code modes: `scan --exit-mode always|critical|strict`
-- Binary integrity verification: `verify-integrity`
+- Binary aliases: `keywatch`, `watch` (in addition to `key-watch`)
+- Exit code modes: `--exit-mode always|critical|strict`
+- Binary integrity verification: `--verify-integrity`
 - Repository controls: `--allowed-repos`, `--blocked-repos`
-- Multiple file and directory scanning via `scan <PATH>...`
+- Multiple file scanning: `--file file1.txt --file file2.txt`
 - Indian ID detectors: Aadhaar, Voter ID (EPIC), PAN Card, ABHA Health ID
 
 ### Security
