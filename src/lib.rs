@@ -193,8 +193,7 @@ struct HookInstallTarget {
 
 impl HookInstallTarget {
     fn local(hook_type: &str) -> Result<Self, String> {
-        let git_dir = resolve_git_dir()?;
-        let hooks_dir = git_dir.join("hooks");
+        let hooks_dir = resolve_local_hooks_dir()?;
         Ok(Self {
             path: hooks_dir.join(hook_type),
             hooks_dir,
@@ -274,9 +273,14 @@ fn resolve_hook_uninstall_target(
     }
 }
 
-fn resolve_git_dir() -> Result<PathBuf, String> {
+fn resolve_local_hooks_dir() -> Result<PathBuf, String> {
+    resolve_local_hooks_dir_from(Path::new("."))
+}
+
+fn resolve_local_hooks_dir_from(cwd: &Path) -> Result<PathBuf, String> {
     let output = ProcessCommand::new("git")
-        .args(["rev-parse", "--git-path", "hooks"])
+        .current_dir(cwd)
+        .args(["rev-parse", "--path-format=absolute", "--git-path", "hooks"])
         .output()
         .map_err(|err| format!("Failed to resolve git hooks directory: {}", err))?;
 
@@ -298,11 +302,7 @@ fn resolve_git_dir() -> Result<PathBuf, String> {
         return Err("Failed to resolve git hooks directory".to_string());
     }
 
-    let hooks_dir = PathBuf::from(hooks_path);
-    Ok(hooks_dir
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or(hooks_dir))
+    Ok(PathBuf::from(hooks_path))
 }
 
 fn read_global_hooks_path() -> Result<Option<PathBuf>, String> {
@@ -390,7 +390,7 @@ fn ensure_global_hook_target_is_safe(hook_path: &Path) -> Result<(), String> {
 }
 
 fn ensure_local_hook_target_is_safe_to_create(hook_path: &Path) -> Result<(), String> {
-    resolve_git_dir()?;
+    resolve_local_hooks_dir()?;
 
     if hook_path.exists() {
         ensure_hook_target_is_keywatch_managed(hook_path, false, "overwrite")?;
@@ -470,7 +470,7 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
 mod tests {
     use super::{
         ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
-        managed_global_hooks_dir, resolve_hook_uninstall_target,
+        managed_global_hooks_dir, resolve_hook_uninstall_target, resolve_local_hooks_dir_from,
     };
     use std::env;
     use std::fs;
@@ -546,6 +546,24 @@ mod tests {
         assert!(error.contains("Refusing to overwrite existing global hook"));
 
         fs::remove_file(&hook_path).expect("remove hook file");
+        fs::remove_dir_all(&temp_dir).expect("remove temp dir");
+    }
+
+    #[test]
+    fn test_resolve_local_hooks_dir_resolves_correctly() {
+        let temp_dir = unique_temp_dir("local_hooks_dir_resolution");
+        init_git_repo(&temp_dir);
+
+        let resolved =
+            resolve_local_hooks_dir_from(&temp_dir).expect("should resolve hooks dir inside repo");
+
+        assert!(resolved.is_absolute(), "hooks path should be absolute");
+        assert!(
+            resolved.ends_with(".git/hooks"),
+            "hooks path should end with .git/hooks, but was: {}",
+            resolved.display()
+        );
+
         fs::remove_dir_all(&temp_dir).expect("remove temp dir");
     }
 
