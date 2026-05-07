@@ -6,46 +6,43 @@ pub mod scanner;
 pub mod utils;
 
 use clap::Parser;
-use cli::CliOptions;
+use cli::{
+    CliOptions, Command, ExitMode, HookAction, HookInstallArgs, HookType, HookUninstallArgs,
+    ScanArgs, Shell,
+};
 use report::Finding;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::Command as ProcessCommand;
 use std::time::Instant;
 
 pub use hooks::{generate_pre_commit_hook, generate_pre_push_hook};
 
-const EXIT_MODE_ALWAYS: &str = "always";
-const EXIT_MODE_CRITICAL: &str = "critical";
-const EXIT_MODE_STRICT: &str = "strict";
 const SEVERITY_HIGH: &str = "HIGH";
 pub const EXIT_CODE_RUNTIME_ERROR: i32 = 2;
 
 pub fn run_cli() -> Result<(), String> {
     let options = CliOptions::parse();
+
+    match options.command {
+        Command::Scan(args) => run_scan_command(&args),
+        Command::Hook(args) => match args.action {
+            HookAction::Install(install_args) => install_hook(&install_args),
+            HookAction::Uninstall(uninstall_args) => uninstall_hook(&uninstall_args),
+        },
+        Command::Init { shell } => {
+            print_shell_init(&shell);
+            Ok(())
+        }
+        Command::VerifyIntegrity => verify_binary_integrity(),
+    }
+}
+
+fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
     let start = Instant::now();
 
-    if let Some(hook_type) = &options.install_hook {
-        install_hook(hook_type, &options)?;
-        return Ok(());
-    }
-
-    if let Some(hook_type) = &options.uninstall_hook {
-        uninstall_hook(hook_type, &options)?;
-        return Ok(());
-    }
-
-    if let Some(shell) = &options.init {
-        print_shell_init(shell);
-        return Ok(());
-    }
-
-    if options.verify_integrity {
-        verify_binary_integrity()?;
-    }
-
-    let (findings, scan_metadata) = scanner::run_scan(&options)?;
+    let (findings, scan_metadata) = scanner::run_scan(args)?;
     let elapsed = start.elapsed();
     let scan_time = format!(
         "{}.{:01}s",
@@ -53,12 +50,12 @@ pub fn run_cli() -> Result<(), String> {
         elapsed.subsec_millis() / 100
     );
     let severity_counts = report::get_severity_counts(&findings);
-    let exit_code = calculate_exit_code(&findings, &options.exit_mode);
+    let exit_code = calculate_exit_code(&findings, &args.exit_mode);
     let findings_count = findings.len();
     let report_json = report::create_report(findings, scan_metadata, scan_time)
         .map_err(|err| format!("Failed to serialize report: {}", err))?;
 
-    if options.verbose {
+    if args.verbose {
         println!("{report_json}");
     } else if findings_count == 0 {
         println!("No secrets found.");
@@ -69,7 +66,7 @@ pub fn run_cli() -> Result<(), String> {
         );
     }
 
-    if let Some(ref output_path) = options.output {
+    if let Some(ref output_path) = args.output {
         utils::write_to_file(output_path, &report_json)
             .map_err(|err| format!("Failed to write report to '{}': {}", output_path, err))?;
     }
@@ -77,16 +74,14 @@ pub fn run_cli() -> Result<(), String> {
     std::process::exit(exit_code);
 }
 
-fn install_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
-    let hook_content = match hook_type {
-        "pre-push" => hooks::generate_pre_push_hook(options),
-        "pre-commit" => hooks::generate_pre_commit_hook(options),
-        _ => {
-            return Err(format!("Unknown hook type: {}", hook_type));
-        }
+fn install_hook(args: &HookInstallArgs) -> Result<(), String> {
+    let hook_content = match args.hook_type {
+        HookType::PrePush => hooks::generate_pre_push_hook(args),
+        HookType::PreCommit => hooks::generate_pre_commit_hook(args),
     };
 
-    let install_target = resolve_hook_install_target(hook_type, options.global)?;
+    let hook_type_str = args.hook_type.as_str();
+    let install_target = resolve_hook_install_target(hook_type_str, args.global)?;
 
     if !install_target.is_global {
         ensure_local_hook_target_is_safe_to_create(&install_target.path)?;
@@ -108,7 +103,7 @@ fn install_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
 
     let hook_path = install_target.path.to_string_lossy().into_owned();
     utils::write_to_file(&hook_path, &hook_content)
-        .map_err(|err| format!("Failed to install hook '{}': {}", hook_type, err))?;
+        .map_err(|err| format!("Failed to install hook '{}': {}", hook_type_str, err))?;
     utils::make_executable(&hook_path)
         .map_err(|err| format!("Failed to make hook executable '{}': {}", hook_path, err))?;
 
@@ -120,19 +115,20 @@ fn install_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
     }
 
     if install_target.is_global {
-        println!("Installed global {hook_type} hook at {hook_path}");
+        println!("Installed global {hook_type_str} hook at {hook_path}");
     } else {
-        println!("Installed {hook_type} hook at {hook_path}");
+        println!("Installed {hook_type_str} hook at {hook_path}");
     }
     println!(
         "The hook will run automatically during git {}.",
-        hook_type.replace('-', " ")
+        hook_type_str.replace('-', " ")
     );
     Ok(())
 }
 
-fn uninstall_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
-    let install_target = resolve_hook_install_target(hook_type, options.global)?;
+fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), String> {
+    let hook_type_str = args.hook_type.as_str();
+    let install_target = resolve_hook_install_target(hook_type_str, args.global)?;
 
     if !install_target.path.exists() {
         let scope = if install_target.is_global {
@@ -141,7 +137,7 @@ fn uninstall_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
             "local"
         };
         println!(
-            "No {scope} {hook_type} hook found at {}",
+            "No {scope} {hook_type_str} hook found at {}",
             install_target.path.display()
         );
         return Ok(());
@@ -163,12 +159,12 @@ fn uninstall_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
 
     if install_target.is_global {
         println!(
-            "Removed global {hook_type} hook at {}",
+            "Removed global {hook_type_str} hook at {}",
             install_target.path.display()
         );
     } else {
         println!(
-            "Removed {hook_type} hook at {}",
+            "Removed {hook_type_str} hook at {}",
             install_target.path.display()
         );
     }
@@ -176,11 +172,12 @@ fn uninstall_hook(hook_type: &str, options: &CliOptions) -> Result<(), String> {
     Ok(())
 }
 
-fn print_shell_init(shell: &str) {
+fn print_shell_init(shell: &Shell) {
     let script = match shell {
-        "fish" => "alias keywatch 'key-watch'\nalias kw 'key-watch'\n",
-        "bash" | "zsh" | "posix" => "alias keywatch='key-watch'\nalias kw='key-watch'\n",
-        _ => unreachable!("validated by clap"),
+        Shell::Fish => "alias keywatch 'key-watch'\nalias kw 'key-watch'\n",
+        Shell::Bash | Shell::Zsh | Shell::Posix => {
+            "alias keywatch='key-watch'\nalias kw='key-watch'\n"
+        }
     };
 
     print!("{script}");
@@ -250,7 +247,7 @@ fn resolve_hook_install_target(hook_type: &str, global: bool) -> Result<HookInst
 }
 
 fn read_global_hooks_path() -> Result<Option<PathBuf>, String> {
-    let output = Command::new("git")
+    let output = ProcessCommand::new("git")
         .args(["config", "--global", "--path", "--get", "core.hooksPath"])
         .output()
         .map_err(|err| format!("Failed to read git global core.hooksPath: {}", err))?;
@@ -307,7 +304,7 @@ fn managed_global_hooks_dir(
 }
 
 fn configure_global_hooks_path(hooks_dir: &Path) -> Result<(), String> {
-    let output = Command::new("git")
+    let output = ProcessCommand::new("git")
         .args([
             "config",
             "--global",
@@ -400,21 +397,20 @@ fn verify_binary_integrity() -> Result<(), String> {
     Ok(())
 }
 
-fn calculate_exit_code(findings: &[Finding], exit_mode: &str) -> i32 {
+fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
     if findings.is_empty() {
         return 0;
     }
 
     match exit_mode {
-        EXIT_MODE_ALWAYS => 0,
-        EXIT_MODE_CRITICAL => {
+        ExitMode::Always => 0,
+        ExitMode::Critical => {
             let has_high = findings
                 .iter()
                 .any(|finding| finding.severity == SEVERITY_HIGH);
             if has_high { 1 } else { 0 }
         }
-        EXIT_MODE_STRICT => 1,
-        _ => 1,
+        ExitMode::Strict => 1,
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::cli::CliOptions;
+use crate::cli::HookInstallArgs;
 
 const PRE_PUSH_TEMPLATE: &str = include_str!("../templates/pre-push.sh");
 const PRE_COMMIT_TEMPLATE: &str = include_str!("../templates/pre-commit.sh");
@@ -26,21 +26,19 @@ fn build_repo_section(allowed: Option<&str>, blocked: Option<&str>) -> String {
     format!("{}{}", allowed_line, blocked_line)
 }
 
-fn render_pre_push(options: &CliOptions) -> String {
+fn render_pre_push(args: &HookInstallArgs) -> String {
     let binary_name = shell_escape(&hook_binary_name());
-    let repo_section = build_repo_section(
-        options.allowed_repos.as_deref(),
-        options.blocked_repos.as_deref(),
-    );
+    let repo_section =
+        build_repo_section(args.allowed_repos.as_deref(), args.blocked_repos.as_deref());
 
     PRE_PUSH_TEMPLATE
         .replace("{{binary_name}}", &binary_name)
         .replace("{{repo_section}}", &repo_section)
 }
 
-fn render_pre_commit(options: &CliOptions) -> String {
+fn render_pre_commit(args: &HookInstallArgs) -> String {
     let binary_name = shell_escape(&hook_binary_name());
-    let exclude_patterns = options
+    let exclude_patterns = args
         .exclude
         .as_deref()
         .map(shell_escape)
@@ -51,12 +49,12 @@ fn render_pre_commit(options: &CliOptions) -> String {
         .replace("{{exclude_patterns}}", &exclude_patterns)
 }
 
-pub fn generate_pre_push_hook(options: &CliOptions) -> String {
-    render_pre_push(options)
+pub fn generate_pre_push_hook(args: &HookInstallArgs) -> String {
+    render_pre_push(args)
 }
 
-pub fn generate_pre_commit_hook(options: &CliOptions) -> String {
-    render_pre_commit(options)
+pub fn generate_pre_commit_hook(args: &HookInstallArgs) -> String {
+    render_pre_commit(args)
 }
 
 fn hook_binary_name() -> String {

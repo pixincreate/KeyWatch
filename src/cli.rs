@@ -1,28 +1,36 @@
-use clap::{ArgGroup, Parser};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 
 /// KeyWatch: A secret scanner for your files and directories.
 #[derive(Parser, Debug)]
 #[command(author, version, about = "Scan files and directories for secrets", long_about = None)]
-#[command(group(
-    ArgGroup::new("target")
-        .required(true)
-        .multiple(false)
-        .args(&["file", "dir", "install_hook", "uninstall_hook", "init"]),
-))]
-#[command(group(
-    ArgGroup::new("hook_action")
-        .multiple(false)
-        .args(&["install_hook", "uninstall_hook"]),
-))]
 pub struct CliOptions {
-    /// Scan specific file(s) - supports multiple --file flags
-    /// Example: --file file1.txt --file file2.txt
-    #[arg(short, long, alias = "files")]
-    pub file: Vec<String>,
+    #[command(subcommand)]
+    pub command: Command,
+}
 
-    /// Scan all files in a directory (scans recursively)
-    #[arg(short, long)]
-    pub dir: Option<String>,
+#[derive(Subcommand, Debug)]
+pub enum Command {
+    /// Scan files or directories
+    Scan(ScanArgs),
+
+    /// Manage KeyWatch git hooks
+    Hook(HookArgs),
+
+    /// Print shell aliases for keywatch and kw
+    Init {
+        #[arg(value_enum)]
+        shell: Shell,
+    },
+
+    /// Verify binary integrity on startup
+    VerifyIntegrity,
+}
+
+#[derive(Args, Debug)]
+pub struct ScanArgs {
+    /// Paths to scan (files or directories)
+    #[arg(required = true)]
+    pub paths: Vec<String>,
 
     /// Output the result to a file
     #[arg(short, long)]
@@ -32,52 +40,111 @@ pub struct CliOptions {
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
 
-    /// Allowed repository URLs (comma-separated)
-    /// Experimental: Push to these repos will be allowed
-    #[arg(long)]
-    pub allowed_repos: Option<String>,
-
-    /// Blocked repository URLs (comma-separated)
-    /// Experimental: Push to these repos will be blocked
-    #[arg(long)]
-    pub blocked_repos: Option<String>,
-
     /// Paths to exclude from scanning (comma-separated, supports glob patterns)
     #[arg(long)]
     pub exclude: Option<String>,
 
-    /// Install KeyWatch as a git hook
-    /// Options: pre-push, pre-commit
-    #[arg(long, value_parser = ["pre-push", "pre-commit"], conflicts_with = "uninstall_hook")]
-    pub install_hook: Option<String>,
+    /// Exit code behavior
+    #[arg(long, value_enum, default_value_t = ExitMode::Strict)]
+    pub exit_mode: ExitMode,
+}
+
+#[derive(Args, Debug)]
+pub struct HookArgs {
+    #[command(subcommand)]
+    pub action: HookAction,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum HookAction {
+    /// Install a KeyWatch git hook
+    Install(HookInstallArgs),
 
     /// Remove a KeyWatch git hook
-    /// Options: pre-push, pre-commit
-    #[arg(long, value_parser = ["pre-push", "pre-commit"], conflicts_with = "install_hook")]
-    pub uninstall_hook: Option<String>,
+    Uninstall(HookUninstallArgs),
+}
 
-    /// Install the selected hook globally using git core.hooksPath
-    #[arg(
-        long,
-        conflicts_with_all = ["file", "dir", "init"],
-        requires = "hook_action",
-        default_value_t = false
-    )]
+#[derive(Args, Debug)]
+pub struct HookInstallArgs {
+    /// Type of hook to install
+    #[arg(value_enum)]
+    pub hook_type: HookType,
+
+    /// Install the hook globally using git core.hooksPath
+    #[arg(long, default_value_t = false)]
     pub global: bool,
 
-    /// Print shell aliases for keywatch and kw
-    #[arg(long, value_parser = ["bash", "zsh", "fish", "posix"])]
-    pub init: Option<String>,
+    /// Allowed repository URLs (comma-separated) - pre-push only
+    #[arg(long)]
+    pub allowed_repos: Option<String>,
 
-    /// Exit code behavior
-    /// Options:
-    ///   - always: Always exit 0 (bypass)
-    ///   - critical: Exit 0 if only LOW/MEDIUM severity
-    ///   - strict: Exit non-zero for any finding (default)
-    #[arg(long, default_value = "strict")]
-    pub exit_mode: String,
+    /// Blocked repository URLs (comma-separated) - pre-push only
+    #[arg(long)]
+    pub blocked_repos: Option<String>,
 
-    /// Verify binary integrity on startup
+    /// Paths to exclude from scanning - pre-commit only
+    #[arg(long)]
+    pub exclude: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct HookUninstallArgs {
+    /// Type of hook to remove
+    #[arg(value_enum)]
+    pub hook_type: HookType,
+
+    /// Remove the hook globally from git core.hooksPath
     #[arg(long, default_value_t = false)]
-    pub verify_integrity: bool,
+    pub global: bool,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum HookType {
+    PreCommit,
+    PrePush,
+}
+
+impl HookType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::PreCommit => "pre-commit",
+            Self::PrePush => "pre-push",
+        }
+    }
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+    Posix,
+}
+
+impl Shell {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Bash => "bash",
+            Self::Zsh => "zsh",
+            Self::Fish => "fish",
+            Self::Posix => "posix",
+        }
+    }
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum ExitMode {
+    Always,
+    Critical,
+    Strict,
+}
+
+impl ExitMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Always => "always",
+            Self::Critical => "critical",
+            Self::Strict => "strict",
+        }
+    }
 }
