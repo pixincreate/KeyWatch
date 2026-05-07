@@ -37,5 +37,5 @@ if [ -n "$CURRENT_REMOTE" ] && [ -n "${BLOCKED_REPOS:-}" ]; then
     done
 fi
 
-"$KEYWATCH_BIN" --dir . --exit-mode critical
+"$KEYWATCH_BIN" scan . --exit-mode critical
 exit $?
