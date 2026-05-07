@@ -155,6 +155,7 @@ key-watch verify-integrity
 - `hook uninstall pre-commit|pre-push` removes a KeyWatch hook from the same target
 - `hook install ... --global` installs into Git's global hooks directory
 - `hook uninstall ... --global` removes the hook from Git's global hooks directory
+- Local hook paths are resolved via `git rev-parse --git-path hooks`, so installs work in worktrees and submodules too
 - If `core.hooksPath` is already configured, KeyWatch installs into that directory
 - Otherwise KeyWatch creates a managed hooks directory and configures `git config --global core.hooksPath`
 - KeyWatch refuses to overwrite a non-KeyWatch global hook file

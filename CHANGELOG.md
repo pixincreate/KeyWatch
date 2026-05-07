@@ -10,12 +10,14 @@ All notable changes to this project will be documented in this file.
 - Git hook installation now supports first-class global hooks via `core.hooksPath`
 - Installation guidance is now cargo-first, with manual GitHub Releases setup documented step by step
 - CLI moved from flat top-level flags to subcommands: `scan`, `hook install|uninstall`, `init`, and `verify-integrity`
+- Local hook installation now resolves Git's hooks directory directly, improving worktree and submodule compatibility
 
 ### Added
 
 - Hook uninstall support for local and global Git hooks
 - `init bash|zsh|fish|posix` to print shell aliases for `keywatch` and `kw`
 - README now documents uninstall steps for both `cargo install` and manual GitHub Releases installs
+- Regression coverage for overlapping scan roots with root-relative exclude patterns
 
 ### Removed
 
