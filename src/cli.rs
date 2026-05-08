@@ -31,7 +31,7 @@ pub enum Command {
         shell: Shell,
     },
 
-    /// Verify binary integrity on startup
+    /// Verify binary integrity
     VerifyIntegrity,
 }
 

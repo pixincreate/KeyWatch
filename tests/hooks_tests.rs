@@ -102,7 +102,7 @@ fn test_hook_missing_detectors_toml() {
 }
 
 #[test]
-fn test_cli_global_hook_requires_install_hook() {
+fn test_cli_scan_rejects_global_flag() {
     use clap::Parser;
 
     let result = CliOptions::try_parse_from(["key-watch", "scan", "secret.txt", "--global"]);
@@ -110,7 +110,7 @@ fn test_cli_global_hook_requires_install_hook() {
 }
 
 #[test]
-fn test_cli_global_uninstall_hook_requires_hook_target() {
+fn test_cli_hook_uninstall_accepts_global_flag() {
     use clap::Parser;
 
     let result =
