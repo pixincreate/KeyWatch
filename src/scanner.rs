@@ -1,11 +1,11 @@
-use crate::cli::CliOptions;
+use crate::cli::ScanArgs;
 use crate::detector::initialize_detectors;
 use crate::report::{Finding, ScanMetadata};
 use glob::Pattern;
 use std::fs;
 use std::path::Path;
 
-pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), String> {
+pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String> {
     let mut findings = Vec::new();
     let mut files_scanned = 0;
     let mut total_lines = 0;
@@ -13,13 +13,31 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
 
     let mut target_paths = Vec::new();
 
-    if !options.file.is_empty() {
-        let mut unique_paths: Vec<String> = options.file.to_vec();
-        unique_paths.sort();
-        unique_paths.dedup();
-        target_paths.extend(unique_paths);
-    } else if let Some(ref dir_path) = options.dir {
-        collect_files(dir_path, &mut target_paths);
+    for path_str in &args.paths {
+        let path = Path::new(path_str);
+        if path.is_file() {
+            target_paths.push((path_str.clone(), None));
+        } else if path.is_dir() {
+            collect_files(path_str, &mut target_paths, path_str);
+        } else {
+            // Push anyway, let read handle it or ignore
+            target_paths.push((path_str.clone(), None));
+        }
+    }
+
+    target_paths.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut unique_paths: Vec<(String, Vec<Option<String>>)> = Vec::new();
+    for (path, root) in target_paths {
+        if let Some(last) = unique_paths.last_mut() {
+            if last.0 == path {
+                if !last.1.contains(&root) {
+                    last.1.push(root);
+                }
+                continue;
+            }
+        }
+        unique_paths.push((path, vec![root]));
     }
 
     let detectors = initialize_detectors().map_err(|err| err.to_string())?;
@@ -27,7 +45,7 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
         .iter()
         .partition(|detector| detector.regex.as_str().contains("(?s)"));
 
-    let exclude_patterns: Vec<Pattern> = options
+    let exclude_patterns: Vec<Pattern> = args
         .exclude
         .as_ref()
         .map(|exclude_str| {
@@ -43,14 +61,13 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
         .transpose()?
         .unwrap_or_default();
 
-    for path in target_paths {
+    for (path, roots) in unique_paths {
         if path_has_git_dir(Path::new(&path)) {
             excluded_files.push(path);
             continue;
         }
 
-        let should_exclude =
-            matches_exclude_patterns(&path, options.dir.as_deref(), &exclude_patterns);
+        let should_exclude = matches_exclude_patterns(&path, &roots, &exclude_patterns);
 
         if should_exclude {
             excluded_files.push(path);
@@ -107,19 +124,19 @@ pub fn run_scan(options: &CliOptions) -> Result<(Vec<Finding>, ScanMetadata), St
     Ok((findings, metadata))
 }
 
-fn collect_files(dir_path: &str, files: &mut Vec<String>) {
+fn collect_files(dir_path: &str, files: &mut Vec<(String, Option<String>)>, root: &str) {
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file() {
                 if let Some(path_str) = path.to_str() {
-                    files.push(path_str.to_string());
+                    files.push((path_str.to_string(), Some(root.to_string())));
                 }
             } else if path.is_dir()
                 && path.file_name().is_none_or(|name| name != ".git")
                 && let Some(path_str) = path.to_str()
             {
-                collect_files(path_str, files);
+                collect_files(path_str, files, root);
             }
         }
     }
@@ -130,7 +147,11 @@ fn path_has_git_dir(path: &Path) -> bool {
         .any(|component| component.as_os_str() == ".git")
 }
 
-fn matches_exclude_patterns(path: &str, scan_root: Option<&str>, patterns: &[Pattern]) -> bool {
+fn matches_exclude_patterns(
+    path: &str,
+    scan_roots: &[Option<String>],
+    patterns: &[Pattern],
+) -> bool {
     let path = Path::new(path);
 
     patterns.iter().any(|pattern| {
@@ -139,8 +160,11 @@ fn matches_exclude_patterns(path: &str, scan_root: Option<&str>, patterns: &[Pat
                 .file_name()
                 .and_then(|name| name.to_str())
                 .is_some_and(|name| pattern.matches(name))
-            || scan_root
-                .and_then(|root| path.strip_prefix(root).ok())
-                .is_some_and(|relative| pattern.matches_path(relative))
+            || scan_roots.iter().any(|root_opt| {
+                root_opt
+                    .as_deref()
+                    .and_then(|root| path.strip_prefix(root).ok())
+                    .is_some_and(|relative| pattern.matches_path(relative))
+            })
     })
 }

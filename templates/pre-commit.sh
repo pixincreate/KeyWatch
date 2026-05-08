@@ -17,13 +17,13 @@ while IFS= read -r -d '' file; do
     if [ ! -f "$file" ]; then
         continue
     fi
-    if "$KEYWATCH_BIN" --file "$file" --exclude "$EXCLUDE_PATTERNS" 2>/dev/null; then
+    if "$KEYWATCH_BIN" scan "$file" --exclude "$EXCLUDE_PATTERNS" 2>/dev/null; then
         continue
     fi
     EXIT_CODE=$?
     if [ $EXIT_CODE -eq 1 ]; then
         echo "ERROR: Secret detected in $file"
-        "$KEYWATCH_BIN" --file "$file" --exclude "$EXCLUDE_PATTERNS" --verbose
+        "$KEYWATCH_BIN" scan "$file" --exclude "$EXCLUDE_PATTERNS" --verbose
         exit 1
     fi
     echo "Error: key-watch failed on $file (exit code: $EXIT_CODE)" >&2

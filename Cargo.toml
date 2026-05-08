@@ -10,19 +10,6 @@ homepage = "https://github.com/pixincreate/KeyWatch"
 keywords = ["secret-scanner", "security", "credentials", "lint"]
 
 license = "GPL-3.0-only"
-license-file = "LICENSE"
-
-[[bin]]
-name = "key-watch"
-path = "src/main.rs"
-
-[[bin]]
-name = "keywatch"
-path = "src/bin/keywatch.rs"
-
-[[bin]]
-name = "watch"
-path = "src/bin/watch.rs"
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
