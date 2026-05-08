@@ -1,4 +1,4 @@
-use key_watch::cli::{CliOptions, HookInstallArgs, HookType};
+use key_watch::cli::{CliOptions, Command, ExitMode, HookAction, HookInstallArgs, HookType, Shell};
 use key_watch::hooks::{generate_pre_commit_hook, generate_pre_push_hook};
 
 fn hook_install_args(
@@ -116,6 +116,108 @@ fn test_cli_global_uninstall_hook_requires_hook_target() {
     let result =
         CliOptions::try_parse_from(["key-watch", "hook", "uninstall", "pre-commit", "--global"]);
     assert!(result.is_ok(), "--global should work with hook uninstall");
+}
+
+#[test]
+fn test_cli_hook_install_pre_commit_parses_successfully() {
+    use clap::Parser;
+
+    let options = CliOptions::try_parse_from(["key-watch", "hook", "install", "pre-commit"])
+        .expect("pre-commit install should parse");
+    options
+        .validate()
+        .expect("validated hook install should succeed");
+
+    match options.command {
+        Command::Hook(args) => match args.action {
+            HookAction::Install(install_args) => {
+                assert_eq!(install_args.hook_type, HookType::PreCommit);
+                assert!(!install_args.global, "global should default to false");
+            }
+            _ => panic!("expected install action"),
+        },
+        _ => panic!("expected hook command"),
+    }
+}
+
+#[test]
+fn test_cli_hook_install_pre_push_global_parses_successfully() {
+    use clap::Parser;
+
+    let options =
+        CliOptions::try_parse_from(["key-watch", "hook", "install", "pre-push", "--global"])
+            .expect("pre-push install should parse");
+    options
+        .validate()
+        .expect("validated hook install should succeed");
+
+    match options.command {
+        Command::Hook(args) => match args.action {
+            HookAction::Install(install_args) => {
+                assert_eq!(install_args.hook_type, HookType::PrePush);
+                assert!(install_args.global, "global flag should be preserved");
+            }
+            _ => panic!("expected install action"),
+        },
+        _ => panic!("expected hook command"),
+    }
+}
+
+#[test]
+fn test_cli_scan_defaults_to_strict_exit_mode() {
+    use clap::Parser;
+
+    let options = CliOptions::try_parse_from(["key-watch", "scan", "secret.txt"])
+        .expect("scan command should parse");
+
+    match options.command {
+        Command::Scan(scan_args) => {
+            assert_eq!(scan_args.exit_mode, ExitMode::Strict);
+        }
+        _ => panic!("expected scan command"),
+    }
+}
+
+#[test]
+fn test_cli_pre_commit_rejects_blocked_repos() {
+    use clap::Parser;
+
+    let options = CliOptions::try_parse_from([
+        "key-watch",
+        "hook",
+        "install",
+        "pre-commit",
+        "--blocked-repos",
+        "github.com/example/repo",
+    ])
+    .expect("clap parsing should succeed");
+
+    let error = options
+        .validate()
+        .expect_err("pre-commit should reject blocked repos");
+    assert!(
+        error.contains("--allowed-repos and --blocked-repos are only supported for pre-push hooks")
+    );
+}
+
+#[test]
+fn test_cli_init_accepts_supported_shells() {
+    use clap::Parser;
+
+    for (shell_name, expected_shell) in [
+        ("bash", Shell::Bash),
+        ("zsh", Shell::Zsh),
+        ("fish", Shell::Fish),
+        ("posix", Shell::Posix),
+    ] {
+        let options = CliOptions::try_parse_from(["key-watch", "init", shell_name])
+            .expect("supported shell should parse");
+
+        match options.command {
+            Command::Init { shell } => assert_eq!(shell, expected_shell),
+            _ => panic!("expected init command"),
+        }
+    }
 }
 
 #[test]

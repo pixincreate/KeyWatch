@@ -312,6 +312,111 @@ fn test_multiple_files_scan() {
 }
 
 #[test]
+fn test_duplicate_paths_are_scanned_once() {
+    let temp_file = temp_dir().join("key_watch_duplicate_path.txt");
+    fs::write(&temp_file, "password=duplicate-secret").expect("Write test file");
+
+    let options = ScanArgs {
+        paths: vec![
+            temp_file.to_str().unwrap().to_string(),
+            temp_file.to_str().unwrap().to_string(),
+        ],
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+    };
+
+    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    assert_eq!(
+        metadata.files_scanned, 1,
+        "Duplicate paths should be deduped"
+    );
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.file_path == temp_file.to_str().unwrap()),
+        "Duplicate paths should only report findings for the deduped file"
+    );
+
+    fs::remove_file(temp_file).expect("Cleanup");
+}
+
+#[test]
+fn test_mixed_file_and_directory_paths_are_scanned_once() {
+    let temp_dir = temp_dir();
+    let test_dir = temp_dir.join(format!(
+        "keywatch_mixed_inputs_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+    fs::create_dir(&test_dir).expect("Create test directory");
+
+    let direct_file = test_dir.join("secret.txt");
+    fs::write(&direct_file, "password=mixed-secret").expect("Write test file");
+
+    let options = ScanArgs {
+        paths: vec![
+            direct_file.to_str().unwrap().to_string(),
+            test_dir.to_str().unwrap().to_string(),
+        ],
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+    };
+
+    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    assert_eq!(
+        metadata.files_scanned, 1,
+        "File should only be scanned once"
+    );
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.file_path == direct_file.to_str().unwrap()),
+        "Mixed file/directory inputs should only report findings for the single deduped file"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
+    let missing_path = temp_dir().join(format!(
+        "keywatch_missing_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+    ));
+
+    let options = ScanArgs {
+        paths: vec![missing_path.to_str().unwrap().to_string()],
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+    };
+
+    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    assert!(
+        findings.is_empty(),
+        "Missing paths should not produce findings"
+    );
+    assert_eq!(
+        metadata.files_scanned, 0,
+        "Missing paths should not be counted as scanned"
+    );
+    assert!(
+        metadata.excluded_files.is_empty(),
+        "Missing paths should not be marked excluded"
+    );
+}
+
+#[test]
 fn test_detect_aadhaar() {
     let temp_dir = temp_dir();
     let test_file = temp_dir.join("keywatch_aadhaar_test.txt");
