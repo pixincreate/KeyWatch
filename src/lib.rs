@@ -469,9 +469,12 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
-        managed_global_hooks_dir, resolve_hook_uninstall_target, resolve_local_hooks_dir_from,
+        calculate_exit_code, ensure_global_hook_target_is_safe,
+        ensure_local_hook_target_is_safe_to_create, managed_global_hooks_dir,
+        resolve_hook_uninstall_target, resolve_local_hooks_dir_from,
     };
+    use crate::cli::ExitMode;
+    use crate::report::Finding;
     use std::env;
     use std::fs;
     use std::process::Command;
@@ -611,5 +614,64 @@ mod tests {
         assert!(!install_target.configured_global_path);
         assert_eq!(install_target.hooks_dir, expected_hooks_dir);
         assert_eq!(install_target.path, expected_hooks_dir.join("pre-commit"));
+    }
+
+    #[test]
+    fn test_managed_global_hooks_dir_prefers_appdata_when_home_missing() {
+        let path = managed_global_hooks_dir(
+            None,
+            None,
+            Some("C:/Users/test/AppData/Roaming".into()),
+            None,
+        )
+        .expect("appdata path should resolve");
+
+        assert_eq!(
+            path,
+            std::path::PathBuf::from("C:/Users/test/AppData/Roaming/key-watch/hooks")
+        );
+    }
+
+    #[test]
+    fn test_managed_global_hooks_dir_errors_without_known_base_dir() {
+        let error = managed_global_hooks_dir(None, None, None, None)
+            .expect_err("missing env inputs should fail");
+
+        assert!(error.contains("Could not determine a directory for global git hooks"));
+    }
+
+    #[test]
+    fn test_calculate_exit_code_across_modes() {
+        let high = Finding {
+            file_path: "high.txt".to_string(),
+            line_number: 1,
+            finding_type: "High".to_string(),
+            severity: "HIGH".to_string(),
+            matched_content: "secret".to_string(),
+            plugin_name: "DetectorHigh".to_string(),
+        };
+        let low = Finding {
+            file_path: "low.txt".to_string(),
+            line_number: 1,
+            finding_type: "Low".to_string(),
+            severity: "LOW".to_string(),
+            matched_content: "token".to_string(),
+            plugin_name: "DetectorLow".to_string(),
+        };
+
+        assert_eq!(calculate_exit_code(&[], &ExitMode::Strict), 0);
+        assert_eq!(
+            calculate_exit_code(std::slice::from_ref(&low), &ExitMode::Always),
+            0
+        );
+        assert_eq!(
+            calculate_exit_code(std::slice::from_ref(&low), &ExitMode::Critical),
+            0
+        );
+        assert_eq!(
+            calculate_exit_code(std::slice::from_ref(&high), &ExitMode::Critical),
+            1
+        );
+        assert_eq!(calculate_exit_code(&[low, high], &ExitMode::Strict), 1);
     }
 }
