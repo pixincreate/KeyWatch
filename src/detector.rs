@@ -41,16 +41,18 @@ struct DetectorConfig {
 }
 
 fn find_detectors_config() -> std::path::PathBuf {
-    if let Ok(exe_path) = std::env::current_exe()
-        && let Some(exe_dir) = exe_path.parent()
-    {
-        let config_path = exe_dir.join("detectors.toml");
-        if config_path.exists() {
-            return config_path;
-        }
-    }
-
-    std::path::PathBuf::from("detectors.toml")
+    std::env::var("KEYWATCH_CONFIG_PATH")
+        .map(std::path::PathBuf::from)
+        .ok()
+        .filter(|p| p.exists())
+        .or_else(|| dirs::config_dir().map(|p| p.join("keywatch").join("detectors.toml")))
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .and_then(|p| p.parent().map(|d| d.join("detectors.toml")))
+        })
+        .filter(|p| p.exists())
+        .unwrap_or_else(|| std::path::PathBuf::from("detectors.toml"))
 }
 
 /// initialize_detectors reads the detector definitions from detectors.toml and returns a vector of Detector.
