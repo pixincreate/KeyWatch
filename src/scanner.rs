@@ -27,10 +27,13 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
 
     target_paths.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut unique_paths: std::collections::HashMap<String, Vec<Option<String>>> =
-        std::collections::HashMap::new();
+    let mut unique_paths: std::collections::BTreeMap<String, Vec<Option<String>>> =
+        std::collections::BTreeMap::new();
     for (path, root) in target_paths {
-        unique_paths.entry(path).or_default().push(root);
+        let roots = unique_paths.entry(path).or_default();
+        if !roots.contains(&root) {
+            roots.push(root);
+        }
     }
     let unique_paths: Vec<_> = unique_paths.into_iter().collect();
 
@@ -69,10 +72,15 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
         }
 
         let full_content = match fs::read(&path) {
-            Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(content) => content,
-                Err(_) => continue,
-            },
+            Ok(bytes) => {
+                if bytes.contains(&0) {
+                    continue;
+                }
+                match String::from_utf8(bytes) {
+                    Ok(content) => content,
+                    Err(_) => continue,
+                }
+            }
             Err(_) => continue,
         };
 

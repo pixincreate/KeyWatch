@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-#[derive(Serialize, Clone, PartialEq)]
+#[derive(Serialize, Clone, PartialEq, Copy)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Severity {
     High,

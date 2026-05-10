@@ -1,4 +1,4 @@
-use key_watch::report::{Finding, ScanMetadata, create_report, get_severity_counts};
+use key_watch::report::{Finding, ScanMetadata, Severity, create_report, get_severity_counts};
 
 #[test]
 fn test_create_report() {
@@ -31,7 +31,7 @@ fn test_report_with_findings() {
         file_path: "secret.txt".to_string(),
         line_number: 10,
         finding_type: "AWS Key".to_string(),
-        severity: "HIGH".to_string(),
+        severity: Severity::High,
         matched_content: "AKIATESTKEY".to_string(),
         plugin_name: "AWSKeyDetector".to_string(),
     }];
@@ -56,7 +56,7 @@ fn test_create_report_includes_excluded_files_and_plugin_metadata() {
         file_path: "secret.txt".to_string(),
         line_number: 7,
         finding_type: "API Token".to_string(),
-        severity: "MEDIUM".to_string(),
+        severity: Severity::Medium,
         matched_content: "tok_test_123".to_string(),
         plugin_name: "TokenDetector".to_string(),
     }];
@@ -84,7 +84,7 @@ fn test_get_severity_counts_groups_high_medium_low() {
             file_path: "a.txt".to_string(),
             line_number: 1,
             finding_type: "A".to_string(),
-            severity: "HIGH".to_string(),
+            severity: Severity::High,
             matched_content: "a".to_string(),
             plugin_name: "DetectorA".to_string(),
         },
@@ -92,7 +92,7 @@ fn test_get_severity_counts_groups_high_medium_low() {
             file_path: "b.txt".to_string(),
             line_number: 2,
             finding_type: "B".to_string(),
-            severity: "MEDIUM".to_string(),
+            severity: Severity::Medium,
             matched_content: "b".to_string(),
             plugin_name: "DetectorB".to_string(),
         },
@@ -100,7 +100,7 @@ fn test_get_severity_counts_groups_high_medium_low() {
             file_path: "c.txt".to_string(),
             line_number: 3,
             finding_type: "C".to_string(),
-            severity: "LOW".to_string(),
+            severity: Severity::Low,
             matched_content: "c".to_string(),
             plugin_name: "DetectorC".to_string(),
         },
@@ -108,7 +108,7 @@ fn test_get_severity_counts_groups_high_medium_low() {
             file_path: "d.txt".to_string(),
             line_number: 4,
             finding_type: "D".to_string(),
-            severity: "HIGH".to_string(),
+            severity: Severity::High,
             matched_content: "d".to_string(),
             plugin_name: "DetectorD".to_string(),
         },

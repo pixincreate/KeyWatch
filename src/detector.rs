@@ -49,13 +49,17 @@ fn find_detectors_config() -> std::path::PathBuf {
             let p = std::path::PathBuf::from("detectors.toml");
             if p.exists() { Some(p) } else { None }
         })
-        .or_else(|| dirs::config_dir().map(|p| p.join("keywatch").join("detectors.toml")))
+        .or_else(|| {
+            dirs::config_dir()
+                .map(|p| p.join("keywatch").join("detectors.toml"))
+                .filter(|p| p.exists())
+        })
         .or_else(|| {
             std::env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().map(|d| d.join("detectors.toml")))
+                .filter(|p| p.exists())
         })
-        .filter(|p| p.exists())
         .unwrap_or_else(|| std::path::PathBuf::from("detectors.toml"))
 }
 

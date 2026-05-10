@@ -469,9 +469,9 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        calculate_exit_code, ensure_global_hook_target_is_safe,
+        Severity, calculate_exit_code, ensure_global_hook_target_is_safe,
         ensure_local_hook_target_is_safe_to_create, managed_global_hooks_dir,
-        resolve_hook_uninstall_target, resolve_local_hooks_dir_from, Severity,
+        resolve_hook_uninstall_target, resolve_local_hooks_dir_from,
     };
     use crate::cli::ExitMode;
     use crate::report::Finding;
