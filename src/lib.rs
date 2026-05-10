@@ -17,9 +17,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 use std::time::Instant;
 
+use crate::report::Severity;
 pub use hooks::{generate_pre_commit_hook, generate_pre_push_hook};
 
-const SEVERITY_HIGH: &str = "HIGH";
 pub const EXIT_CODE_RUNTIME_ERROR: i32 = 2;
 
 pub fn run_cli() -> Result<(), String> {
@@ -459,7 +459,7 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
         ExitMode::Critical => {
             let has_high = findings
                 .iter()
-                .any(|finding| finding.severity == SEVERITY_HIGH);
+                .any(|finding| finding.severity == Severity::High);
             if has_high { 1 } else { 0 }
         }
         ExitMode::Strict => 1,
@@ -471,7 +471,7 @@ mod tests {
     use super::{
         calculate_exit_code, ensure_global_hook_target_is_safe,
         ensure_local_hook_target_is_safe_to_create, managed_global_hooks_dir,
-        resolve_hook_uninstall_target, resolve_local_hooks_dir_from,
+        resolve_hook_uninstall_target, resolve_local_hooks_dir_from, Severity,
     };
     use crate::cli::ExitMode;
     use crate::report::Finding;
@@ -646,7 +646,7 @@ mod tests {
             file_path: "high.txt".to_string(),
             line_number: 1,
             finding_type: "High".to_string(),
-            severity: "HIGH".to_string(),
+            severity: Severity::High,
             matched_content: "secret".to_string(),
             plugin_name: "DetectorHigh".to_string(),
         };
@@ -654,7 +654,7 @@ mod tests {
             file_path: "low.txt".to_string(),
             line_number: 1,
             finding_type: "Low".to_string(),
-            severity: "LOW".to_string(),
+            severity: Severity::Low,
             matched_content: "token".to_string(),
             plugin_name: "DetectorLow".to_string(),
         };
