@@ -1,6 +1,6 @@
 use crate::cli::ScanArgs;
 use crate::detector::initialize_detectors;
-use crate::report::{Finding, ScanMetadata};
+use crate::report::{Finding, ScanMetadata, Severity};
 use glob::Pattern;
 use std::fs;
 use std::path::Path;
@@ -27,18 +27,15 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
 
     target_paths.sort_by(|a, b| a.0.cmp(&b.0));
 
-    let mut unique_paths: Vec<(String, Vec<Option<String>>)> = Vec::new();
+    let mut unique_paths: std::collections::BTreeMap<String, Vec<Option<String>>> =
+        std::collections::BTreeMap::new();
     for (path, root) in target_paths {
-        if let Some(last) = unique_paths.last_mut() {
-            if last.0 == path {
-                if !last.1.contains(&root) {
-                    last.1.push(root);
-                }
-                continue;
-            }
+        let roots = unique_paths.entry(path).or_default();
+        if !roots.contains(&root) {
+            roots.push(root);
         }
-        unique_paths.push((path, vec![root]));
     }
+    let unique_paths: Vec<_> = unique_paths.into_iter().collect();
 
     let detectors = initialize_detectors().map_err(|err| err.to_string())?;
     let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
@@ -75,10 +72,15 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
         }
 
         let full_content = match fs::read(&path) {
-            Ok(bytes) => match String::from_utf8(bytes) {
-                Ok(content) => content,
-                Err(_) => continue,
-            },
+            Ok(bytes) => {
+                if bytes.contains(&0) {
+                    continue;
+                }
+                match String::from_utf8(bytes) {
+                    Ok(content) => content,
+                    Err(_) => continue,
+                }
+            }
             Err(_) => continue,
         };
 
@@ -92,7 +94,7 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
                     line_number,
                     matched_content: mat.as_str().to_string(),
                     finding_type: detector.finding_type.clone(),
-                    severity: detector.severity.clone(),
+                    severity: Severity::from_string(&detector.severity),
                     plugin_name: detector.name.clone(),
                 });
             }
@@ -107,7 +109,7 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
                         line_number: line_idx + 1,
                         matched_content: mat.as_str().to_string(),
                         finding_type: detector.finding_type.clone(),
-                        severity: detector.severity.clone(),
+                        severity: Severity::from_string(&detector.severity),
                         plugin_name: detector.name.clone(),
                     });
                 }
