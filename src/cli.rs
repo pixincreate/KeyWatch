@@ -56,6 +56,14 @@ pub struct ScanArgs {
     /// Exit code behavior
     #[arg(long, value_enum, default_value_t = ExitMode::Strict)]
     pub exit_mode: ExitMode,
+
+    /// Path to a baseline file for suppressing known findings
+    #[arg(long)]
+    pub baseline: Option<String>,
+
+    /// Update the baseline file with current findings instead of scanning
+    #[arg(long)]
+    pub update_baseline: bool,
 }
 
 #[derive(Args, Debug)]

@@ -24,6 +24,8 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -50,6 +52,8 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -77,6 +81,8 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -105,6 +111,8 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -127,6 +135,8 @@ fn test_multiple_detections_in_line() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -161,6 +171,8 @@ fn test_directory_scan_with_exclusions() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -194,6 +206,8 @@ fn test_exclude_pattern_filtering() {
         verbose: false,
         exclude: Some("*.log".to_string()),
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (_findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -229,6 +243,8 @@ fn test_dot_github_directory_is_scanned() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -250,6 +266,8 @@ fn test_scan_no_secrets() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -272,6 +290,8 @@ fn test_non_utf8_file_handling() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -298,6 +318,8 @@ fn test_multiple_files_scan() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -325,6 +347,8 @@ fn test_duplicate_paths_are_scanned_once() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -366,6 +390,8 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -399,6 +425,8 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
@@ -430,6 +458,8 @@ fn test_detect_aadhaar() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -459,6 +489,8 @@ fn test_detect_voter_id() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -485,6 +517,8 @@ fn test_detect_pan_card() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -511,6 +545,8 @@ fn test_detect_abha() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -538,6 +574,8 @@ fn test_multiple_indian_ids() {
         verbose: false,
         exclude: None,
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, _) = run_scan(&options).expect("run_scan should succeed");
@@ -595,6 +633,8 @@ fn test_overlapping_scan_roots_with_exclusions() {
         verbose: false,
         exclude: Some("subdir/secret.txt".to_string()),
         exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
     };
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");

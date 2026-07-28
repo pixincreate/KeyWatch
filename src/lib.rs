@@ -1,3 +1,4 @@
+pub mod baseline;
 pub mod cli;
 pub mod detector;
 pub mod hooks;
@@ -43,7 +44,23 @@ pub fn run_cli() -> Result<(), String> {
 fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
     let start = Instant::now();
 
-    let (findings, scan_metadata) = scanner::run_scan(args)?;
+    let (mut findings, scan_metadata) = scanner::run_scan(args)?;
+
+    // Load baseline and filter known findings
+    if let Some(ref baseline_path) = args.baseline {
+        let baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
+        findings = baseline.filter_findings(findings);
+    }
+
+    // Update baseline if requested
+    if args.update_baseline {
+        let baseline_path = args.baseline.as_ref().ok_or("--update-baseline requires --baseline <path>")?;
+        let baseline = baseline::Baseline::from_findings(&findings);
+        baseline.save(std::path::Path::new(baseline_path))?;
+        println!("Baseline updated: {}", baseline_path);
+        return Ok(());
+    }
+
     let elapsed = start.elapsed();
     let scan_time = format!(
         "{}.{:01}s",
