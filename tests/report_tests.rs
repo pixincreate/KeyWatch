@@ -116,5 +116,5 @@ fn test_get_severity_counts_groups_high_medium_low() {
 
     let counts = get_severity_counts(&findings);
 
-    assert_eq!(counts, (2, 1, 1));
+    assert_eq!(counts, (0, 2, 1, 1));
 }

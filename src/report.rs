@@ -3,6 +3,7 @@ use serde::Serialize;
 #[derive(Serialize, Clone, PartialEq, Copy)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Severity {
+    Critical,
     High,
     Medium,
     Low,
@@ -11,6 +12,7 @@ pub enum Severity {
 impl Severity {
     pub fn from_string(s: &str) -> Severity {
         match s.to_uppercase().as_str() {
+            "CRITICAL" => Severity::Critical,
             "HIGH" => Severity::High,
             "MEDIUM" => Severity::Medium,
             _ => Severity::Low,
@@ -78,13 +80,14 @@ pub fn create_report(
     serde_json::to_string_pretty(&report)
 }
 
-pub fn get_severity_counts(findings: &[Finding]) -> (usize, usize, usize) {
-    let mut counts = (0, 0, 0);
+pub fn get_severity_counts(findings: &[Finding]) -> (usize, usize, usize, usize) {
+    let mut counts = (0, 0, 0, 0);
     for finding in findings {
         counts = match finding.severity {
-            Severity::High => (counts.0 + 1, counts.1, counts.2),
-            Severity::Medium => (counts.0, counts.1 + 1, counts.2),
-            Severity::Low => (counts.0, counts.1, counts.2 + 1),
+            Severity::Critical => (counts.0 + 1, counts.1, counts.2, counts.3),
+            Severity::High => (counts.0, counts.1 + 1, counts.2, counts.3),
+            Severity::Medium => (counts.0, counts.1, counts.2 + 1, counts.3),
+            Severity::Low => (counts.0, counts.1, counts.2, counts.3 + 1),
         };
     }
     counts

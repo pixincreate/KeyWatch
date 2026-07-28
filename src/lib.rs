@@ -62,8 +62,8 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
         println!("No secrets found.");
     } else {
         println!(
-            "WARNING: {} potential secret(s) detected (HIGH: {}, MEDIUM: {}, LOW: {})",
-            findings_count, severity_counts.0, severity_counts.1, severity_counts.2
+            "WARNING: {} potential secret(s) detected (CRITICAL: {}, HIGH: {}, MEDIUM: {}, LOW: {})",
+            findings_count, severity_counts.0, severity_counts.1, severity_counts.2, severity_counts.3
         );
     }
 
@@ -457,10 +457,10 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
     match exit_mode {
         ExitMode::Always => 0,
         ExitMode::Critical => {
-            let has_high = findings
+            let has_critical_or_high = findings
                 .iter()
-                .any(|finding| finding.severity == Severity::High);
-            if has_high { 1 } else { 0 }
+                .any(|finding| finding.severity == Severity::Critical || finding.severity == Severity::High);
+            if has_critical_or_high { 1 } else { 0 }
         }
         ExitMode::Strict => 1,
     }
@@ -642,6 +642,14 @@ mod tests {
 
     #[test]
     fn test_calculate_exit_code_across_modes() {
+        let critical = Finding {
+            file_path: "critical.txt".to_string(),
+            line_number: 1,
+            finding_type: "Critical".to_string(),
+            severity: Severity::Critical,
+            matched_content: "secret".to_string(),
+            plugin_name: "DetectorCritical".to_string(),
+        };
         let high = Finding {
             file_path: "high.txt".to_string(),
             line_number: 1,
@@ -672,6 +680,15 @@ mod tests {
             calculate_exit_code(std::slice::from_ref(&high), &ExitMode::Critical),
             1
         );
-        assert_eq!(calculate_exit_code(&[low, high], &ExitMode::Strict), 1);
+        assert_eq!(
+            calculate_exit_code(std::slice::from_ref(&critical), &ExitMode::Critical),
+            1
+        );
+        assert_eq!(
+            calculate_exit_code(std::slice::from_ref(&critical), &ExitMode::Always),
+            0
+        );
+        assert_eq!(calculate_exit_code(&[low.clone(), high], &ExitMode::Strict), 1);
+        assert_eq!(calculate_exit_code(&[low.clone(), critical], &ExitMode::Strict), 1);
     }
 }
