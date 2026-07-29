@@ -1,0 +1,7 @@
+[default]
+extend-ignore-identifiers-re = [
+    # HashiCorp is a real company name, not a typo for "Hash"
+    "HashiCorp",
+    # Fly.io token prefix pattern (fo1_)
+    "fo1_",
+]

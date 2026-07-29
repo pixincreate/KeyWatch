@@ -46,16 +46,18 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
 
     let (mut findings, scan_metadata) = scanner::run_scan(args)?;
 
-    // Load baseline and filter known findings
     if let Some(ref baseline_path) = args.baseline {
         let baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
         findings = baseline.filter_findings(findings);
     }
 
-    // Update baseline if requested
     if args.update_baseline {
-        let baseline_path = args.baseline.as_ref().ok_or("--update-baseline requires --baseline <path>")?;
-        let baseline = baseline::Baseline::from_findings(&findings);
+        let baseline_path = args
+            .baseline
+            .as_ref()
+            .ok_or("--update-baseline requires --baseline <path>")?;
+        let mut baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
+        baseline.update_with_findings(&findings);
         baseline.save(std::path::Path::new(baseline_path))?;
         println!("Baseline updated: {}", baseline_path);
         return Ok(());
@@ -80,7 +82,11 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
     } else {
         println!(
             "WARNING: {} potential secret(s) detected (CRITICAL: {}, HIGH: {}, MEDIUM: {}, LOW: {})",
-            findings_count, severity_counts.0, severity_counts.1, severity_counts.2, severity_counts.3
+            findings_count,
+            severity_counts.0,
+            severity_counts.1,
+            severity_counts.2,
+            severity_counts.3
         );
     }
 
@@ -474,9 +480,9 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
     match exit_mode {
         ExitMode::Always => 0,
         ExitMode::Critical => {
-            let has_critical_or_high = findings
-                .iter()
-                .any(|finding| finding.severity == Severity::Critical || finding.severity == Severity::High);
+            let has_critical_or_high = findings.iter().any(|finding| {
+                finding.severity == Severity::Critical || finding.severity == Severity::High
+            });
             if has_critical_or_high { 1 } else { 0 }
         }
         ExitMode::Strict => 1,
@@ -705,7 +711,13 @@ mod tests {
             calculate_exit_code(std::slice::from_ref(&critical), &ExitMode::Always),
             0
         );
-        assert_eq!(calculate_exit_code(&[low.clone(), high], &ExitMode::Strict), 1);
-        assert_eq!(calculate_exit_code(&[low.clone(), critical], &ExitMode::Strict), 1);
+        assert_eq!(
+            calculate_exit_code(&[low.clone(), high], &ExitMode::Strict),
+            1
+        );
+        assert_eq!(
+            calculate_exit_code(&[low.clone(), critical], &ExitMode::Strict),
+            1
+        );
     }
 }

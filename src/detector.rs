@@ -2,12 +2,14 @@ use regex::Regex;
 use serde::Deserialize;
 use std::fs;
 
-/// Represents a secret detector used in scanning.
 pub struct Detector {
     pub name: String,
     pub regex: Regex,
     pub finding_type: String,
     pub severity: String,
+    pub allowlist: Vec<Regex>,
+    pub keywords: Vec<String>,
+    pub entropy_threshold: Option<f64>,
 }
 
 impl Detector {
@@ -16,17 +18,65 @@ impl Detector {
         pattern: &str,
         finding_type: &str,
         severity: &str,
-    ) -> Result<Detector, regex::Error> {
+        allowlist: &[String],
+        keywords: &[String],
+        entropy_threshold: Option<f64>,
+    ) -> Result<Detector, String> {
+        let regex = Regex::new(pattern)
+            .map_err(|err| format!("Invalid pattern in detector '{}': {}", name, err))?;
+
+        let mut compiled_allowlist = Vec::new();
+        for pat in allowlist {
+            let compiled = Regex::new(pat).map_err(|err| {
+                format!("Invalid allowlist pattern in detector '{}': {}", name, err)
+            })?;
+            compiled_allowlist.push(compiled);
+        }
+
         Ok(Detector {
             name: name.to_string(),
-            regex: Regex::new(pattern)?,
+            regex,
             finding_type: finding_type.to_string(),
             severity: severity.to_string(),
+            allowlist: compiled_allowlist,
+            keywords: keywords.to_vec(),
+            entropy_threshold,
         })
+    }
+
+    pub fn has_keywords(&self, content: &str) -> bool {
+        if self.keywords.is_empty() {
+            return true;
+        }
+        let lower = content.to_lowercase();
+        self.keywords
+            .iter()
+            .any(|kw| lower.contains(&kw.to_lowercase()))
+    }
+
+    pub fn has_sufficient_entropy(&self, matched: &str) -> bool {
+        match self.entropy_threshold {
+            Some(threshold) => shannon_entropy(matched) >= threshold,
+            None => true,
+        }
     }
 }
 
-/// This structure mirrors the detectors.toml file layout.
+fn shannon_entropy(s: &str) -> f64 {
+    if s.is_empty() {
+        return 0.0;
+    }
+    let mut counts = std::collections::HashMap::new();
+    for ch in s.chars() {
+        *counts.entry(ch).or_insert(0) += 1;
+    }
+    let len = s.len() as f64;
+    counts.values().fold(0.0, |acc, &count| {
+        let p = count as f64 / len;
+        acc - p * p.log2()
+    })
+}
+
 #[derive(Deserialize)]
 struct DetectorsConfig {
     detectors: Vec<DetectorConfig>,
@@ -38,6 +88,9 @@ struct DetectorConfig {
     pattern: String,
     finding_type: String,
     severity: String,
+    allowlist: Option<Vec<String>>,
+    keywords: Option<Vec<String>>,
+    entropy: Option<f64>,
 }
 
 fn find_detectors_config() -> std::path::PathBuf {
@@ -63,7 +116,6 @@ fn find_detectors_config() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("detectors.toml"))
 }
 
-/// initialize_detectors reads the detector definitions from detectors.toml and returns a vector of Detector.
 pub fn initialize_detectors() -> Result<Vec<Detector>, Box<dyn std::error::Error>> {
     let config_path = find_detectors_config();
     let toml_contents = fs::read_to_string(&config_path)
@@ -75,7 +127,18 @@ pub fn initialize_detectors() -> Result<Vec<Detector>, Box<dyn std::error::Error
     Ok(config
         .detectors
         .into_iter()
-        .map(|det| Detector::new(&det.name, &det.pattern, &det.finding_type, &det.severity))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|err| format!("Invalid detector pattern: {}", err))?)
+        .map(|det| {
+            let allowlist = det.allowlist.as_deref().unwrap_or_default();
+            let keywords = det.keywords.as_deref().unwrap_or_default();
+            Detector::new(
+                &det.name,
+                &det.pattern,
+                &det.finding_type,
+                &det.severity,
+                allowlist,
+                keywords,
+                det.entropy,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?)
 }

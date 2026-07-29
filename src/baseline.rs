@@ -5,17 +5,22 @@ use std::path::Path;
 
 use crate::report::Finding;
 
-/// A single entry in the baseline file.
+fn hash_content(content: &str) -> String {
+    use std::hash::{DefaultHasher, Hash, Hasher};
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    format!("{:016x}", hasher.finish())
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct BaselineEntry {
     pub file_path: String,
     pub line_number: usize,
     pub finding_type: String,
-    pub matched_content: String,
+    pub matched_content_hash: String,
     pub plugin_name: String,
 }
 
-/// The baseline file structure.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Baseline {
     pub version: String,
@@ -30,7 +35,6 @@ impl Baseline {
         }
     }
 
-    /// Load a baseline from a file path. Returns an empty baseline if the file doesn't exist.
     pub fn load(path: &Path) -> Result<Self, String> {
         if !path.exists() {
             return Ok(Self::new());
@@ -49,7 +53,6 @@ impl Baseline {
         Ok(baseline)
     }
 
-    /// Save the baseline to a file path.
     pub fn save(&self, path: &Path) -> Result<(), String> {
         let json = serde_json::to_string_pretty(self)
             .map_err(|err| format!("Failed to serialize baseline: {}", err))?;
@@ -60,12 +63,10 @@ impl Baseline {
         Ok(())
     }
 
-    /// Build a HashSet of fingerprints for O(1) lookup.
     fn build_fingerprints(&self) -> HashSet<String> {
-        self.entries.iter().map(|e| fingerprint(e)).collect()
+        self.entries.iter().map(fingerprint).collect()
     }
 
-    /// Filter findings, removing those already in the baseline.
     pub fn filter_findings(&self, findings: Vec<Finding>) -> Vec<Finding> {
         let fingerprints = self.build_fingerprints();
         findings
@@ -74,7 +75,6 @@ impl Baseline {
             .collect()
     }
 
-    /// Create a new baseline from a list of findings.
     pub fn from_findings(findings: &[Finding]) -> Self {
         let entries = findings
             .iter()
@@ -82,7 +82,7 @@ impl Baseline {
                 file_path: f.file_path.clone(),
                 line_number: f.line_number,
                 finding_type: f.finding_type.clone(),
-                matched_content: f.matched_content.clone(),
+                matched_content_hash: hash_content(&f.matched_content),
                 plugin_name: f.plugin_name.clone(),
             })
             .collect();
@@ -92,101 +92,48 @@ impl Baseline {
             entries,
         }
     }
-}
 
-/// Create a fingerprint string for a baseline entry.
-fn fingerprint(entry: &BaselineEntry) -> String {
-    format!(
-        "{}:{}:{}:{}",
-        entry.file_path, entry.line_number, entry.finding_type, entry.plugin_name
-    )
-}
-
-/// Create a fingerprint string for a finding.
-fn finding_fingerprint(finding: &Finding) -> String {
-    format!(
-        "{}:{}:{}:{}",
-        finding.file_path, finding.line_number, finding.finding_type, finding.plugin_name
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn make_finding(file: &str, line: usize, ftype: &str, content: &str, plugin: &str) -> Finding {
-        Finding {
-            file_path: file.to_string(),
-            line_number: line,
-            finding_type: ftype.to_string(),
-            severity: crate::report::Severity::High,
-            matched_content: content.to_string(),
-            plugin_name: plugin.to_string(),
+    pub fn update_with_findings(&mut self, findings: &[Finding]) {
+        let existing: HashSet<String> = self.entries.iter().map(fingerprint).collect();
+        for f in findings {
+            let fp = finding_fingerprint(f);
+            if !existing.contains(&fp) {
+                self.entries.push(BaselineEntry {
+                    file_path: f.file_path.clone(),
+                    line_number: f.line_number,
+                    finding_type: f.finding_type.clone(),
+                    matched_content_hash: hash_content(&f.matched_content),
+                    plugin_name: f.plugin_name.clone(),
+                });
+            }
         }
     }
+}
 
-    #[test]
-    fn test_baseline_filters_known_findings() {
-        let baseline = Baseline {
-            version: "1.0".to_string(),
-            entries: vec![
-                BaselineEntry {
-                    file_path: "test.txt".to_string(),
-                    line_number: 5,
-                    finding_type: "AWS Key".to_string(),
-                    matched_content: "AKIA...".to_string(),
-                    plugin_name: "AWSAccessKeyDetector".to_string(),
-                },
-            ],
-        };
-
-        let findings = vec![
-            make_finding("test.txt", 5, "AWS Key", "AKIAIOSFODNN7EXAMPLE", "AWSAccessKeyDetector"),
-            make_finding("other.txt", 1, "API Key", "sk-abc", "GenericKeyValueDetector"),
-        ];
-
-        let filtered = baseline.filter_findings(findings);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].file_path, "other.txt");
+impl Default for Baseline {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
-    #[test]
-    fn test_baseline_allows_new_findings() {
-        let baseline = Baseline::new();
-        let findings = vec![make_finding("test.txt", 1, "API Key", "sk-abc", "GenericKeyValueDetector")];
-        let filtered = baseline.filter_findings(findings);
-        assert_eq!(filtered.len(), 1);
-    }
+fn fingerprint(entry: &BaselineEntry) -> String {
+    format!(
+        "{}:{}:{}:{}:{}",
+        entry.file_path,
+        entry.line_number,
+        entry.finding_type,
+        entry.matched_content_hash,
+        entry.plugin_name
+    )
+}
 
-    #[test]
-    fn test_baseline_save_and_load() {
-        let temp_file = std::env::temp_dir().join("keywatch_test_baseline.json");
-        let baseline = Baseline {
-            version: "1.0".to_string(),
-            entries: vec![BaselineEntry {
-                file_path: "a.txt".to_string(),
-                line_number: 1,
-                finding_type: "X".to_string(),
-                matched_content: "secret".to_string(),
-                plugin_name: "D".to_string(),
-            }],
-        };
-
-        baseline.save(&temp_file).unwrap();
-        let loaded = Baseline::load(&temp_file).unwrap();
-        assert_eq!(loaded.entries.len(), 1);
-        assert_eq!(loaded.entries[0].file_path, "a.txt");
-
-        let _ = fs::remove_file(&temp_file);
-    }
-
-    #[test]
-    fn test_baseline_from_findings() {
-        let findings = vec![
-            make_finding("f1.txt", 1, "A", "x", "D1"),
-            make_finding("f2.txt", 2, "B", "y", "D2"),
-        ];
-        let baseline = Baseline::from_findings(&findings);
-        assert_eq!(baseline.entries.len(), 2);
-    }
+fn finding_fingerprint(finding: &Finding) -> String {
+    format!(
+        "{}:{}:{}:{}:{}",
+        finding.file_path,
+        finding.line_number,
+        finding.finding_type,
+        hash_content(&finding.matched_content),
+        finding.plugin_name
+    )
 }

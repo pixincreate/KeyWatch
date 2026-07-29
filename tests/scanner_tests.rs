@@ -20,6 +20,8 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -48,6 +50,8 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -77,6 +81,8 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -107,6 +113,8 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -131,6 +139,8 @@ fn test_multiple_detections_in_line() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -167,6 +177,8 @@ fn test_directory_scan_with_exclusions() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -202,6 +214,8 @@ fn test_exclude_pattern_filtering() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: Some("*.log".to_string()),
@@ -239,6 +253,8 @@ fn test_dot_github_directory_is_scanned() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -262,6 +278,8 @@ fn test_scan_no_secrets() {
 
     let options = ScanArgs {
         paths: vec![temp_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -286,6 +304,8 @@ fn test_non_utf8_file_handling() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -314,6 +334,8 @@ fn test_multiple_files_scan() {
             test_file1.to_str().unwrap().to_string(),
             test_file2.to_str().unwrap().to_string(),
         ],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -343,6 +365,8 @@ fn test_duplicate_paths_are_scanned_once() {
             temp_file.to_str().unwrap().to_string(),
             temp_file.to_str().unwrap().to_string(),
         ],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -386,6 +410,8 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
             direct_file.to_str().unwrap().to_string(),
             test_dir.to_str().unwrap().to_string(),
         ],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -421,6 +447,8 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
 
     let options = ScanArgs {
         paths: vec![missing_path.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -454,6 +482,8 @@ fn test_detect_aadhaar() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -485,6 +515,8 @@ fn test_detect_voter_id() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -513,6 +545,8 @@ fn test_detect_pan_card() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -541,6 +575,8 @@ fn test_detect_abha() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -570,6 +606,8 @@ fn test_multiple_indian_ids() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -619,16 +657,13 @@ fn test_overlapping_scan_roots_with_exclusions() {
     let test_file = root2.join("secret.txt");
     fs::write(&test_file, "password=secret123").expect("Write test file");
 
-    // The exclude pattern "subdir/secret.txt" should match relative to root1,
-    // or just "secret.txt" should match relative to root2.
-    // Let's exclude "subdir/secret.txt". It matches relative to root1.
-    // If root2 is used as the only root, "secret.txt" stripped of root2 is "secret.txt",
-    // which does NOT match "subdir/secret.txt", so it would NOT be excluded and find the secret!
     let options = ScanArgs {
         paths: vec![
             root2.to_str().unwrap().to_string(), // Root 2 comes first to try to mess up order
             root1.to_str().unwrap().to_string(),
         ],
+        stdin: false,
+        git_history: false,
         output: None,
         verbose: false,
         exclude: Some("subdir/secret.txt".to_string()),
@@ -639,7 +674,6 @@ fn test_overlapping_scan_roots_with_exclusions() {
 
     let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
 
-    // Because we exclude "subdir/secret.txt", it should be excluded via root1's perspective.
     assert!(
         metadata
             .excluded_files
@@ -653,4 +687,142 @@ fn test_overlapping_scan_roots_with_exclusions() {
     );
 
     fs::remove_dir_all(root1).expect("Cleanup");
+}
+
+#[test]
+fn test_inline_suppression_ignores_marked_lines() -> Result<(), String> {
+    let temp_dir = temp_dir();
+    let test_file = temp_dir.join("key_watch_inline_suppress.txt");
+
+    let content = "\
+AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\nemail = user@example.com // keywatch:ignore\nFirebase: AIzaSy012345678901234567890123456789012\n";
+    fs::write(&test_file, content).map_err(|e| format!("Unable to write test file: {}", e))?;
+
+    let path_str = test_file.to_string_lossy().to_string();
+
+    let options = ScanArgs {
+        paths: vec![path_str],
+        stdin: false,
+        git_history: false,
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
+    };
+
+    let (findings, _) = run_scan(&options)?;
+
+    let aws_suppressed = findings
+        .iter()
+        .any(|f| f.matched_content.contains("AKIAABCDEFGHIJKLMNOP"));
+    let email_suppressed = findings
+        .iter()
+        .any(|f| f.matched_content.contains("user@example.com"));
+    let firebase_found = findings.iter().any(|f| {
+        f.matched_content
+            .contains("AIzaSy012345678901234567890123456789012")
+    });
+
+    assert!(
+        !aws_suppressed,
+        "AWS key with # keywatch:ignore should be suppressed"
+    );
+    assert!(
+        !email_suppressed,
+        "Email with // keywatch:ignore should be suppressed"
+    );
+    assert!(
+        firebase_found,
+        "Firebase key without suppression should still be found"
+    );
+
+    fs::remove_file(test_file).map_err(|e| format!("Cleanup failed: {}", e))?;
+    Ok(())
+}
+
+#[test]
+fn test_stdin_scanning() {
+    let options = ScanArgs {
+        paths: vec![],
+        stdin: true,
+        git_history: false,
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
+    };
+
+    assert!(options.validate().is_ok());
+}
+
+#[test]
+fn test_git_history_scanning() -> Result<(), String> {
+    use std::process::Command;
+
+    let temp_dir = std::env::temp_dir().join("keywatch_test_git_history");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).map_err(|e| format!("Create dir: {}", e))?;
+
+    Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(&temp_dir)
+        .output()
+        .map_err(|e| format!("git init: {}", e))?;
+
+    Command::new("git")
+        .args(["config", "user.email", "test@test.com"])
+        .current_dir(&temp_dir)
+        .output()
+        .map_err(|e| format!("git config: {}", e))?;
+
+    Command::new("git")
+        .args(["config", "user.name", "Test"])
+        .current_dir(&temp_dir)
+        .output()
+        .map_err(|e| format!("git config: {}", e))?;
+
+    let secret_file = temp_dir.join("secrets.txt");
+    fs::write(&secret_file, "AWS Key: AKIAABCDEFGHIJKLMNOP\n")
+        .map_err(|e| format!("Write file: {}", e))?;
+
+    Command::new("git")
+        .args(["add", "."])
+        .current_dir(&temp_dir)
+        .output()
+        .map_err(|e| format!("git add: {}", e))?;
+
+    Command::new("git")
+        .args(["commit", "-m", "initial", "--quiet"])
+        .current_dir(&temp_dir)
+        .output()
+        .map_err(|e| format!("git commit: {}", e))?;
+
+    let options = ScanArgs {
+        paths: vec![],
+        stdin: false,
+        git_history: true,
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
+    };
+
+    let (findings, metadata) = run_scan(&options)?;
+
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.matched_content.contains("AKIAABCDEFGHIJKLMNOP")),
+        "Should find AWS key in git history"
+    );
+    assert_eq!(metadata.files_scanned, 1);
+
+    let _ = fs::remove_dir_all(&temp_dir);
+    Ok(())
 }

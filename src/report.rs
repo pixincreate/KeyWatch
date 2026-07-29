@@ -27,7 +27,6 @@ pub enum ScanStatus {
     Fail,
 }
 
-/// Represents a single secret finding.
 #[derive(Serialize, Clone)]
 pub struct Finding {
     pub file_path: String,
@@ -38,7 +37,6 @@ pub struct Finding {
     pub plugin_name: String,
 }
 
-/// Metadata about the scanning performed.
 #[derive(Serialize, Clone)]
 pub struct ScanMetadata {
     pub files_scanned: usize,
@@ -46,7 +44,6 @@ pub struct ScanMetadata {
     pub excluded_files: Vec<String>,
 }
 
-/// The overall report.
 #[derive(Serialize)]
 pub struct Report {
     pub status: ScanStatus,
@@ -57,7 +54,6 @@ pub struct Report {
     pub scan_time: String,
 }
 
-/// create_report builds the final JSON report based on findings and metadata.
 pub fn create_report(
     findings: Vec<Finding>,
     metadata: ScanMetadata,

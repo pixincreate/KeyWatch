@@ -88,6 +88,12 @@ key-watch scan secrets.txt
 # Scan a directory
 key-watch scan .
 
+# Scan from stdin
+cat secrets.txt | key-watch scan --stdin
+
+# Scan git history for committed secrets
+key-watch scan --git-history
+
 # Verbose output (JSON)
 key-watch scan secrets.txt --verbose
 
@@ -117,10 +123,14 @@ key-watch verify-integrity
 ## Options
 
 - `scan <path>...` - Scan one or more files or directories
+- `scan --stdin` - Read content from stdin instead of files
+- `scan --git-history` - Scan git history (`git log -p`) for committed secrets
 - `scan --output <path>` - Save report to file
 - `scan --verbose` - Print full JSON output
 - `scan --exclude <patterns>` - Comma-separated glob patterns to exclude
-- `scan --exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH only), `strict` (fail on any finding, default)
+- `scan --exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH/CRITICAL only), `strict` (fail on any finding, default)
+- `scan --baseline <path>` - Suppress known findings from a previous scan
+- `scan --update-baseline` - Update baseline with current findings (requires `--baseline`)
 - `hook install <pre-commit|pre-push> [--global]` - Install a git hook
 - `hook uninstall <pre-commit|pre-push> [--global]` - Remove a git hook
 - `hook install pre-push --allowed-repos <urls>` - Whitelist repos for pre-push hooks
@@ -135,6 +145,26 @@ key-watch verify-integrity
 - `keywatch` and `kw` are optional aliases.
 - `key-watch init bash|zsh|fish|posix` prints shell aliases you can eval in your shell.
 - `watch` is intentionally not used, to avoid colliding with the standard Unix `watch` command.
+
+## Baseline
+
+Use baselines to suppress known findings on subsequent scans:
+
+```sh
+# First scan: create a baseline
+key-watch scan . --baseline .keywatch.baseline --update-baseline
+
+# Future scans: only report NEW findings
+key-watch scan . --baseline .keywatch.baseline
+```
+
+## Inline Suppression
+
+Add `keywatch:ignore` to suppress a finding on a specific line:
+
+```sh
+password = 'known-test-password' # keywatch:ignore
+```
 
 ## Exit Codes
 
