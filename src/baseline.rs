@@ -6,10 +6,16 @@ use std::path::Path;
 use crate::report::Finding;
 
 fn hash_content(content: &str) -> String {
-    use std::hash::{DefaultHasher, Hash, Hasher};
-    let mut hasher = DefaultHasher::new();
-    content.hash(&mut hasher);
-    format!("{:016x}", hasher.finish())
+    use sha2::{Digest, Sha256};
+    let domain_separator = "keywatch-baseline-v1";
+    let mut hasher = Sha256::new();
+    hasher.update(domain_separator.as_bytes());
+    hasher.update(content.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]

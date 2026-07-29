@@ -743,7 +743,7 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
 }
 
 #[test]
-fn test_stdin_scanning() {
+fn test_stdin_args_validation() {
     let options = ScanArgs {
         paths: vec![],
         stdin: true,
@@ -760,8 +760,51 @@ fn test_stdin_scanning() {
 }
 
 #[test]
+fn test_stdin_scanning_integration() -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+
+    let bin_path = env!("CARGO_BIN_EXE_key-watch");
+    let mut child = Command::new(bin_path)
+        .args(["scan", "--stdin"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn key-watch --stdin: {}", e))?;
+
+    let mut stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
+    stdin
+        .write_all(b"AWS Key: AKIAABCDEFGHIJKLMNOP\npassword = 'secret123'\n")
+        .map_err(|e| format!("write to stdin: {}", e))?;
+    drop(stdin);
+
+    let output = child
+        .wait_with_output()
+        .map_err(|e| format!("wait: {}", e))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    let combined = format!("{}{}", stdout, stderr);
+    assert!(
+        combined.contains("3 potential secret(s)"),
+        "Should detect 3 secrets from stdin input\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_git_history_scanning() -> Result<(), String> {
     use std::process::Command;
+
+    // Skip if git is not available
+    if Command::new("git").arg("--version").output().is_err() {
+        return Ok(());
+    }
 
     let temp_dir = std::env::temp_dir().join("keywatch_test_git_history");
     let _ = fs::remove_dir_all(&temp_dir);

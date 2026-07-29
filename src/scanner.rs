@@ -107,10 +107,11 @@ fn scan_stream<R: BufRead>(
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, usize), String> {
     const CHUNK_SIZE: usize = 1000;
+    const OVERLAP_LINES: usize = 50;
 
     let mut findings = Vec::new();
     let mut total_lines = 0;
-    let mut buffer: Vec<String> = Vec::with_capacity(CHUNK_SIZE);
+    let mut buffer: Vec<String> = Vec::with_capacity(CHUNK_SIZE + OVERLAP_LINES);
     let mut line_offset = 0;
 
     for line_result in reader.lines() {
@@ -121,7 +122,7 @@ fn scan_stream<R: BufRead>(
 
         buffer.push(line);
 
-        if buffer.len() >= CHUNK_SIZE {
+        if buffer.len() >= CHUNK_SIZE + OVERLAP_LINES {
             let chunk = buffer.join("\n");
             scan_multiline_chunk(
                 &chunk,
@@ -130,8 +131,8 @@ fn scan_stream<R: BufRead>(
                 multiline_detectors,
                 &mut findings,
             );
-            line_offset += buffer.len();
-            buffer.clear();
+            line_offset += buffer.len() - OVERLAP_LINES;
+            buffer.drain(..buffer.len() - OVERLAP_LINES);
         }
     }
 

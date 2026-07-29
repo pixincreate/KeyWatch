@@ -11,7 +11,7 @@ pub enum Severity {
 
 impl Severity {
     pub fn from_string(s: &str) -> Severity {
-        match s.to_uppercase().as_str() {
+        match s.trim().to_uppercase().as_str() {
             "CRITICAL" => Severity::Critical,
             "HIGH" => Severity::High,
             "MEDIUM" => Severity::Medium,
