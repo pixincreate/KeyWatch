@@ -191,6 +191,146 @@ password = 'known-test-password' # keywatch:ignore
 - KeyWatch refuses to overwrite a non-KeyWatch global hook file
 - KeyWatch also refuses to remove a non-KeyWatch global hook file
 
+## Architecture
+
+### Layers & Data Flow
+
+```mermaid
+flowchart LR
+    subgraph Input["📥 INPUT"]
+        direction LR
+        FILES[("Files / Dirs")]
+        STDIN[("stdin")]
+        GIT[("git log -p")]
+    end
+
+    subgraph Config["⚙️ CONFIGURATION"]
+        DET_TOML[("detectors.toml<br/>827 lines of built-in rules")]
+        KW_TOML[(".keywatch.toml<br/>Custom rules, overrides,<br/>exclude patterns")]
+    end
+
+    subgraph Pipeline["🔁 DETECTION PIPELINE"]
+        direction TB
+        COLLECT["1. Collect files<br/>Recursive dir walk<br/>Skip .git, skip binary"]
+        EXCLUDE["2. Exclude filter<br/>CLI --exclude +<br/>config.exclude"]
+        KEYWORD["3. Keyword pre-filter<br/>Fast path: skip files<br/>without matching keywords"]
+        REGEX["4. Regex match<br/>Line detectors (single-line)<br/>Multiline detectors ((?s))"]
+        ENTROPY["5. Shannon entropy<br/>Only flag secrets above<br/>configurable threshold"]
+        ALLOW["6. Allowlist + suppress<br/>Detector allowlist regexes<br/>Inline keywatch:ignore"]
+    end
+
+    subgraph Post["📋 POST-PROCESSING"]
+        BASELINE["Baseline filter<br/>SHA-256 fingerprint<br/>Suppress known findings"]
+    end
+
+    subgraph Output["📤 OUTPUT"]
+        JSON_OUT["JSON report<br/>create_report()"]
+        SARIF_OUT["SARIF 2.1.0<br/>create_sarif_report()"]
+        SUMMARY["Summary line<br/>CRIT: 2, HIGH: 5, ..."]
+    end
+
+    Input --> COLLECT
+    DET_TOML --> KEYWORD
+    DET_TOML --> REGEX
+    DET_TOML --> ENTROPY
+    DET_TOML --> ALLOW
+    KW_TOML --> EXCLUDE
+    COLLECT --> EXCLUDE
+    EXCLUDE --> KEYWORD --> REGEX --> ENTROPY --> ALLOW
+    ALLOW --> BASELINE
+    BASELINE --> JSON_OUT
+    BASELINE --> SARIF_OUT
+    BASELINE --> SUMMARY
+```
+
+### Core Data Types
+
+```mermaid
+classDiagram
+    class Detector {
+        +String name
+        +Regex regex
+        +String finding_type
+        +String severity
+        +Vec~Regex~ allowlist
+        +Vec~String~ keywords
+        +Option~f64~ entropy_threshold
+        +has_keywords(content) bool
+        +has_sufficient_entropy(matched) bool
+    }
+
+    class Finding {
+        +String file_path
+        +usize line_number
+        +String finding_type
+        +Severity severity
+        +String matched_content
+        +String plugin_name
+    }
+
+    class Severity {
+        <<enum>>
+        CRITICAL
+        HIGH
+        MEDIUM
+        LOW
+    }
+
+    class ScanMetadata {
+        +usize files_scanned
+        +usize total_lines
+        +Vec~String~ excluded_files
+    }
+
+    class KeywatchConfig {
+        +Option~Vec~CustomRule~~ rules
+        +Option~HashMap~String, DetectorOverride~~ overrides
+        +Option~Vec~String~~ exclude
+    }
+
+    class Baseline {
+        +String version
+        +Vec~BaselineEntry~ entries
+        +filter_findings(findings) Vec~Finding~
+        +update_with_findings(findings)
+    }
+
+    Finding --> Severity
+    Detector --> Finding : produces
+    KeywatchConfig --> Detector : extends/overrides
+    Baseline --> Finding : filters
+```
+
+### Data Flow (One Scan)
+
+```
+CLI args (paths, --stdin, --git-history, --exclude, --format, --baseline, --config)
+       │
+       ▼
+load config (optional .keywatch.toml) ───► merge custom rules into detectors
+       │                                    merge exclude patterns
+       ▼
+collect files ───► exclude filter ───► parallel scan (rayon)
+                                          │
+                                          ├─ keyword pre-filter (skip if no match)
+                                          ├─ regex match (line + multiline)
+                                          ├─ entropy threshold check
+                                          ├─ allowlist check
+                                          └─ inline suppression check
+                                          │
+                                          ▼
+                                    Vec<Finding> + ScanMetadata
+                                          │
+                                          ▼
+                              baseline filter (optional, --baseline)
+                                          │
+                                          ▼
+                              report serialization (JSON or SARIF 2.1.0)
+                                          │
+                                          ▼
+                              stdout / file / exit code
+```
+
 ## Development
 
 ```sh
