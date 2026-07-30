@@ -4,6 +4,5 @@
 target/
 *.md
 COMPARISON.md
-Cargo.lock
 **/*.rs.bk
 .DS_Store

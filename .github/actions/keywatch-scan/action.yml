@@ -46,7 +46,8 @@ runs:
           VERSION="${KEYWATCH_VERSION:-latest}"
 
           if [ "$VERSION" = "latest" ]; then
-            DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest" | \
+            DOWNLOAD_URL=$(curl -sL -H "Authorization: Bearer ${{ github.token }}" \
+              "https://api.github.com/repos/$REPO/releases/latest" | \
               jq -r '.assets[] | select(.name | contains("'$(uname -s | tr '[:upper:]' '[:lower:]')'-'$(uname -m)')) | .browser_download_url' | \
               head -1)
           else
@@ -75,15 +76,9 @@ runs:
         EXIT_MODE="${{ inputs.exit-mode }}"
         OUTPUT="${{ inputs.output }}"
 
-        CMD="key-watch scan $PATHS --exit-mode $EXIT_MODE"
-
-        [ -n "$ARGS" ] && CMD="$CMD $ARGS"
-        [ "$VERBOSE" = "true" ] && CMD="$CMD --verbose"
-        [ -n "$OUTPUT" ] && CMD="$CMD --output $OUTPUT"
-
-        echo "Running: $CMD"
+        echo "Running: key-watch scan $PATHS --exit-mode $EXIT_MODE${ARGS:+ $ARGS}${VERBOSE:+ --verbose}${OUTPUT:+ --output $OUTPUT}"
         set +e
-        eval "$CMD"
+        key-watch scan $PATHS --exit-mode $EXIT_MODE ${ARGS:+$ARGS} ${VERBOSE:+--verbose} ${OUTPUT:+--output $OUTPUT}
         EXIT_CODE=$?
         set -e
 

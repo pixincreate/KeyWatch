@@ -11,16 +11,20 @@ COPY Cargo.toml Cargo.lock* ./
 COPY src/ src/
 COPY detectors.toml .
 
-RUN cargo build --release && \
+RUN cargo build --locked --release && \
+    strip target/release/key-watch && \
     cp target/release/key-watch /key-watch
 
 # Stage 2: Runtime
 FROM alpine:3.21
 
-RUN apk add --no-cache ca-certificates
+RUN apk add --no-cache ca-certificates && \
+    adduser -D keywatch
 
 COPY --from=build /key-watch /usr/local/bin/key-watch
 COPY --from=build /src/detectors.toml /etc/keywatch/detectors.toml
+
+USER keywatch
 
 ENV KEYWATCH_CONFIG_PATH=/etc/keywatch/detectors.toml
 
