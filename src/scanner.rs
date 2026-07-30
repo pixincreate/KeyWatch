@@ -1,4 +1,5 @@
 use crate::cli::ScanArgs;
+use crate::config::KeywatchConfig;
 use crate::detector::{Detector, initialize_detectors};
 use crate::report::{Finding, ScanMetadata};
 use glob::Pattern;
@@ -170,8 +171,49 @@ fn scan_stream<R: BufRead>(
     Ok((findings, total_lines))
 }
 
-pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String> {
-    let detectors = initialize_detectors().map_err(|err| err.to_string())?;
+pub fn run_scan(
+    args: &ScanArgs,
+    config: Option<&KeywatchConfig>,
+) -> Result<(Vec<Finding>, ScanMetadata), String> {
+    let mut detectors = initialize_detectors().map_err(|err| err.to_string())?;
+
+    if let Some(cfg) = config {
+        if let Some(ref rules) = cfg.rules {
+            for rule in rules {
+                match Detector::new(
+                    &rule.name,
+                    &rule.pattern,
+                    &rule.finding_type,
+                    &rule.severity,
+                    &[],
+                    &[],
+                    None,
+                ) {
+                    Ok(det) => detectors.push(det),
+                    Err(e) => eprintln!("Warning: custom rule '{}' skipped: {}", rule.name, e),
+                }
+            }
+        }
+
+        if let Some(ref overrides) = cfg.overrides {
+            detectors.retain(|det| {
+                if let Some(override_config) = overrides.get(&det.name) {
+                    if override_config.enabled == Some(false) {
+                        return false;
+                    }
+                }
+                true
+            });
+
+            for det in &mut detectors {
+                if let Some(override_config) = overrides.get(&det.name) {
+                    if let Some(ref sev) = override_config.severity {
+                        det.severity.clone_from(sev);
+                    }
+                }
+            }
+        }
+    }
     let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
         .iter()
         .partition(|detector| detector.regex.as_str().contains("(?s)"));
@@ -282,6 +324,22 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
         })
         .transpose()?
         .unwrap_or_default();
+
+    let exclude_patterns = if let Some(cfg) = config {
+        if let Some(ref cfg_excludes) = cfg.exclude {
+            let mut patterns = exclude_patterns;
+            for pattern_str in cfg_excludes {
+                patterns.push(Pattern::new(pattern_str).map_err(|err| {
+                    format!("Invalid config exclude pattern '{}': {}", pattern_str, err)
+                })?);
+            }
+            patterns
+        } else {
+            exclude_patterns
+        }
+    } else {
+        exclude_patterns
+    };
 
     let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
         .into_par_iter()

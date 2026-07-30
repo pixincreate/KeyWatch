@@ -1,4 +1,4 @@
-use key_watch::cli::{ExitMode, ScanArgs};
+use key_watch::cli::{ExitMode, OutputFormat, ScanArgs};
 use key_watch::scanner::run_scan;
 use std::env::temp_dir;
 use std::fs;
@@ -114,9 +114,11 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(!findings.is_empty(), "Should find secrets");
 
     fs::remove_file(test_file).expect("Cleanup");
@@ -144,9 +146,11 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(!findings.is_empty(), "Should find API tokens");
 
     fs::remove_file(test_file).expect("Cleanup");
@@ -175,9 +179,11 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(!findings.is_empty(), "Should find cloud credentials");
 
     fs::remove_file(test_file).expect("Cleanup");
@@ -207,9 +213,11 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(!findings.is_empty(), "Should find private keys");
 
     fs::remove_file(test_file).expect("Cleanup");
@@ -233,9 +241,11 @@ fn test_multiple_detections_in_line() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(
         findings.len() >= 2,
         "Should find multiple secrets on one line"
@@ -271,9 +281,11 @@ fn test_directory_scan_with_exclusions() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
     assert_eq!(
         metadata.files_scanned, 2,
         "Should scan 2 files (.git excluded)"
@@ -308,9 +320,11 @@ fn test_exclude_pattern_filtering() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (_findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (_findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(
         metadata
             .excluded_files
@@ -347,9 +361,11 @@ fn test_dot_github_directory_is_scanned() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
     assert_eq!(metadata.files_scanned, 1, "Should scan .github files");
     assert!(!findings.is_empty(), "Should find secrets inside .github");
 
@@ -372,9 +388,11 @@ fn test_scan_no_secrets() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(findings.is_empty(), "Should not find secrets in plain text");
 
     fs::remove_file(temp_file).expect("Cleanup");
@@ -398,9 +416,11 @@ fn test_non_utf8_file_handling() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(findings.is_empty(), "Should gracefully handle binary files");
 
     fs::remove_file(test_file).expect("Cleanup");
@@ -428,9 +448,11 @@ fn test_multiple_files_scan() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(
         !findings.is_empty(),
         "Should find secrets in multiple files"
@@ -459,9 +481,11 @@ fn test_duplicate_paths_are_scanned_once() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
     assert_eq!(
         metadata.files_scanned, 1,
         "Duplicate paths should be deduped"
@@ -504,9 +528,11 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
     assert_eq!(
         metadata.files_scanned, 1,
         "File should only be scanned once"
@@ -541,9 +567,11 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
     assert!(
         findings.is_empty(),
         "Missing paths should not produce findings"
@@ -585,6 +613,8 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
     let (findings, metadata) = run_scan(&options)?;
@@ -662,9 +692,11 @@ fn test_detect_aadhaar() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     let aadhaar_findings: Vec<_> = findings
         .iter()
         .filter(|f| f.finding_type == "Aadhaar Card Number")
@@ -695,9 +727,11 @@ fn test_detect_voter_id() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     let voter_findings: Vec<_> = findings
         .iter()
         .filter(|f| f.finding_type == "Voter ID (EPIC)")
@@ -725,9 +759,11 @@ fn test_detect_pan_card() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     let pan_findings: Vec<_> = findings
         .iter()
         .filter(|f| f.finding_type == "PAN Card Number")
@@ -755,9 +791,11 @@ fn test_detect_abha() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     let abha_findings: Vec<_> = findings
         .iter()
         .filter(|f| f.finding_type == "ABHA Health ID")
@@ -786,9 +824,11 @@ fn test_multiple_indian_ids() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
     let finding_types: Vec<_> = findings.iter().map(|f| f.finding_type.clone()).collect();
 
     assert!(
@@ -842,9 +882,11 @@ fn test_overlapping_scan_roots_with_exclusions() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, metadata) = run_scan(&options).expect("run_scan should succeed");
+    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
 
     assert!(
         metadata
@@ -883,9 +925,11 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
-    let (findings, _) = run_scan(&options)?;
+    let (findings, _) = run_scan(&options, None)?;
 
     let aws_suppressed = findings
         .iter()
@@ -927,6 +971,8 @@ fn test_stdin_args_validation() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
     assert!(options.validate().is_ok());
@@ -982,6 +1028,8 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
     let one_path = ScanArgs {
         paths: vec!["/tmp/requested-root".to_string()],
@@ -993,6 +1041,8 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
     let two_paths = ScanArgs {
         paths: vec![
@@ -1007,6 +1057,8 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        config: None,
+        format: OutputFormat::Json,
     };
 
     assert!(zero_paths.validate().is_ok());

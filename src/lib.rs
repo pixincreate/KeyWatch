@@ -1,5 +1,6 @@
 pub mod baseline;
 pub mod cli;
+pub mod config;
 pub mod detector;
 pub mod hooks;
 pub mod report;
@@ -9,7 +10,7 @@ pub mod utils;
 use clap::Parser;
 use cli::{
     CliOptions, Command, ExitMode, HookAction, HookInstallArgs, HookType, HookUninstallArgs,
-    ScanArgs, Shell,
+    OutputFormat, ScanArgs, Shell,
 };
 use report::Finding;
 use std::env;
@@ -44,7 +45,8 @@ pub fn run_cli() -> Result<(), String> {
 fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
     let start = Instant::now();
 
-    let (mut findings, scan_metadata) = scanner::run_scan(args)?;
+    let config = config::KeywatchConfig::load(args.config.as_deref())?;
+    let (mut findings, scan_metadata) = scanner::run_scan(args, config.as_ref())?;
 
     if let Some(ref baseline_path) = args.baseline {
         let baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
@@ -72,11 +74,14 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
     let severity_counts = report::get_severity_counts(&findings);
     let exit_code = calculate_exit_code(&findings, &args.exit_mode);
     let findings_count = findings.len();
-    let report_json = report::create_report(findings, scan_metadata, scan_time)
-        .map_err(|err| format!("Failed to serialize report: {}", err))?;
+    let report_out = match args.format {
+        OutputFormat::Json => report::create_report(findings, scan_metadata, scan_time),
+        OutputFormat::Sarif => report::create_sarif_report(findings, scan_metadata, scan_time),
+    }
+    .map_err(|err| format!("Failed to serialize report: {}", err))?;
 
     if args.verbose {
-        println!("{report_json}");
+        println!("{report_out}");
     } else if findings_count == 0 {
         println!("No secrets found.");
     } else {
@@ -91,7 +96,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
     }
 
     if let Some(ref output_path) = args.output {
-        utils::write_to_file(output_path, &report_json)
+        utils::write_to_file(output_path, &report_out)
             .map_err(|err| format!("Failed to write report to '{}': {}", output_path, err))?;
     }
 

@@ -72,6 +72,14 @@ pub struct ScanArgs {
     /// Update the baseline file with current findings instead of scanning
     #[arg(long)]
     pub update_baseline: bool,
+
+    /// Path to .keywatch.toml config file
+    #[arg(long)]
+    pub config: Option<String>,
+
+    /// Output format for the report (json or sarif)
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub format: OutputFormat,
 }
 
 impl ScanArgs {
@@ -214,6 +222,21 @@ pub enum ExitMode {
     Always,
     Critical,
     Strict,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum OutputFormat {
+    Json,
+    Sarif,
+}
+
+impl OutputFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Sarif => "sarif",
+        }
+    }
 }
 
 impl ExitMode {
