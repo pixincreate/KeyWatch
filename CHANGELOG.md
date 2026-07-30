@@ -32,6 +32,10 @@ All notable changes to this project will be documented in this file.
 - CRITICAL severity was silently downgraded to LOW at runtime
 - All clippy warnings resolved (`Default` impl, redundant closures, identity maps)
 - Public API unit tests moved to `tests/` directory (only private API tests remain in `src/`)
+- Baseline hash domain separator renamed from `SALT` to `DOMAIN_SEPARATOR` for clarity
+- `Severity::from_string()` now trims whitespace from input before parsing
+- `scan_stream()` chunk overlap fixed for accurate multiline detection on split chunks
+- Graceful error handling when `git` is not installed on the system
 
 ### Removed
 
