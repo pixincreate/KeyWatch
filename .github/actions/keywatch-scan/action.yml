@@ -1,0 +1,110 @@
+name: 'KeyWatch Scan'
+description: 'Scan files and directories for secrets with KeyWatch'
+author: 'Pa1Nark'
+
+inputs:
+  paths:
+    description: 'Paths to scan (space-separated, supports globs)'
+    required: false
+    default: '.'
+  args:
+    description: 'Additional CLI arguments to pass to key-watch'
+    required: false
+    default: ''
+  exit-mode:
+    description: 'Exit code behavior: strict, critical, or always'
+    required: false
+    default: 'strict'
+  output:
+    description: 'Path to write the JSON report file'
+    required: false
+    default: ''
+  verbose:
+    description: 'Print detailed scan output'
+    required: false
+    default: 'false'
+
+outputs:
+  findings-count:
+    description: 'Number of findings detected'
+    value: ${{ steps.scan.outputs.findings_count }}
+  exit-code:
+    description: 'Exit code from the scan'
+    value: ${{ steps.scan.outputs.exit_code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install KeyWatch
+      shell: bash
+      run: |
+        if command -v key-watch &>/dev/null; then
+          echo "key-watch already installed"
+        else
+          echo "Downloading key-watch..."
+          REPO="pixincreate/KeyWatch"
+          VERSION="${KEYWATCH_VERSION:-latest}"
+
+          if [ "$VERSION" = "latest" ]; then
+            DOWNLOAD_URL=$(curl -sL "https://api.github.com/repos/$REPO/releases/latest" | \
+              jq -r '.assets[] | select(.name | contains("'$(uname -s | tr '[:upper:]' '[:lower:]')'-'$(uname -m)')) | .browser_download_url' | \
+              head -1)
+          else
+            DOWNLOAD_URL="https://github.com/$REPO/releases/download/$VERSION/keywatch-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m)"
+          fi
+
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "ERROR: Could not find a KeyWatch release for $(uname -s)-$(uname -m)"
+            echo "Install manually: cargo install key-watch"
+            exit 1
+          fi
+
+          curl -sL "$DOWNLOAD_URL" -o /tmp/key-watch
+          chmod +x /tmp/key-watch
+          sudo mv /tmp/key-watch /usr/local/bin/key-watch
+          echo "Installed key-watch $(key-watch --version)"
+        fi
+
+    - name: Run KeyWatch Scan
+      id: scan
+      shell: bash
+      run: |
+        PATHS="${{ inputs.paths }}"
+        ARGS="${{ inputs.args }}"
+        VERBOSE="${{ inputs.verbose }}"
+        EXIT_MODE="${{ inputs.exit-mode }}"
+        OUTPUT="${{ inputs.output }}"
+
+        CMD="key-watch scan $PATHS --exit-mode $EXIT_MODE"
+
+        [ -n "$ARGS" ] && CMD="$CMD $ARGS"
+        [ "$VERBOSE" = "true" ] && CMD="$CMD --verbose"
+        [ -n "$OUTPUT" ] && CMD="$CMD --output $OUTPUT"
+
+        echo "Running: $CMD"
+        set +e
+        eval "$CMD"
+        EXIT_CODE=$?
+        set -e
+
+        echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
+
+        if [ -n "$OUTPUT" ] && [ -f "$OUTPUT" ]; then
+          FINDINGS_COUNT=$(jq '.findings | length' "$OUTPUT" 2>/dev/null || echo "0")
+        elif [ -f "keywatch-report.json" ]; then
+          FINDINGS_COUNT=$(jq '.findings | length' "keywatch-report.json" 2>/dev/null || echo "0")
+        else
+          FINDINGS_COUNT="0"
+        fi
+
+        echo "findings_count=$FINDINGS_COUNT" >> "$GITHUB_OUTPUT"
+
+        echo "## KeyWatch Scan Results" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+        echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Findings | $FINDINGS_COUNT |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Exit Code | $EXIT_CODE |" >> "$GITHUB_STEP_SUMMARY"
+
+branding:
+  icon: 'shield'
+  color: 'blue'
