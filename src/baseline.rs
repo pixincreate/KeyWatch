@@ -5,11 +5,21 @@ use std::path::Path;
 
 use crate::report::Finding;
 
+/// Version of the baseline file format, not of the application itself.
+///
+/// Bump this only when the on-disk format changes incompatibly
+/// (e.g. a different hashing scheme or a new required field).
+/// Application releases do not invalidate existing baselines.
+const BASELINE_VERSION: &str = "1.0";
+
+/// Domain-separation prefix for fingerprint hashes so that baseline hashes
+/// cannot collide with plain SHA-256 of the matched content.
+const HASH_DOMAIN_SEPARATOR: &str = "keywatch-baseline-v1";
+
 fn hash_content(content: &str) -> String {
     use sha2::{Digest, Sha256};
-    let domain_separator = "keywatch-baseline-v1";
     let mut hasher = Sha256::new();
-    hasher.update(domain_separator.as_bytes());
+    hasher.update(HASH_DOMAIN_SEPARATOR.as_bytes());
     hasher.update(content.as_bytes());
     hasher
         .finalize()
@@ -36,7 +46,7 @@ pub struct Baseline {
 impl Baseline {
     pub fn new() -> Self {
         Self {
-            version: "1.0".to_string(),
+            version: BASELINE_VERSION.to_string(),
             entries: Vec::new(),
         }
     }
@@ -94,7 +104,7 @@ impl Baseline {
             .collect();
 
         Self {
-            version: "1.0".to_string(),
+            version: BASELINE_VERSION.to_string(),
             entries,
         }
     }

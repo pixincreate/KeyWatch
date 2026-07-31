@@ -10,8 +10,9 @@ pub enum Severity {
 }
 
 impl Severity {
-    pub fn from_string(s: &str) -> Severity {
-        match s.trim().to_uppercase().as_str() {
+    /// Parse a severity from a string. Unknown or empty input defaults to `Low`.
+    pub fn from_string(value: &str) -> Severity {
+        match value.trim().to_uppercase().as_str() {
             "CRITICAL" => Severity::Critical,
             "HIGH" => Severity::High,
             "MEDIUM" => Severity::Medium,
