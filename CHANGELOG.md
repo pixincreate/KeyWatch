@@ -57,7 +57,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-- README architecture section with module diagrams, data flow trace, and type relationships
+- README architecture section rewritten with an SVG architecture diagram (`docs/architecture.svg`), layer-by-layer overview, data flow trace, and core data type reference
 
 ## [1.1.0] - 2026-05-05
 

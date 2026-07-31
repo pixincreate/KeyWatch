@@ -193,113 +193,17 @@ password = 'known-test-password' # keywatch:ignore
 
 ## Architecture
 
-### Layers & Data Flow
+<img src="docs/architecture.svg" alt="KeyWatch architecture" width="100%">
 
-```mermaid
-flowchart LR
-    subgraph Input["📥 INPUT"]
-        direction LR
-        FILES[("Files / Dirs")]
-        STDIN[("stdin")]
-        GIT[("git log -p")]
-    end
+### Architecture Overview
 
-    subgraph Config["⚙️ CONFIGURATION"]
-        DET_TOML[("detectors.toml<br/>827 lines of built-in rules")]
-        KW_TOML[(".keywatch.toml<br/>Custom rules, overrides,<br/>exclude patterns")]
-    end
+KeyWatch is organized into five layers. Data flows top to bottom: input sources and configuration feed the detection pipeline, findings pass through post-processing, and results are serialized to stdout or a file.
 
-    subgraph Pipeline["🔁 DETECTION PIPELINE"]
-        direction TB
-        COLLECT["1. Collect files<br/>Recursive dir walk<br/>Skip .git, skip binary"]
-        EXCLUDE["2. Exclude filter<br/>CLI --exclude +<br/>config.exclude"]
-        KEYWORD["3. Keyword pre-filter<br/>Fast path: skip files<br/>without matching keywords"]
-        REGEX["4. Regex match<br/>Line detectors (single-line)<br/>Multiline detectors ((?s))"]
-        ENTROPY["5. Shannon entropy<br/>Only flag secrets above<br/>configurable threshold"]
-        ALLOW["6. Allowlist + suppress<br/>Detector allowlist regexes<br/>Inline keywatch:ignore"]
-    end
-
-    subgraph Post["📋 POST-PROCESSING"]
-        BASELINE["Baseline filter<br/>SHA-256 fingerprint<br/>Suppress known findings"]
-    end
-
-    subgraph Output["📤 OUTPUT"]
-        JSON_OUT["JSON report<br/>create_report()"]
-        SARIF_OUT["SARIF 2.1.0<br/>create_sarif_report()"]
-        SUMMARY["Summary line<br/>CRIT: 2, HIGH: 5, ..."]
-    end
-
-    Input --> COLLECT
-    DET_TOML --> KEYWORD
-    DET_TOML --> REGEX
-    DET_TOML --> ENTROPY
-    DET_TOML --> ALLOW
-    KW_TOML --> EXCLUDE
-    COLLECT --> EXCLUDE
-    EXCLUDE --> KEYWORD --> REGEX --> ENTROPY --> ALLOW
-    ALLOW --> BASELINE
-    BASELINE --> JSON_OUT
-    BASELINE --> SARIF_OUT
-    BASELINE --> SUMMARY
-```
-
-### Core Data Types
-
-```mermaid
-classDiagram
-    class Detector {
-        +String name
-        +Regex regex
-        +String finding_type
-        +String severity
-        +Vec~Regex~ allowlist
-        +Vec~String~ keywords
-        +Option~f64~ entropy_threshold
-        +has_keywords(content) bool
-        +has_sufficient_entropy(matched) bool
-    }
-
-    class Finding {
-        +String file_path
-        +usize line_number
-        +String finding_type
-        +Severity severity
-        +String matched_content
-        +String plugin_name
-    }
-
-    class Severity {
-        <<enum>>
-        CRITICAL
-        HIGH
-        MEDIUM
-        LOW
-    }
-
-    class ScanMetadata {
-        +usize files_scanned
-        +usize total_lines
-        +Vec~String~ excluded_files
-    }
-
-    class KeywatchConfig {
-        +Option~Vec~CustomRule~~ rules
-        +Option~HashMap~String, DetectorOverride~~ overrides
-        +Option~Vec~String~~ exclude
-    }
-
-    class Baseline {
-        +String version
-        +Vec~BaselineEntry~ entries
-        +filter_findings(findings) Vec~Finding~
-        +update_with_findings(findings)
-    }
-
-    Finding --> Severity
-    Detector --> Finding : produces
-    KeywatchConfig --> Detector : extends/overrides
-    Baseline --> Finding : filters
-```
+1. **Input** — the CLI accepts files, directories, stdin, or git history (`--git-history`). Flags control exclusion (`--exclude`), baselineing (`--baseline`, `--update-baseline`), output format (`--format`), config path (`--config`), and exit behavior (`--exit-mode`).
+2. **Configuration** — `detectors.toml` ships with the binary and holds the built-in rules. An optional `.keywatch.toml` adds custom rules, per-detector severity/enable overrides, and exclude patterns. Configuration merges — it never replaces defaults.
+3. **Detection pipeline** — six stages run per file: collect files (recursive walk, skipping `.git` and binary files), apply exclude globs, pre-filter by keyword (fast path that avoids regex on irrelevant files), match regexes (single-line and multiline `(?s)`), gate on Shannon entropy, and apply allowlists plus inline `keywatch:ignore` suppression. Files are scanned in parallel with rayon.
+4. **Post-processing** — an optional baseline filter suppresses findings already recorded in the baseline file, keyed by a salted SHA-256 fingerprint of the matched content.
+5. **Output** — findings serialize as JSON or SARIF 2.1.0 and are written to stdout or an output file, followed by a severity summary and an exit code derived from the exit mode.
 
 ### Data Flow (One Scan)
 
@@ -311,25 +215,34 @@ load config (optional .keywatch.toml) ───► merge custom rules into detec
        │                                    merge exclude patterns
        ▼
 collect files ───► exclude filter ───► parallel scan (rayon)
-                                          │
-                                          ├─ keyword pre-filter (skip if no match)
-                                          ├─ regex match (line + multiline)
-                                          ├─ entropy threshold check
-                                          ├─ allowlist check
-                                          └─ inline suppression check
-                                          │
-                                          ▼
-                                    Vec<Finding> + ScanMetadata
-                                          │
-                                          ▼
-                              baseline filter (optional, --baseline)
-                                          │
-                                          ▼
-                              report serialization (JSON or SARIF 2.1.0)
-                                          │
-                                          ▼
-                              stdout / file / exit code
+                                           │
+                                           ├─ keyword pre-filter (skip if no match)
+                                           ├─ regex match (line + multiline)
+                                           ├─ entropy threshold check
+                                           ├─ allowlist check
+                                           └─ inline suppression check
+                                           │
+                                           ▼
+                                     Vec<Finding> + ScanMetadata
+                                           │
+                                           ▼
+                               baseline filter (optional, --baseline)
+                                           │
+                                           ▼
+                               report serialization (JSON or SARIF 2.1.0)
+                                           │
+                                           ▼
+                               stdout / file / exit code
 ```
+
+### Core Data Types
+
+- **Detector** — a named rule: regex, finding type, severity, optional keywords for pre-filtering, an entropy threshold, and an allowlist.
+- **Finding** — one detected secret: file path, line number, finding type, severity, matched content, and the detector that produced it.
+- **Severity** — `Critical`, `High`, `Medium`, `Low`.
+- **KeywatchConfig** — parsed `.keywatch.toml`: custom rules, per-detector overrides, and exclude patterns.
+- **Baseline** — versioned collection of fingerprint entries; filters out already-known findings.
+- **ScanMetadata** — files scanned, total lines, and excluded files, reported alongside findings.
 
 ## Development
 
