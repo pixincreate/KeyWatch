@@ -1,6 +1,10 @@
+use crate::detector::Detector;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
+
+/// Default severity for custom rules that omit `severity` in their TOML entry.
+const DEFAULT_SEVERITY: &str = "MEDIUM";
 
 /// User-facing configuration that extends and overrides the built-in detectors.
 ///
@@ -17,28 +21,43 @@ pub struct KeywatchConfig {
     pub exclude: Option<Vec<String>>,
 }
 
-#[derive(Deserialize, Clone)]
-pub struct CustomRule {
-    pub name: String,
-    pub pattern: String,
-    pub finding_type: String,
-    #[serde(default = "default_severity")]
-    pub severity: String,
-    #[allow(dead_code)]
-    pub description: Option<String>,
-}
-
-#[derive(Deserialize, Clone)]
-pub struct DetectorOverride {
-    pub enabled: Option<bool>,
-    pub severity: Option<String>,
-}
-
-fn default_severity() -> String {
-    "MEDIUM".to_string()
-}
-
 impl KeywatchConfig {
+    /// Apply this config to a detector set: append custom rules and apply
+    /// per-detector overrides (disable and/or re-severity by name).
+    pub fn apply_to(&self, detectors: &mut Vec<Detector>) {
+        if let Some(rules) = &self.rules {
+            for rule in rules {
+                match Detector::new(
+                    &rule.name,
+                    &rule.pattern,
+                    &rule.finding_type,
+                    &rule.severity,
+                    &[],
+                    &[],
+                    None,
+                ) {
+                    Ok(det) => detectors.push(det),
+                    Err(err) => {
+                        eprintln!("Warning: custom rule '{}' skipped: {}", rule.name, err)
+                    }
+                }
+            }
+        }
+
+        if let Some(overrides) = &self.overrides {
+            detectors.retain(|det| match overrides.get(&det.name) {
+                Some(override_config) => override_config.enabled != Some(false),
+                None => true,
+            });
+
+            for det in detectors.iter_mut() {
+                if let Some(severity) = overrides.get(&det.name).and_then(|o| o.severity.as_ref()) {
+                    det.severity.clone_from(severity);
+                }
+            }
+        }
+    }
+
     /// Load config from the given path. Returns None if the file doesn't exist
     /// (config is optional).
     pub fn load(path: Option<&str>) -> Result<Option<Self>, String> {
@@ -60,6 +79,29 @@ impl KeywatchConfig {
 
         Ok(Some(config))
     }
+}
+
+#[derive(Deserialize, Clone)]
+pub struct CustomRule {
+    pub name: String,
+    pub pattern: String,
+    pub finding_type: String,
+    #[serde(default = "default_severity")]
+    pub severity: String,
+    #[allow(dead_code)]
+    pub description: Option<String>,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct DetectorOverride {
+    pub enabled: Option<bool>,
+    pub severity: Option<String>,
+}
+
+/// Serde `default` attribute requires a function; it returns the
+/// [`DEFAULT_SEVERITY`] constant.
+fn default_severity() -> String {
+    DEFAULT_SEVERITY.to_string()
 }
 
 fn find_config_in_cwd() -> Option<String> {
