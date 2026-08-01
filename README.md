@@ -123,6 +123,9 @@ key-watch verify-integrity
 ## Options
 
 - `scan <path>...` - Scan one or more files or directories
+- `scan --config <path>` - Load configuration from an explicit `.keywatch.toml` path
+- `scan --no-config-discovery` - Ignore discovered repository config unless `--config` is explicit
+- `scan --format <json|sarif>` - Choose the report format written to stdout or the output file
 - `scan --stdin` - Read content from stdin instead of files
 - `scan --git-history` - Scan git history (`git log -p`) for committed secrets
 - `scan --output <path>` - Save report to file
