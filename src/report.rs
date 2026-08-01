@@ -1,6 +1,8 @@
 use serde::Serialize;
+use std::fmt;
+use std::str::FromStr;
 
-#[derive(Serialize, Clone, PartialEq, Copy)]
+#[derive(Serialize, Clone, PartialEq, Copy, Debug)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Severity {
     Critical,
@@ -9,15 +11,55 @@ pub enum Severity {
     Low,
 }
 
-impl Severity {
-    /// Parse a severity from a string. Unknown or empty input defaults to `Low`.
-    pub fn from_string(value: &str) -> Severity {
+/// Error returned when a string cannot be parsed as a [`Severity`].
+#[derive(Debug, PartialEq)]
+pub struct ParseSeverityError {
+    pub input: String,
+}
+
+impl fmt::Display for ParseSeverityError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "invalid severity '{}': expected one of CRITICAL, HIGH, MEDIUM, LOW",
+            self.input
+        )
+    }
+}
+
+impl std::error::Error for ParseSeverityError {}
+
+impl FromStr for Severity {
+    type Err = ParseSeverityError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.trim().to_uppercase().as_str() {
-            "CRITICAL" => Severity::Critical,
-            "HIGH" => Severity::High,
-            "MEDIUM" => Severity::Medium,
-            _ => Severity::Low,
+            "CRITICAL" => Ok(Severity::Critical),
+            "HIGH" => Ok(Severity::High),
+            "MEDIUM" => Ok(Severity::Medium),
+            "LOW" => Ok(Severity::Low),
+            _ => Err(ParseSeverityError {
+                input: value.to_string(),
+            }),
         }
+    }
+}
+
+impl Severity {
+    /// Return the canonical uppercase string representation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Severity::Critical => "CRITICAL",
+            Severity::High => "HIGH",
+            Severity::Medium => "MEDIUM",
+            Severity::Low => "LOW",
+        }
+    }
+}
+
+impl fmt::Display for Severity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

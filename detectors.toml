@@ -736,14 +736,14 @@ severity = "CRITICAL"
 keywords = ["master"]
 
 [[detectors]]
-name = "RazorpayKeyDetector"
+name = "RazorpayAPIKeyDetector"
 pattern = "\\b(rzp_(live|test)_[a-zA-Z0-9]{20,})\\b"
 finding_type = "Razorpay API Key"
 severity = "HIGH"
 keywords = ["rzp_live_", "rzp_test_"]
 
 [[detectors]]
-name = "PaystackKeyDetector"
+name = "PaystackSecretKeyDetector"
 pattern = "\\b(sk_(live|test)_[a-zA-Z0-9]{30,})\\b"
 finding_type = "Paystack Secret Key"
 severity = "HIGH"
