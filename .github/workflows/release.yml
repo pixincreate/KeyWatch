@@ -44,16 +44,21 @@ jobs:
 
       - name: Extract Release Notes
         id: release-notes
-        if: matrix.platform.os == 'ubuntu-latest'
+        shell: bash
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          NOTES=$(awk -v ver="$VERSION" '
-            /^## \[/ { if (p) { exit }; if ($2 == "['ver']") { p=1; next } }
+          VER=${VERSION#v}
+          NOTES=$(awk -v ver="$VER" '
+            /^## \[/ { if (p) { exit }; if ($2 == "["ver"]") { p=1; next } }
             p { print }
           ' CHANGELOG.md)
-          echo "NOTES<<EOF" >> $GITHUB_OUTPUT
-          echo "$NOTES" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
+            echo "::error::Release notes for $VERSION not found in CHANGELOG.md"
+            exit 1
+          fi
+          echo "NOTES<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -74,6 +79,9 @@ jobs:
           mkdir -p release
           cp target/${{ matrix.platform.target }}/release/key-watch${{ matrix.platform.os == 'windows-latest' && '.exe' || '' }} \
              release/${{ env.BINARY_NAME }}
+          if [ "${{ matrix.platform.os }}" = "ubuntu-latest" ]; then
+            cp detectors.toml release/detectors.toml
+          fi
 
       # Windows: Generate checksum using cmd and Windows syntax.
       - name: Generate SHA-256 (Windows)
@@ -90,6 +98,9 @@ jobs:
         run: |
           cd release
           shasum -a 256 "$BINARY_NAME" > "$BINARY_NAME".sha256
+          if [ "${{ matrix.platform.os }}" = "ubuntu-latest" ]; then
+            shasum -a 256 detectors.toml > detectors.toml.sha256
+          fi
 
       # Create Release
       - name: Create Release
@@ -99,6 +110,8 @@ jobs:
           files: |
             release/${{ env.BINARY_NAME }}
             release/${{ env.BINARY_NAME }}.sha256
+            ${{ matrix.platform.os == 'ubuntu-latest' && 'release/detectors.toml' || '' }}
+            ${{ matrix.platform.os == 'ubuntu-latest' && 'release/detectors.toml.sha256' || '' }}
           body: ${{ steps.release-notes.outputs.NOTES }}
           draft: false
           prerelease: false

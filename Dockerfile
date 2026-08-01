@@ -2,14 +2,18 @@
 # Stage 1: Build
 # Alpine's musl toolchain produces a fully static binary with no libc
 # dependency, so the runtime stage can stay tiny.
-FROM rust:1.97.1-alpine AS build
+#
+# Pin to the MSRV declared in Cargo.toml (rust-version = "1.85") so the
+# Docker build always uses the minimum supported compiler, not whatever
+# happens to be "latest" at build time.
+FROM rust:1.85-alpine3.21 AS build
 
 RUN apk add --no-cache musl-dev
 
 WORKDIR /src
 
-# Copy dependency manifests first for layer caching
-COPY Cargo.toml Cargo.lock* ./
+# Copy manifests and sources together; Cargo.lock is required for --locked.
+COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
 COPY templates/ templates/
 COPY detectors.toml .
