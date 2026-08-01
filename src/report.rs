@@ -1,6 +1,5 @@
 use serde::Serialize;
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 #[derive(Serialize, Clone, PartialEq, Copy, Debug)]
 #[serde(rename_all = "UPPERCASE")]

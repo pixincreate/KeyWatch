@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::fs;
-use std::path::Path;
+use sha2::{Digest, Sha256};
+use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
 
 use crate::report::Finding;
 
@@ -17,9 +16,6 @@ const BASELINE_VERSION: &str = "1.0";
 const HASH_DOMAIN_SEPARATOR: &str = "keywatch-baseline-v1";
 
 fn hash_content(content: &str) -> String {
-    use sha2::{Digest, Sha256};
-    use std::fmt::Write as _;
-
     let mut hasher = Sha256::new();
     hasher.update(HASH_DOMAIN_SEPARATOR.as_bytes());
     hasher.update(content.as_bytes());

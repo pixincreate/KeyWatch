@@ -1,9 +1,7 @@
 use crate::report::{ParseSeverityError, Severity};
 use regex::Regex;
 use serde::Deserialize;
-use std::fmt;
-use std::fs;
-use std::str::FromStr;
+use std::{fmt, fs, str::FromStr};
 
 #[derive(Debug)]
 pub enum DetectorError {
