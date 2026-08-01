@@ -14,16 +14,19 @@ while IFS= read -r -d '' file; do
     if [ -z "$file" ]; then
         continue
     fi
+    if [ -L "$file" ]; then
+        continue
+    fi
     if [ ! -f "$file" ]; then
         continue
     fi
-    if "$KEYWATCH_BIN" scan "$file" --exclude "$EXCLUDE_PATTERNS" 2>/dev/null; then
+    "$KEYWATCH_BIN" scan "$file" --exclude "$EXCLUDE_PATTERNS" >/dev/null 2>&1
+    EXIT_CODE=$?
+    if [ $EXIT_CODE -eq 0 ]; then
         continue
     fi
-    EXIT_CODE=$?
     if [ $EXIT_CODE -eq 1 ]; then
         echo "ERROR: Secret detected in $file"
-        "$KEYWATCH_BIN" scan "$file" --exclude "$EXCLUDE_PATTERNS" --verbose
         exit 1
     fi
     echo "Error: key-watch failed on $file (exit code: $EXIT_CODE)" >&2

@@ -2,6 +2,92 @@ use key_watch::cli::{ExitMode, ScanArgs};
 use key_watch::scanner::run_scan;
 use std::env::temp_dir;
 use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Output};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn unique_temp_dir(name: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after unix epoch")
+        .as_nanos();
+
+    temp_dir().join(format!("keywatch_{name}_{stamp}_{}", std::process::id()))
+}
+
+fn git_available() -> bool {
+    Command::new("git").arg("--version").output().is_ok()
+}
+
+fn init_git_repo(path: &Path) -> Result<(), String> {
+    fs::create_dir_all(path).map_err(|e| format!("create repo dir: {e}"))?;
+
+    let status = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(path)
+        .status()
+        .map_err(|e| format!("git init: {e}"))?;
+    if !status.success() {
+        return Err("git init failed".to_string());
+    }
+
+    for (key, value) in [("user.email", "test@test.com"), ("user.name", "Test")] {
+        let status = Command::new("git")
+            .args(["config", key, value])
+            .current_dir(path)
+            .status()
+            .map_err(|e| format!("git config {key}: {e}"))?;
+        if !status.success() {
+            return Err(format!("git config {key} failed"));
+        }
+    }
+
+    Ok(())
+}
+
+fn commit_file(path: &Path, file_name: &str, contents: &str, message: &str) -> Result<(), String> {
+    let file_path = path.join(file_name);
+    fs::write(&file_path, contents).map_err(|e| format!("write file: {e}"))?;
+
+    let status = Command::new("git")
+        .args(["add", file_name])
+        .current_dir(path)
+        .status()
+        .map_err(|e| format!("git add: {e}"))?;
+    if !status.success() {
+        return Err("git add failed".to_string());
+    }
+
+    let status = Command::new("git")
+        .args(["commit", "-m", message, "--quiet"])
+        .current_dir(path)
+        .status()
+        .map_err(|e| format!("git commit: {e}"))?;
+    if !status.success() {
+        return Err("git commit failed".to_string());
+    }
+
+    Ok(())
+}
+
+fn detectors_config_path() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("detectors.toml")
+}
+
+fn run_git_history_scan(current_dir: &Path, extra_args: &[&str]) -> Result<Output, String> {
+    Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--git-history"])
+        .args(extra_args)
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .current_dir(current_dir)
+        .output()
+        .map_err(|e| format!("run key-watch scan --git-history: {e}"))
+}
+
+#[cfg(unix)]
+fn symlink_file(original: &Path, link: &Path) -> Result<(), String> {
+    std::os::unix::fs::symlink(original, link).map_err(|e| format!("create symlink: {e}"))
+}
 
 #[test]
 fn test_find_secrets_in_file() {
@@ -472,6 +558,92 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
+    let test_dir = unique_temp_dir("explicit_symlink_skip");
+    let outside_file = test_dir.join("outside-secret.txt");
+    let link_path = test_dir.join("linked-secret.txt");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).map_err(|e| format!("create test dir: {e}"))?;
+    fs::write(&outside_file, "AWS Key: AKIAABCDEFGHIJKLMNOP\n")
+        .map_err(|e| format!("write outside secret: {e}"))?;
+    symlink_file(&outside_file, &link_path)?;
+
+    let options = ScanArgs {
+        paths: vec![
+            link_path
+                .to_str()
+                .ok_or("link path should be utf-8")?
+                .to_string(),
+        ],
+        stdin: false,
+        git_history: false,
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
+    };
+
+    let (findings, metadata) = run_scan(&options)?;
+
+    assert!(findings.is_empty(), "Symlink target should not be scanned");
+    assert_eq!(
+        metadata.files_scanned, 0,
+        "Symlink should not count as scanned"
+    );
+
+    fs::remove_dir_all(&test_dir).map_err(|e| format!("cleanup: {e}"))?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn test_recursive_symlink_path_is_skipped() -> Result<(), String> {
+    let test_dir = unique_temp_dir("recursive_symlink_skip");
+    let outside_file = test_dir.join("outside-secret.txt");
+    let scan_root = test_dir.join("scan-root");
+    let link_path = scan_root.join("linked-secret.txt");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&scan_root).map_err(|e| format!("create scan root: {e}"))?;
+    fs::write(&outside_file, "AWS Key: AKIAABCDEFGHIJKLMNOP\n")
+        .map_err(|e| format!("write outside secret: {e}"))?;
+    symlink_file(&outside_file, &link_path)?;
+
+    let options = ScanArgs {
+        paths: vec![
+            scan_root
+                .to_str()
+                .ok_or("scan root should be utf-8")?
+                .to_string(),
+        ],
+        stdin: false,
+        git_history: false,
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
+    };
+
+    let (findings, metadata) = run_scan(&options)?;
+
+    assert!(
+        findings.is_empty(),
+        "Recursive symlink target should not be scanned"
+    );
+    assert_eq!(
+        metadata.files_scanned, 0,
+        "Recursive symlink should not count as scanned"
+    );
+
+    fs::remove_dir_all(&test_dir).map_err(|e| format!("cleanup: {e}"))?;
+    Ok(())
+}
+
 #[test]
 fn test_detect_aadhaar() {
     let temp_dir = temp_dir();
@@ -798,53 +970,8 @@ fn test_stdin_scanning_integration() -> Result<(), String> {
 }
 
 #[test]
-fn test_git_history_scanning() -> Result<(), String> {
-    use std::process::Command;
-
-    // Skip if git is not available
-    if Command::new("git").arg("--version").output().is_err() {
-        return Ok(());
-    }
-
-    let temp_dir = std::env::temp_dir().join("keywatch_test_git_history");
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).map_err(|e| format!("Create dir: {}", e))?;
-
-    Command::new("git")
-        .args(["init", "--quiet"])
-        .current_dir(&temp_dir)
-        .output()
-        .map_err(|e| format!("git init: {}", e))?;
-
-    Command::new("git")
-        .args(["config", "user.email", "test@test.com"])
-        .current_dir(&temp_dir)
-        .output()
-        .map_err(|e| format!("git config: {}", e))?;
-
-    Command::new("git")
-        .args(["config", "user.name", "Test"])
-        .current_dir(&temp_dir)
-        .output()
-        .map_err(|e| format!("git config: {}", e))?;
-
-    let secret_file = temp_dir.join("secrets.txt");
-    fs::write(&secret_file, "AWS Key: AKIAABCDEFGHIJKLMNOP\n")
-        .map_err(|e| format!("Write file: {}", e))?;
-
-    Command::new("git")
-        .args(["add", "."])
-        .current_dir(&temp_dir)
-        .output()
-        .map_err(|e| format!("git add: {}", e))?;
-
-    Command::new("git")
-        .args(["commit", "-m", "initial", "--quiet"])
-        .current_dir(&temp_dir)
-        .output()
-        .map_err(|e| format!("git commit: {}", e))?;
-
-    let options = ScanArgs {
+fn test_git_history_args_validation_allows_zero_or_one_path() {
+    let zero_paths = ScanArgs {
         paths: vec![],
         stdin: false,
         git_history: true,
@@ -855,17 +982,144 @@ fn test_git_history_scanning() -> Result<(), String> {
         baseline: None,
         update_baseline: false,
     };
+    let one_path = ScanArgs {
+        paths: vec!["/tmp/requested-root".to_string()],
+        stdin: false,
+        git_history: true,
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
+    };
+    let two_paths = ScanArgs {
+        paths: vec![
+            "/tmp/requested-root".to_string(),
+            "/tmp/other-root".to_string(),
+        ],
+        stdin: false,
+        git_history: true,
+        output: None,
+        verbose: false,
+        exclude: None,
+        exit_mode: ExitMode::Strict,
+        baseline: None,
+        update_baseline: false,
+    };
 
-    let (findings, metadata) = run_scan(&options)?;
+    assert!(zero_paths.validate().is_ok());
+    assert!(one_path.validate().is_ok());
+    assert!(two_paths.validate().is_err());
+}
+
+#[test]
+fn test_git_history_defaults_to_current_directory_when_no_path_is_provided() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("git_history_default_cwd");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(
+        &repo_dir,
+        "secrets.txt",
+        "AWS Key: AKIAABCDEFGHIJKLMNOP\n",
+        "initial",
+    )?;
+
+    let output = run_git_history_scan(&repo_dir, &[])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}{}", stdout, stderr);
 
     assert!(
-        findings
-            .iter()
-            .any(|f| f.matched_content.contains("AKIAABCDEFGHIJKLMNOP")),
-        "Should find AWS key in git history"
+        matches!(output.status.code(), Some(1)),
+        "default cwd git history scan should report findings\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
     );
-    assert_eq!(metadata.files_scanned, 1);
+    assert!(combined.contains("potential secret(s) detected"));
 
-    let _ = fs::remove_dir_all(&temp_dir);
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_git_history_scans_requested_root_from_a_different_current_directory() -> Result<(), String>
+{
+    if !git_available() {
+        return Ok(());
+    }
+
+    let parent_dir = unique_temp_dir("git_history_requested_root_parent");
+    let requested_root = parent_dir.join("requested-repo");
+    let _ = fs::remove_dir_all(&parent_dir);
+    init_git_repo(&requested_root)?;
+    commit_file(
+        &requested_root,
+        "secrets.txt",
+        "AWS Key: AKIAQRSTUVWXYZABCDEF\n",
+        "initial",
+    )?;
+
+    let output = run_git_history_scan(&parent_dir, &[requested_root.to_str().unwrap()])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}{}", stdout, stderr);
+
+    assert!(
+        matches!(output.status.code(), Some(1)),
+        "explicit git root scan should report findings\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+    assert!(combined.contains("potential secret(s) detected"));
+
+    let _ = fs::remove_dir_all(&parent_dir);
+    Ok(())
+}
+
+#[test]
+fn test_git_history_does_not_execute_textconv_helpers() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("git_history_no_textconv");
+    let marker_path = repo_dir.join("textconv-helper-ran");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+
+    let helper = format!(
+        "sh -c 'printf textconv-ran > \"{}\"; cat \"$1\"' -",
+        marker_path.display()
+    );
+    let status = Command::new("git")
+        .env("GIT_MASTER", "1")
+        .args(["config", "diff.keywatchmarker.textconv", &helper])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|e| format!("git config textconv: {e}"))?;
+    if !status.success() {
+        return Err("git config textconv failed".to_string());
+    }
+
+    commit_file(
+        &repo_dir,
+        ".gitattributes",
+        "*.kw diff=keywatchmarker\n",
+        "attrs",
+    )?;
+    commit_file(&repo_dir, "sample.kw", "ordinary text\n", "sample")?;
+
+    let _output = run_git_history_scan(&repo_dir, &[])?;
+    assert!(
+        !marker_path.exists(),
+        "git history scan must not execute configured textconv helpers"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }

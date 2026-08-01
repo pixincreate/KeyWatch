@@ -1,12 +1,51 @@
+use crate::report::{ParseSeverityError, Severity};
 use regex::Regex;
 use serde::Deserialize;
-use std::fs;
+use std::{fmt, fs, str::FromStr};
+
+#[derive(Debug)]
+pub enum DetectorError {
+    InvalidPattern {
+        detector: String,
+        source: regex::Error,
+    },
+    InvalidAllowlistPattern {
+        detector: String,
+        source: regex::Error,
+    },
+    InvalidSeverity {
+        detector: String,
+        source: ParseSeverityError,
+    },
+}
+
+impl fmt::Display for DetectorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            DetectorError::InvalidPattern { detector, source } => {
+                write!(f, "invalid pattern in detector '{}': {}", detector, source)
+            }
+            DetectorError::InvalidAllowlistPattern { detector, source } => {
+                write!(
+                    f,
+                    "invalid allowlist pattern in detector '{}': {}",
+                    detector, source
+                )
+            }
+            DetectorError::InvalidSeverity { detector, source } => {
+                write!(f, "invalid severity in detector '{}': {}", detector, source)
+            }
+        }
+    }
+}
+
+impl std::error::Error for DetectorError {}
 
 pub struct Detector {
     pub name: String,
     pub regex: Regex,
     pub finding_type: String,
-    pub severity: String,
+    pub severity: Severity,
     pub allowlist: Vec<Regex>,
     pub keywords: Vec<String>,
     pub entropy_threshold: Option<f64>,
@@ -21,15 +60,25 @@ impl Detector {
         allowlist: &[String],
         keywords: &[String],
         entropy_threshold: Option<f64>,
-    ) -> Result<Detector, String> {
-        let regex = Regex::new(pattern)
-            .map_err(|err| format!("Invalid pattern in detector '{}': {}", name, err))?;
+    ) -> Result<Detector, DetectorError> {
+        let regex = Regex::new(pattern).map_err(|source| DetectorError::InvalidPattern {
+            detector: name.to_string(),
+            source,
+        })?;
+
+        let parsed_severity =
+            Severity::from_str(severity).map_err(|source| DetectorError::InvalidSeverity {
+                detector: name.to_string(),
+                source,
+            })?;
 
         let mut compiled_allowlist = Vec::new();
         for pat in allowlist {
-            let compiled = Regex::new(pat).map_err(|err| {
-                format!("Invalid allowlist pattern in detector '{}': {}", name, err)
-            })?;
+            let compiled =
+                Regex::new(pat).map_err(|source| DetectorError::InvalidAllowlistPattern {
+                    detector: name.to_string(),
+                    source,
+                })?;
             compiled_allowlist.push(compiled);
         }
 
@@ -37,7 +86,7 @@ impl Detector {
             name: name.to_string(),
             regex,
             finding_type: finding_type.to_string(),
-            severity: severity.to_string(),
+            severity: parsed_severity,
             allowlist: compiled_allowlist,
             keywords: keywords.to_vec(),
             entropy_threshold,
@@ -123,6 +172,13 @@ pub fn initialize_detectors() -> Result<Vec<Detector>, Box<dyn std::error::Error
 
     let config: DetectorsConfig = toml::from_str(&toml_contents)
         .map_err(|err| format!("Failed to parse detectors.toml: {}", err))?;
+
+    let mut seen_names = std::collections::HashSet::new();
+    for det in &config.detectors {
+        if !seen_names.insert(det.name.as_str()) {
+            return Err(format!("duplicate detector name '{}'", det.name).into());
+        }
+    }
 
     Ok(config
         .detectors

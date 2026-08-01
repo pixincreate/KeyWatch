@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::fs;
-use std::path::Path;
+use sha2::{Digest, Sha256};
+use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
 
 use crate::report::Finding;
 
@@ -17,15 +16,44 @@ const BASELINE_VERSION: &str = "1.0";
 const HASH_DOMAIN_SEPARATOR: &str = "keywatch-baseline-v1";
 
 fn hash_content(content: &str) -> String {
-    use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(HASH_DOMAIN_SEPARATOR.as_bytes());
     hasher.update(content.as_bytes());
-    hasher
-        .finalize()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect()
+    let mut output = String::with_capacity(64);
+    for byte in hasher.finalize() {
+        let _ = write!(&mut output, "{:02x}", byte);
+    }
+    output
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct BaselineFingerprint {
+    file_path: String,
+    finding_type: String,
+    matched_content_hash: String,
+    plugin_name: String,
+}
+
+impl BaselineFingerprint {
+    fn from_finding(finding: &Finding) -> Self {
+        Self {
+            file_path: finding.file_path.clone(),
+            finding_type: finding.finding_type.clone(),
+            matched_content_hash: hash_content(&finding.matched_content),
+            plugin_name: finding.plugin_name.clone(),
+        }
+    }
+}
+
+impl From<&BaselineEntry> for BaselineFingerprint {
+    fn from(entry: &BaselineEntry) -> Self {
+        Self {
+            file_path: entry.file_path.clone(),
+            finding_type: entry.finding_type.clone(),
+            matched_content_hash: entry.matched_content_hash.clone(),
+            plugin_name: entry.plugin_name.clone(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash)]
@@ -79,29 +107,38 @@ impl Baseline {
         Ok(())
     }
 
-    fn build_fingerprints(&self) -> HashSet<String> {
-        self.entries.iter().map(fingerprint).collect()
+    fn build_fingerprints(&self) -> HashSet<BaselineFingerprint> {
+        self.entries.iter().map(BaselineFingerprint::from).collect()
+    }
+
+    fn entry_from_finding(finding: &Finding) -> BaselineEntry {
+        BaselineEntry {
+            file_path: finding.file_path.clone(),
+            line_number: finding.line_number,
+            finding_type: finding.finding_type.clone(),
+            matched_content_hash: hash_content(&finding.matched_content),
+            plugin_name: finding.plugin_name.clone(),
+        }
     }
 
     pub fn filter_findings(&self, findings: Vec<Finding>) -> Vec<Finding> {
         let fingerprints = self.build_fingerprints();
         findings
             .into_iter()
-            .filter(|f| !fingerprints.contains(&finding_fingerprint(f)))
+            .filter(|finding| !fingerprints.contains(&BaselineFingerprint::from_finding(finding)))
             .collect()
     }
 
     pub fn from_findings(findings: &[Finding]) -> Self {
-        let entries = findings
-            .iter()
-            .map(|f| BaselineEntry {
-                file_path: f.file_path.clone(),
-                line_number: f.line_number,
-                finding_type: f.finding_type.clone(),
-                matched_content_hash: hash_content(&f.matched_content),
-                plugin_name: f.plugin_name.clone(),
-            })
-            .collect();
+        let mut entries = Vec::new();
+        let mut fingerprints = HashSet::new();
+
+        for finding in findings {
+            let fingerprint = BaselineFingerprint::from_finding(finding);
+            if fingerprints.insert(fingerprint) {
+                entries.push(Self::entry_from_finding(finding));
+            }
+        }
 
         Self {
             version: BASELINE_VERSION.to_string(),
@@ -110,17 +147,12 @@ impl Baseline {
     }
 
     pub fn update_with_findings(&mut self, findings: &[Finding]) {
-        let existing: HashSet<String> = self.entries.iter().map(fingerprint).collect();
+        let mut existing: HashSet<BaselineFingerprint> =
+            self.entries.iter().map(BaselineFingerprint::from).collect();
         for f in findings {
-            let fp = finding_fingerprint(f);
-            if !existing.contains(&fp) {
-                self.entries.push(BaselineEntry {
-                    file_path: f.file_path.clone(),
-                    line_number: f.line_number,
-                    finding_type: f.finding_type.clone(),
-                    matched_content_hash: hash_content(&f.matched_content),
-                    plugin_name: f.plugin_name.clone(),
-                });
+            let fingerprint = BaselineFingerprint::from_finding(f);
+            if existing.insert(fingerprint) {
+                self.entries.push(Self::entry_from_finding(f));
             }
         }
     }
@@ -132,24 +164,15 @@ impl Default for Baseline {
     }
 }
 
-fn fingerprint(entry: &BaselineEntry) -> String {
-    format!(
-        "{}:{}:{}:{}:{}",
-        entry.file_path,
-        entry.line_number,
-        entry.finding_type,
-        entry.matched_content_hash,
-        entry.plugin_name
-    )
-}
+#[cfg(test)]
+mod tests {
+    use super::hash_content;
 
-fn finding_fingerprint(finding: &Finding) -> String {
-    format!(
-        "{}:{}:{}:{}:{}",
-        finding.file_path,
-        finding.line_number,
-        finding.finding_type,
-        hash_content(&finding.matched_content),
-        finding.plugin_name
-    )
+    #[test]
+    fn hash_content_uses_expected_lowercase_hex() {
+        assert_eq!(
+            hash_content(""),
+            "49969dbf750f1c12188f4646dc9b5ff608ceb35d74e5de79fad99e88ebd445d6"
+        );
+    }
 }

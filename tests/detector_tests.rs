@@ -1,7 +1,9 @@
-use key_watch::detector::Detector;
+use key_watch::detector::{Detector, DetectorError};
+use key_watch::report::Severity;
+use std::str::FromStr;
 
 #[test]
-fn test_allowlist_suppresses_matched_content() -> Result<(), String> {
+fn test_allowlist_suppresses_matched_content() -> Result<(), DetectorError> {
     let detector = Detector::new(
         "TestDetector",
         r"\bsecret_\w+\b",
@@ -31,7 +33,7 @@ fn test_allowlist_suppresses_matched_content() -> Result<(), String> {
 }
 
 #[test]
-fn test_detector_without_allowlist_allows_all() -> Result<(), String> {
+fn test_detector_without_allowlist_allows_all() -> Result<(), DetectorError> {
     let detector = Detector::new(
         "TestDetector",
         r"\bsecret_\w+\b",
@@ -65,7 +67,7 @@ fn test_invalid_allowlist_pattern_returns_error() {
 }
 
 #[test]
-fn test_keywords_prefilter_skips_non_matching_content() -> Result<(), String> {
+fn test_keywords_prefilter_skips_non_matching_content() -> Result<(), DetectorError> {
     let detector = Detector::new(
         "TestDetector",
         r"\bsecret_\w+\b",
@@ -83,7 +85,7 @@ fn test_keywords_prefilter_skips_non_matching_content() -> Result<(), String> {
 }
 
 #[test]
-fn test_empty_keywords_allows_all_content() -> Result<(), String> {
+fn test_empty_keywords_allows_all_content() -> Result<(), DetectorError> {
     let detector = Detector::new(
         "TestDetector",
         r"\bsecret_\w+\b",
@@ -100,7 +102,7 @@ fn test_empty_keywords_allows_all_content() -> Result<(), String> {
 }
 
 #[test]
-fn test_entropy_filters_low_entropy_matches() -> Result<(), String> {
+fn test_entropy_filters_low_entropy_matches() -> Result<(), DetectorError> {
     let detector = Detector::new(
         "TestDetector",
         r"\bsecret_\w+\b",
@@ -123,7 +125,7 @@ fn test_entropy_filters_low_entropy_matches() -> Result<(), String> {
 }
 
 #[test]
-fn test_no_entropy_threshold_allows_all() -> Result<(), String> {
+fn test_no_entropy_threshold_allows_all() -> Result<(), DetectorError> {
     let detector = Detector::new(
         "TestDetector",
         r"\bsecret_\w+\b",
@@ -137,4 +139,74 @@ fn test_no_entropy_threshold_allows_all() -> Result<(), String> {
     assert!(detector.has_sufficient_entropy("secret_aaaaaaaa"));
     assert!(detector.has_sufficient_entropy("secret_a1B2c3D4e5"));
     Ok(())
+}
+
+#[test]
+fn test_severity_from_str_valid_variants() {
+    assert_eq!(Severity::from_str("CRITICAL").unwrap(), Severity::Critical);
+    assert_eq!(Severity::from_str("HIGH").unwrap(), Severity::High);
+    assert_eq!(Severity::from_str("MEDIUM").unwrap(), Severity::Medium);
+    assert_eq!(Severity::from_str("LOW").unwrap(), Severity::Low);
+    assert_eq!(Severity::from_str("critical").unwrap(), Severity::Critical);
+    assert_eq!(Severity::from_str("  High  ").unwrap(), Severity::High);
+}
+
+#[test]
+fn test_severity_from_str_invalid_returns_error() {
+    let err = Severity::from_str("UNKNOWN").unwrap_err();
+    assert!(
+        err.to_string().contains("UNKNOWN"),
+        "Error message should include the offending input"
+    );
+    assert!(Severity::from_str("").is_err());
+    assert!(Severity::from_str("warn").is_err());
+}
+
+#[test]
+fn test_severity_as_str_canonical_uppercase() {
+    assert_eq!(Severity::Critical.as_str(), "CRITICAL");
+    assert_eq!(Severity::High.as_str(), "HIGH");
+    assert_eq!(Severity::Medium.as_str(), "MEDIUM");
+    assert_eq!(Severity::Low.as_str(), "LOW");
+}
+
+#[test]
+fn test_detector_new_invalid_severity_returns_typed_error() {
+    let result = Detector::new(
+        "BadSevDetector",
+        r"\btest\b",
+        "Test",
+        "BOGUS",
+        &[],
+        &[],
+        None,
+    );
+    match result {
+        Err(DetectorError::InvalidSeverity { detector, source }) => {
+            assert_eq!(detector, "BadSevDetector");
+            assert!(source.to_string().contains("BOGUS"));
+        }
+        _ => panic!("expected InvalidSeverity error variant"),
+    }
+}
+
+#[test]
+fn test_detector_new_stores_parsed_severity() -> Result<(), DetectorError> {
+    let detector = Detector::new("SevDetector", r"\btest\b", "Test", "MEDIUM", &[], &[], None)?;
+    assert_eq!(detector.severity, Severity::Medium);
+    Ok(())
+}
+
+#[test]
+fn test_initialize_detectors_all_names_unique() {
+    let detectors = key_watch::detector::initialize_detectors()
+        .expect("detectors.toml should load without error");
+    let mut names = std::collections::HashSet::new();
+    for det in &detectors {
+        assert!(
+            names.insert(det.name.as_str()),
+            "duplicate detector name: {}",
+            det.name
+        );
+    }
 }
