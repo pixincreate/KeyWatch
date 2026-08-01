@@ -7,6 +7,8 @@ pub mod report;
 pub mod scanner;
 pub mod utils;
 
+pub use hooks::{generate_pre_commit_hook, generate_pre_push_hook};
+
 use clap::Parser;
 use cli::{CliOptions, Command, ExitMode, HookAction, OutputFormat, ScanArgs, Shell};
 use report::Finding;
@@ -38,7 +40,11 @@ pub fn run_cli() -> Result<(), String> {
 fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
     let start = Instant::now();
 
-    let config = config::KeywatchConfig::load(args.config.as_deref())?;
+    let config = if args.config.is_some() || !args.no_config_discovery {
+        config::KeywatchConfig::load_for_paths(args.config.as_deref(), &args.paths)?
+    } else {
+        None
+    };
     let (mut findings, scan_metadata) = scanner::run_scan(args, config.as_ref())?;
 
     if let Some(ref baseline_path) = args.baseline {

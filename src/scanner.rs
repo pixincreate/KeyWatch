@@ -178,7 +178,7 @@ pub fn run_scan(
     let mut detectors = initialize_detectors().map_err(|err| err.to_string())?;
 
     if let Some(cfg) = config {
-        cfg.apply_to(&mut detectors);
+        cfg.apply_to(&mut detectors)?;
     }
     let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
         .iter()

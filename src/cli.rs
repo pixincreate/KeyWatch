@@ -77,6 +77,10 @@ pub struct ScanArgs {
     #[arg(long)]
     pub config: Option<String>,
 
+    /// Disable automatic config discovery (an explicit --config still loads)
+    #[arg(long, default_value_t = false)]
+    pub no_config_discovery: bool,
+
     /// Output format for the report (json or sarif)
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     pub format: OutputFormat,
