@@ -27,6 +27,7 @@ class ScanScenario(NamedTuple):
     expected_stderr: tuple[str, ...] = ()
     expected_summary: tuple[str, ...] = ()
     preseed_report: bool = False
+    config: str = ""
 
 
 def run_blocks(text: str) -> list[str]:
@@ -74,10 +75,12 @@ def write_keywatch_stub(bin_dir: Path) -> Path:
 
 def run_scan_scenarios(scan_block: str) -> None:
     scenarios = (
-        ScanScenario("glob-expands", "scan/*.txt", "", 0, "valid", 0, ("exit_code=0", "findings_count=2"), ("scan/match.txt",), ("scan/*.txt", "--verbose")),
+        ScanScenario("glob-expands", "scan/*.txt", "", 0, "valid", 0, ("exit_code=0", "findings_count=2"), ("--no-config-discovery", "scan/match.txt"), ("scan/*.txt", "--verbose")),
+        ScanScenario("explicit-config", ".", "", 0, "valid", 0, expected_capture=("--no-config-discovery\n", "--config\ntrusted.toml\n"), config="trusted.toml"),
         ScanScenario("semicolon-literal", "literal;touch_pwned", "", 0, "valid", 0, expected_capture=("literal;touch_pwned",)),
         ScanScenario("path-option-is-literal", "--verbose", "", 0, "valid", 0, expected_capture=("--\n--verbose\n",)),
         ScanScenario("format-long-value-rejected", ".", "--format sarif", 0, "valid", 1, expected_stderr=("managed by action inputs",)),
+        ScanScenario("config-passthrough-rejected", ".", "--config .keywatch.toml", 0, "valid", 1, expected_stderr=("managed by action inputs",)),
         ScanScenario("verbose-long-value-rejected", ".", "--verbose=true", 0, "valid", 1, expected_stderr=("managed by action inputs",)),
         ScanScenario("verbose-compact-short-rejected", ".", "-vv", 0, "valid", 1, expected_stderr=("managed by action inputs",)),
         ScanScenario("verbose-mode-long-allowed", ".", "--verbose-mode", 0, "valid", 0, expected_capture=("--verbose-mode",)),
@@ -119,6 +122,7 @@ def run_scan_scenarios(scan_block: str) -> None:
                 "INPUT_EXIT_MODE": "strict",
                 "INPUT_OUTPUT": "",
                 "INPUT_VERBOSE": "false",
+                "INPUT_CONFIG": scenario.config,
                 "KEYWATCH_CAPTURE": str(workspace / "capture"),
                 "KEYWATCH_STUB_EXIT": str(scenario.scanner_exit),
                 "KEYWATCH_REPORT_MODE": scenario.report_mode,
@@ -185,7 +189,8 @@ def main() -> int:
         require(fragment not in shell, f"forbidden shell fragment remains: {fragment}")
 
     require("${{ inputs." not in shell, "inputs must be routed through step env, not run blocks")
-    require("keywatch_args=(scan)" in shell, "scanner argv must be built with a Bash array")
+    require("keywatch_args=(scan --no-config-discovery)" in shell, "Action scans must disable untrusted config discovery")
+    require("keywatch_args+=(--config \"$INPUT_CONFIG\")" in shell, "explicit trusted config input must be supported")
     require("read -r -a paths" in shell, "paths input must be parsed without shell evaluation")
     require("compgen -G \"$path_token\"" in shell, "path globs must expand without shell evaluation")
     require("expanded_paths+=(\"$path_token\")" in shell, "unmatched globs and metachar literals must stay literal")
@@ -194,6 +199,7 @@ def main() -> int:
     require("managed by action inputs" in shell, "args must not override verbose/output/exit-mode inputs")
     require("--verbose|--verbose=*|-v*" in shell, "all verbose arg forms must be rejected")
     require("--format|--format=*|-f|-f*" in shell, "all format arg forms must be rejected")
+    require("--config|--config=*|--no-config-discovery|--no-config-discovery=*" in shell, "config discovery controls must be managed by the Action")
     require("verbose output is disabled" in shell, "verbose mode must not log matched secrets")
     require("false|0|no|off|\"\")" in shell, "verbose=false must be an explicit non-verbose case")
     require("asset_arch=\"aarch64\"" in shell, "Darwin ARM64 must map to aarch64 release assets")

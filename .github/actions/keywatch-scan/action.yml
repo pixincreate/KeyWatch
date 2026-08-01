@@ -23,6 +23,10 @@ inputs:
     description: 'Deprecated: verbose scanner output is disabled to avoid logging matched secrets'
     required: false
     default: 'false'
+  config:
+    description: 'Path to an explicit trusted .keywatch.toml config file'
+    required: false
+    default: ''
 
 outputs:
   findings-count:
@@ -133,6 +137,7 @@ runs:
         INPUT_EXIT_MODE: ${{ inputs.exit-mode }}
         INPUT_OUTPUT: ${{ inputs.output }}
         INPUT_VERBOSE: ${{ inputs.verbose }}
+        INPUT_CONFIG: ${{ inputs.config }}
       run: |
         set -euo pipefail
 
@@ -205,7 +210,7 @@ runs:
         if ((${#extra_args[@]})); then
           for arg in "${extra_args[@]}"; do
             case "$arg" in
-              --verbose|--verbose=*|-v*|--format|--format=*|-f|-f*|--output|--output=*|-o|-o*|--exit-mode|--exit-mode=*)
+              --verbose|--verbose=*|-v*|--format|--format=*|-f|-f*|--output|--output=*|-o|-o*|--exit-mode|--exit-mode=*|--config|--config=*|--no-config-discovery|--no-config-discovery=*)
                 echo "ERROR: '$arg' is managed by action inputs and cannot be passed through args" >&2
                 exit 1
                 ;;
@@ -224,8 +229,11 @@ runs:
           mkdir -p "$(dirname -- "$report_path")"
         fi
 
-        keywatch_args=(scan)
+        keywatch_args=(scan --no-config-discovery)
         keywatch_args+=(--exit-mode "$INPUT_EXIT_MODE")
+        if [ -n "$INPUT_CONFIG" ]; then
+          keywatch_args+=(--config "$INPUT_CONFIG")
+        fi
         if ((${#extra_args[@]})); then
           keywatch_args+=("${extra_args[@]}")
         fi

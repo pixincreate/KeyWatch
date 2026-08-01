@@ -640,6 +640,56 @@ fn test_cli_scan_defaults_to_strict_exit_mode() {
 }
 
 #[test]
+fn test_cli_scan_can_disable_config_discovery() {
+    use clap::Parser;
+
+    let options = CliOptions::try_parse_from([
+        "key-watch",
+        "scan",
+        ".",
+        "--no-config-discovery",
+        "--config",
+        "trusted.toml",
+    ])
+    .expect("trusted explicit config with disabled discovery should parse");
+
+    match options.command {
+        Command::Scan(scan_args) => {
+            assert!(scan_args.no_config_discovery);
+            assert_eq!(scan_args.config.as_deref(), Some("trusted.toml"));
+        }
+        _ => panic!("expected scan command"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn test_cli_scan_ignores_repository_config_when_discovery_is_disabled() {
+    let temp_dir = unique_temp_dir("disabled_config_discovery");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    fs::write(temp_dir.join(".keywatch.toml"), "exclude = [\"**/*\"]\n")
+        .expect("write repository config");
+    fs::write(
+        temp_dir.join("secret.txt"),
+        "AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP\n",
+    )
+    .expect("write secret fixture");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args([
+            "scan",
+            temp_dir.to_str().expect("temp path should be UTF-8"),
+            "--no-config-discovery",
+        ])
+        .output()
+        .expect("run key-watch");
+
+    assert_eq!(output.status.code(), Some(1));
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[test]
 fn test_cli_pre_commit_rejects_blocked_repos() {
     use clap::Parser;
 
