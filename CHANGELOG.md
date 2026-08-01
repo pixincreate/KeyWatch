@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file.
 - **Git history scanning** — `scan --git-history` scans `git log -p` output for committed secrets
 - Cloud/monitoring/AI service detectors: Vercel, Netlify, Supabase, Datadog, New Relic, Sentry, PagerDuty, Anthropic, HuggingFace, Groq, Replicate, LangSmith
 - **GitHub Action** — composite action (`action.yml`) for CI/CD integration
-- **Docker support** — multi-stage Dockerfile with `--locked` flag, stripped binary, and non-root user
+- **Docker support** — multi-stage Dockerfile with `--locked` flag, stripped binary, non-root user, and git installed for `--git-history` scanning and hook installation
 - `.dockerignore` for optimized Docker builds
 
 ### Changed
