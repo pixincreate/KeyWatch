@@ -1,6 +1,6 @@
 use crate::cli::ScanArgs;
 use crate::detector::{Detector, initialize_detectors};
-use crate::report::{Finding, ScanMetadata, Severity};
+use crate::report::{Finding, ScanMetadata};
 use glob::Pattern;
 use rayon::prelude::*;
 use std::fs;
@@ -25,13 +25,17 @@ fn scan_line_detectors(
     line_number: usize,
     path: &str,
     line_detectors: &[&Detector],
+    line_is_suppressed: bool,
     findings: &mut Vec<Finding>,
 ) {
+    if line_is_suppressed {
+        return;
+    }
+
     for detector in line_detectors {
         if detector.has_keywords(line) {
             for mat in detector.regex.find_iter(line) {
-                if !is_inline_suppressed(line)
-                    && !is_allowlisted(mat.as_str(), detector)
+                if !is_allowlisted(mat.as_str(), detector)
                     && detector.has_sufficient_entropy(mat.as_str())
                 {
                     findings.push(Finding {
@@ -39,7 +43,7 @@ fn scan_line_detectors(
                         line_number,
                         matched_content: mat.as_str().to_string(),
                         finding_type: detector.finding_type.clone(),
-                        severity: Severity::from_string(&detector.severity),
+                        severity: detector.severity,
                         plugin_name: detector.name.clone(),
                     });
                 }
@@ -63,7 +67,9 @@ fn scan_multiline_chunk(
                     .lines()
                     .nth(line_in_chunk.saturating_sub(1))
                     .unwrap_or_default();
-                if !is_inline_suppressed(line_content)
+                let line_is_suppressed = is_inline_suppressed(line_content);
+
+                if !line_is_suppressed
                     && !is_allowlisted(mat.as_str(), detector)
                     && detector.has_sufficient_entropy(mat.as_str())
                 {
@@ -72,7 +78,7 @@ fn scan_multiline_chunk(
                         line_number: line_offset + line_in_chunk,
                         matched_content: mat.as_str().to_string(),
                         finding_type: detector.finding_type.clone(),
-                        severity: Severity::from_string(&detector.severity),
+                        severity: detector.severity,
                         plugin_name: detector.name.clone(),
                     });
                 }
@@ -94,7 +100,14 @@ fn scan_content(
 
     for (line_idx, line) in content.lines().enumerate() {
         total_lines += 1;
-        scan_line_detectors(line, line_idx + 1, path, line_detectors, &mut findings);
+        scan_line_detectors(
+            line,
+            line_idx + 1,
+            path,
+            line_detectors,
+            is_inline_suppressed(line),
+            &mut findings,
+        );
     }
 
     (findings, total_lines)
@@ -118,7 +131,14 @@ fn scan_stream<R: BufRead>(
         let line = line_result.map_err(|e| format!("Read error on {}: {}", path, e))?;
         total_lines += 1;
 
-        scan_line_detectors(&line, total_lines, path, line_detectors, &mut findings);
+        scan_line_detectors(
+            &line,
+            total_lines,
+            path,
+            line_detectors,
+            is_inline_suppressed(&line),
+            &mut findings,
+        );
 
         buffer.push(line);
 
@@ -157,8 +177,22 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
         .partition(|detector| detector.regex.as_str().contains("(?s)"));
 
     if args.git_history {
+        let git_root = args
+            .paths
+            .first()
+            .map(Path::new)
+            .unwrap_or_else(|| Path::new("."));
         let mut child = std::process::Command::new("git")
-            .args(["log", "-p", "-U0"])
+            .current_dir(git_root)
+            .args([
+                "-c",
+                "diff.external=",
+                "log",
+                "-p",
+                "-U0",
+                "--no-ext-diff",
+                "--no-textconv",
+            ])
             .stdout(std::process::Stdio::piped())
             .spawn()
             .map_err(|err| format!("Failed to run git log: {}", err))?;
@@ -207,12 +241,17 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
 
     for path_str in &args.paths {
         let path = Path::new(path_str);
-        if path.is_file() {
+        let Ok(metadata) = fs::symlink_metadata(path) else {
+            continue;
+        };
+        let file_type = metadata.file_type();
+        if file_type.is_symlink() {
+            continue;
+        }
+        if file_type.is_file() {
             target_paths.push((path_str.clone(), None));
-        } else if path.is_dir() {
+        } else if file_type.is_dir() {
             collect_files(path_str, &mut target_paths, path_str);
-        } else {
-            target_paths.push((path_str.clone(), None));
         }
     }
 
@@ -253,6 +292,15 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
 
             if matches_exclude_patterns(&path, &roots, &exclude_patterns) {
                 return (Vec::new(), 0, 0, Some(path));
+            }
+
+            let metadata = match fs::symlink_metadata(&path) {
+                Ok(metadata) => metadata,
+                Err(_) => return (Vec::new(), 0, 0, None),
+            };
+            let file_type = metadata.file_type();
+            if file_type.is_symlink() || !file_type.is_file() {
+                return (Vec::new(), 0, 0, None);
             }
 
             let full_content = match fs::read(&path) {
@@ -307,16 +355,21 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
 fn collect_files(dir_path: &str, files: &mut Vec<(String, Option<String>)>, root: &str) {
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
+            let Ok(file_type) = entry.file_type() else {
+                continue;
+            };
+            if file_type.is_symlink() {
+                continue;
+            }
             let path = entry.path();
-            if path.is_file() {
+            if file_type.is_file() {
                 if let Some(path_str) = path.to_str() {
                     files.push((path_str.to_string(), Some(root.to_string())));
                 }
-            } else if path.is_dir()
-                && path.file_name().is_none_or(|name| name != ".git")
-                && let Some(path_str) = path.to_str()
-            {
-                collect_files(path_str, files, root);
+            } else if file_type.is_dir() && path.file_name().is_none_or(|name| name != ".git") {
+                if let Some(path_str) = path.to_str() {
+                    collect_files(path_str, files, root);
+                }
             }
         }
     }

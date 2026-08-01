@@ -80,8 +80,8 @@ impl ScanArgs {
             if self.stdin {
                 return Err("Cannot specify both --git-history and --stdin".to_string());
             }
-            if !self.paths.is_empty() {
-                return Err("Cannot specify paths with --git-history".to_string());
+            if self.paths.len() > 1 {
+                return Err("Cannot specify more than one path with --git-history".to_string());
             }
             return Ok(());
         }
