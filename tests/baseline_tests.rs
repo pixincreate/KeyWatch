@@ -14,6 +14,33 @@ fn make_finding(file: &str, line: usize, ftype: &str, content: &str, plugin: &st
 }
 
 #[test]
+fn test_baseline_filters_known_findings() {
+    let known_finding = make_finding(
+        "test.txt",
+        5,
+        "AWS Key",
+        "AKIAIOSFODNN7EXAMPLE",
+        "AWSAccessKeyDetector",
+    );
+    let baseline = Baseline::from_findings(std::slice::from_ref(&known_finding));
+
+    let findings = vec![
+        known_finding,
+        make_finding(
+            "other.txt",
+            1,
+            "API Key",
+            "sk-abc",
+            "GenericKeyValueDetector",
+        ),
+    ];
+
+    let filtered = baseline.filter_findings(findings);
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].file_path, "other.txt");
+}
+
+#[test]
 fn test_baseline_filters_moved_finding_in_same_file() {
     let known_finding = make_finding(
         "test.txt",
@@ -98,6 +125,16 @@ fn test_baseline_save_and_load() -> Result<(), String> {
 }
 
 #[test]
+fn test_baseline_from_findings() {
+    let findings = vec![
+        make_finding("f1.txt", 1, "A", "x", "D1"),
+        make_finding("f2.txt", 2, "B", "y", "D2"),
+    ];
+    let baseline = Baseline::from_findings(&findings);
+    assert_eq!(baseline.entries.len(), 2);
+}
+
+#[test]
 fn test_baseline_from_findings_deduplicates_and_keeps_first_metadata() {
     let findings = vec![
         make_finding("f1.txt", 1, "A", "x", "D1"),
@@ -109,7 +146,7 @@ fn test_baseline_from_findings_deduplicates_and_keeps_first_metadata() {
 }
 
 #[test]
-fn test_baseline_update_merges_new_findings_once() {
+fn test_baseline_update_merges_new_findings() {
     let mut baseline = Baseline::from_findings(&[make_finding("old.txt", 1, "X", "old", "D")]);
     let new_findings = vec![
         make_finding("old.txt", 1, "X", "old", "D"),
