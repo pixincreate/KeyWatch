@@ -1,4 +1,11 @@
-use key_watch::report::{Finding, ScanMetadata, Severity, create_report, get_severity_counts};
+use key_watch::report::{
+    Finding, ScanMetadata, Severity, create_report, create_sarif_report, get_severity_counts,
+};
+use serde_json::Value;
+
+fn parse_json(output: &str) -> Value {
+    serde_json::from_str(output).expect("valid JSON output")
+}
 
 #[test]
 fn test_create_report() {
@@ -11,18 +18,13 @@ fn test_create_report() {
 
     let report = create_report(findings, metadata, "0.5s".to_string())
         .expect("create_report should succeed");
-    assert!(
-        report.contains("\"status\": \"PASS\""),
-        "Empty findings should be PASS"
-    );
-    assert!(
-        report.contains("\"files_scanned\": 5"),
-        "Should include files_scanned"
-    );
-    assert!(
-        report.contains("\"scan_time\": \"0.5s\""),
-        "Should include scan_time"
-    );
+    let json = parse_json(&report);
+
+    assert_eq!(json["status"], "PASS");
+    assert_eq!(json["files_scanned"], 5);
+    assert_eq!(json["total_lines"], 100);
+    assert_eq!(json["excluded_files"], serde_json::json!([]));
+    assert_eq!(json["scan_time"], "0.5s");
 }
 
 #[test]
@@ -43,11 +45,11 @@ fn test_report_with_findings() {
 
     let report = create_report(findings, metadata, "0.1s".to_string())
         .expect("create_report should succeed");
-    assert!(
-        report.contains("\"status\": \"FAIL\""),
-        "Should report FAIL status"
-    );
-    assert!(report.contains("AWS Key"), "Should include finding type");
+    let json = parse_json(&report);
+
+    assert_eq!(json["status"], "FAIL");
+    assert_eq!(json["findings"][0]["finding_type"], "AWS Key");
+    assert_eq!(json["findings"][0]["matched_content"], "AKIATESTKEY");
 }
 
 #[test]
@@ -68,13 +70,156 @@ fn test_create_report_includes_excluded_files_and_plugin_metadata() {
 
     let report = create_report(findings, metadata, "1.2s".to_string())
         .expect("create_report should succeed");
+    let json = parse_json(&report);
 
-    assert!(report.contains("\"excluded_files\""));
-    assert!(report.contains("ignored.log"));
-    assert!(report.contains("vendor/secrets.txt"));
-    assert!(report.contains("\"plugin_name\": \"TokenDetector\""));
-    assert!(report.contains("\"matched_content\": \"tok_test_123\""));
-    assert!(report.contains("\"total_lines\": 80"));
+    assert_eq!(
+        json["excluded_files"],
+        serde_json::json!(["ignored.log", "vendor/secrets.txt"])
+    );
+    assert_eq!(json["findings"][0]["plugin_name"], "TokenDetector");
+    assert_eq!(json["findings"][0]["matched_content"], "tok_test_123");
+    assert_eq!(json["total_lines"], 80);
+}
+
+#[test]
+fn test_create_sarif_report_uses_camel_case_fields_and_hides_matched_content() {
+    let secret = "AKIATESTKEY".to_string();
+    let findings = vec![Finding {
+        file_path: "src/secret.txt".to_string(),
+        line_number: 12,
+        finding_type: "AWS Key".to_string(),
+        severity: Severity::Critical,
+        matched_content: secret.clone(),
+        plugin_name: "AwsKeyDetector".to_string(),
+    }];
+    let metadata = ScanMetadata {
+        files_scanned: 1,
+        total_lines: 12,
+        excluded_files: vec![],
+    };
+
+    let sarif = create_sarif_report(findings, metadata, "2026-08-01T00:00:00Z".to_string())
+        .expect("create_sarif_report should succeed");
+    let json = parse_json(&sarif);
+
+    assert_eq!(
+        json["$schema"],
+        "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json"
+    );
+    assert_eq!(json["version"], "2.1.0");
+
+    let driver = &json["runs"][0]["tool"]["driver"];
+    assert_eq!(driver["name"], "KeyWatch");
+    assert!(driver.get("informationUri").is_some());
+    assert!(driver.get("semanticVersion").is_some());
+    assert!(driver.get("information_uri").is_none());
+    assert!(driver.get("semantic_version").is_none());
+
+    let result = &json["runs"][0]["results"][0];
+    assert_eq!(result["ruleId"], "AWS Key");
+    assert_eq!(result["level"], "error");
+    assert_eq!(result["message"]["text"], "Potential AWS Key detected");
+    assert_eq!(
+        result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+        "src/secret.txt"
+    );
+    assert_eq!(
+        result["locations"][0]["physicalLocation"]["region"]["startLine"],
+        12
+    );
+    assert!(result.get("rule_id").is_none());
+    assert!(result.get("physical_location").is_none());
+    assert!(
+        result["locations"][0]["physicalLocation"]
+            .get("artifact_location")
+            .is_none()
+    );
+    assert!(
+        result["locations"][0]["physicalLocation"]["region"]
+            .get("start_line")
+            .is_none()
+    );
+
+    assert_eq!(
+        result["properties"]["severity"],
+        Severity::Critical.as_str()
+    );
+    assert_eq!(result["properties"]["precision"], "very-high");
+    assert!(!sarif.contains(&secret));
+}
+
+#[test]
+fn test_create_sarif_report_maps_all_severities_to_expected_levels() {
+    let findings = vec![
+        Finding {
+            file_path: "critical.txt".to_string(),
+            line_number: 1,
+            finding_type: "CriticalRule".to_string(),
+            severity: Severity::Critical,
+            matched_content: "critical-secret".to_string(),
+            plugin_name: "CriticalDetector".to_string(),
+        },
+        Finding {
+            file_path: "high.txt".to_string(),
+            line_number: 2,
+            finding_type: "HighRule".to_string(),
+            severity: Severity::High,
+            matched_content: "high-secret".to_string(),
+            plugin_name: "HighDetector".to_string(),
+        },
+        Finding {
+            file_path: "medium.txt".to_string(),
+            line_number: 3,
+            finding_type: "MediumRule".to_string(),
+            severity: Severity::Medium,
+            matched_content: "medium-secret".to_string(),
+            plugin_name: "MediumDetector".to_string(),
+        },
+        Finding {
+            file_path: "low.txt".to_string(),
+            line_number: 4,
+            finding_type: "LowRule".to_string(),
+            severity: Severity::Low,
+            matched_content: "low-secret".to_string(),
+            plugin_name: "LowDetector".to_string(),
+        },
+    ];
+    let metadata = ScanMetadata {
+        files_scanned: 4,
+        total_lines: 4,
+        excluded_files: vec![],
+    };
+
+    let sarif = create_sarif_report(findings, metadata, "2026-08-01T00:00:00Z".to_string())
+        .expect("create_sarif_report should succeed");
+    let json = parse_json(&sarif);
+    let results = json["runs"][0]["results"]
+        .as_array()
+        .expect("results array");
+
+    let levels: Vec<&str> = results
+        .iter()
+        .map(|result| result["level"].as_str().expect("level string"))
+        .collect();
+    assert_eq!(levels, vec!["error", "error", "warning", "note"]);
+
+    let severities: Vec<&str> = results
+        .iter()
+        .map(|result| {
+            result["properties"]["severity"]
+                .as_str()
+                .expect("severity string")
+        })
+        .collect();
+    assert_eq!(
+        severities,
+        vec![
+            Severity::Critical.as_str(),
+            Severity::High.as_str(),
+            Severity::Medium.as_str(),
+            Severity::Low.as_str()
+        ]
+    );
 }
 
 #[test]
