@@ -1,5 +1,9 @@
 use key_watch::cli::{CliOptions, Command, ExitMode, HookAction, HookInstallArgs, HookType, Shell};
 use key_watch::hooks::{generate_pre_commit_hook, generate_pre_push_hook};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::process::Output;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn hook_install_args(
     hook_type: HookType,
@@ -14,6 +18,77 @@ fn hook_install_args(
         blocked_repos: blocked_repos.map(str::to_string),
         exclude: exclude.map(str::to_string),
     }
+}
+
+#[cfg(unix)]
+fn unique_temp_dir(name: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time should be after unix epoch")
+        .as_nanos();
+
+    std::env::temp_dir().join(format!(
+        "keywatch_hook_{name}_{stamp}_{}",
+        std::process::id()
+    ))
+}
+
+#[cfg(unix)]
+fn write_executable(path: &Path, contents: &str) {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::write(path, contents).expect("write executable");
+    let mut permissions = fs::metadata(path)
+        .expect("read executable metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions).expect("mark executable");
+}
+
+#[cfg(unix)]
+fn generated_binary_name() -> String {
+    std::env::current_exe()
+        .expect("current test executable should resolve")
+        .file_name()
+        .expect("current test executable should have a file name")
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[cfg(unix)]
+fn run_hook_with_args(
+    hook: &str,
+    git_script: &str,
+    keywatch_script: &str,
+    cwd: &Path,
+    hook_args: &[&str],
+) -> Output {
+    let bin_dir = cwd.join("bin");
+    fs::create_dir_all(&bin_dir).expect("create fake bin dir");
+    write_executable(&bin_dir.join("git"), git_script);
+    write_executable(&bin_dir.join(generated_binary_name()), keywatch_script);
+
+    let hook_path = cwd.join("hook.sh");
+    fs::write(&hook_path, hook).expect("write hook");
+
+    let path = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    std::process::Command::new("bash")
+        .arg(&hook_path)
+        .args(hook_args)
+        .current_dir(cwd)
+        .env("PATH", path)
+        .output()
+        .expect("run hook")
+}
+
+#[cfg(unix)]
+fn run_hook(hook: &str, git_script: &str, keywatch_script: &str, cwd: &Path) -> Output {
+    run_hook_with_args(hook, git_script, keywatch_script, cwd, &[])
 }
 
 #[test]
@@ -36,6 +111,18 @@ fn test_hook_generation_pre_commit() {
         hook.contains("scan \"$file\""),
         "Should use scan subcommand"
     );
+    assert!(
+        hook.contains("[ -L \"$file\" ]"),
+        "Should skip staged symlinks"
+    );
+    assert!(
+        hook.contains(">/dev/null 2>&1"),
+        "Should suppress scanner output before concise failure"
+    );
+    assert!(
+        !hook.contains("--verbose"),
+        "Should not rerun verbosely and print matched secrets"
+    );
 }
 
 #[test]
@@ -54,9 +141,251 @@ fn test_hook_generation_pre_push() {
         "Should use scan subcommand for pre-push"
     );
     assert!(
-        hook.contains("CURRENT_REMOTE=$(git remote get-url --push origin"),
-        "Should enforce repo restrictions"
+        hook.contains("CURRENT_REMOTE=${2:-}"),
+        "Should prefer the pushed remote URL from hook argv"
     );
+    assert!(
+        hook.contains("REMOTE_NAME=${1:-origin}"),
+        "Should name the remote explicitly before fallback"
+    );
+    assert!(
+        hook.contains("git remote get-url --push"),
+        "Should fall back to the remote name when argv URL is absent"
+    );
+    assert!(
+        hook.contains("normalize_repo"),
+        "Should normalize remote and configured repo identities"
+    );
+    assert!(
+        hook.contains("[ \"$CURRENT_REPO\" = \"$allowed_repo\" ]"),
+        "Should compare allowed repos by exact identity"
+    );
+    assert!(
+        !hook.contains("*\"$allowed_repo\"*"),
+        "Should not use substring allow-list matching"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_commit_failure_output_does_not_print_matched_secret() {
+    let temp_dir = unique_temp_dir("pre_commit_secret_output");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    fs::write(temp_dir.join("secret.txt"), "secret").expect("write staged file");
+
+    let hook = generate_pre_commit_hook(&hook_install_args(HookType::PreCommit, None, None, None));
+    let git_script =
+        "#!/bin/bash\nif [ \"$1\" = \"diff\" ]; then printf 'secret.txt\\0'; exit 0; fi\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nprintf 'MATCHED_SECRET_VALUE\\n'\nprintf 'MATCHED_SECRET_VALUE\\n' >&2\nexit 1\n";
+    let output = run_hook(&hook, git_script, keywatch_script, &temp_dir);
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(combined.contains("ERROR: Secret detected in secret.txt"));
+    assert!(
+        !combined.contains("MATCHED_SECRET_VALUE"),
+        "Generated pre-commit hook must not print matched secrets"
+    );
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_commit_skips_staged_symlinks() {
+    let temp_dir = unique_temp_dir("pre_commit_symlink_skip");
+    let marker = temp_dir.join("scanner-ran");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    fs::write(temp_dir.join("target.txt"), "secret").expect("write target");
+    std::os::unix::fs::symlink("target.txt", temp_dir.join("linked.txt")).expect("create symlink");
+
+    let hook = generate_pre_commit_hook(&hook_install_args(HookType::PreCommit, None, None, None));
+    let git_script =
+        "#!/bin/bash\nif [ \"$1\" = \"diff\" ]; then printf 'linked.txt\\0'; exit 0; fi\nexit 1\n";
+    let keywatch_script = format!("#!/bin/bash\nprintf ran > '{}'\nexit 1\n", marker.display());
+    let output = run_hook(&hook, git_script, &keywatch_script, &temp_dir);
+
+    assert!(
+        output.status.success(),
+        "symlink-only pre-commit should pass"
+    );
+    assert!(
+        !marker.exists(),
+        "scanner should not run for staged symlinks"
+    );
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_allows_normalized_https_and_scp_equivalent() {
+    let temp_dir = unique_temp_dir("pre_push_allowed_normalized");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some(" git@github.com:org/repo.git "),
+        None,
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://github.com/org/repo.git/\\n'; exit 0; fi\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nexit 0\n";
+    let output = run_hook(&hook, git_script, keywatch_script, &temp_dir);
+
+    assert!(
+        output.status.success(),
+        "normalized HTTPS remote should match SCP allow entry"
+    );
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_allows_https_userinfo_case_and_default_port() {
+    let temp_dir = unique_temp_dir("pre_push_allowed_url_variants");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some("git@github.com:org/repo.git"),
+        None,
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://x-access-token:T@GitHub.COM:443/ORG/REPO.git\\n'; exit 0; fi\nexit 1\n";
+    let output = run_hook(&hook, git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
+
+    assert!(output.status.success());
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_blocks_https_userinfo_case_and_default_port() {
+    let temp_dir = unique_temp_dir("pre_push_blocked_url_variants");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        None,
+        Some("ssh://git@github.com/org/repo"),
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://user@GitHub.COM:443/ORG/REPO.git\\n'; exit 0; fi\nexit 1\n";
+    let output = run_hook(&hook, git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
+
+    assert_eq!(output.status.code(), Some(1));
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_rejects_spoofed_substring_remote() {
+    let temp_dir = unique_temp_dir("pre_push_spoofed_remote");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some("git@evil.example:org/repo.git"),
+        None,
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://evil.example/github.com/org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nexit 0\n";
+    let output = run_hook(&hook, git_script, keywatch_script, &temp_dir);
+
+    assert_eq!(output.status.code(), Some(1));
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_blocks_when_actual_pushed_remote_is_unallowed() {
+    let temp_dir = unique_temp_dir("pre_push_blocks_actual_unallowed");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some("github.com/org/repo"),
+        None,
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'git@github.com:org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nexit 0\n";
+    let output = run_hook_with_args(
+        &hook,
+        git_script,
+        keywatch_script,
+        &temp_dir,
+        &["mirror", "https://evil.example/org/repo.git"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_blocks_when_actual_pushed_remote_is_blocked() {
+    let temp_dir = unique_temp_dir("pre_push_blocks_actual_blocked");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        None,
+        Some("https://evil.example/org/repo.git"),
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'git@github.com:org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nexit 0\n";
+    let output = run_hook_with_args(
+        &hook,
+        git_script,
+        keywatch_script,
+        &temp_dir,
+        &["origin", "https://evil.example/org/repo.git"],
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_blocks_normalized_https_and_scp_equivalent() {
+    let temp_dir = unique_temp_dir("pre_push_blocked_normalized");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        None,
+        Some("https://github.com/org/repo"),
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'git@github.com:org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nexit 0\n";
+    let output = run_hook(&hook, git_script, keywatch_script, &temp_dir);
+
+    assert_eq!(output.status.code(), Some(1));
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
 
 #[test]
