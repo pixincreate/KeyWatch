@@ -1,9 +1,12 @@
 use key_watch::cli::{CliOptions, Command, ExitMode, HookAction, HookInstallArgs, HookType, Shell};
 use key_watch::hooks::{generate_pre_commit_hook, generate_pre_push_hook};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Output;
-use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(unix)]
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Output,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 fn hook_install_args(
     hook_type: HookType,
