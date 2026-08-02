@@ -520,6 +520,44 @@ fn test_pre_push_scans_unnormalizable_remote_when_no_filters_exist() {
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
 
+#[cfg(unix)]
+#[test]
+fn test_pre_push_ignores_repository_config_that_disables_scanning() {
+    let temp_dir = unique_temp_dir("pre_push_ignores_repository_config");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    fs::write(temp_dir.join(".keywatch.toml"), "exclude = [\"**/*\"]\n")
+        .expect("write repository config");
+    fs::write(
+        temp_dir.join("secret.txt"),
+        "master_api_key = \"abcdefghijklmnopqrstuvwxyz1234\"\n",
+    )
+    .expect("write critical secret");
+
+    let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
+    let keywatch_script = format!(
+        "#!/bin/bash\nKEYWATCH_CONFIG_PATH=\"{}\" exec \"{}\" \"$@\"\n",
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("detectors.toml")
+            .display(),
+        env!("CARGO_BIN_EXE_key-watch")
+    );
+    let output = run_hook(
+        &hook,
+        &["origin"],
+        "#!/bin/bash\nexit 1\n",
+        &keywatch_script,
+        &temp_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "repository config must not suppress pre-push scanning: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
 #[test]
 fn test_hook_shell_escaping() {
     let options = hook_install_args(
