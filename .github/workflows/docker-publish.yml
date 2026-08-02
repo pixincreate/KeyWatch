@@ -3,20 +3,16 @@ name: Publish Docker Image
 on:
   push:
     tags: ["v*"]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Image tag'
-        required: true
-        default: 'latest'
 
 permissions:
   contents: read
   packages: write
+  attestations: write
+  id-token: write
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: pixincreate/keywatch
 
 jobs:
   build-and-push:
@@ -26,6 +22,17 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Verify tag and package versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_version=${GITHUB_REF_NAME#v}
+          cargo_version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
+          action_version=$(sed -n "/^  version:$/,/^  paths:$/ s/^    default: '\([^']*\)'/\1/p" action.yml)
+          test "$tag_version" = "$cargo_version"
+          test "$tag_version" = "$action_version"
+          grep -Fq "## [$tag_version] -" CHANGELOG.md
 
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v4.6.0
@@ -42,13 +49,22 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && !contains(github.ref_name, '-') }}
             type=sha,format=short
-            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push Docker image
+        id: push
         uses: docker/build-push-action@v7.3.0
         with:
           context: .
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Attest image provenance
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
