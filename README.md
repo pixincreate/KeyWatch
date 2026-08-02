@@ -47,6 +47,60 @@ Requires Rust 1.85+ (edition 2024) when building from source.
 The canonical command is `key-watch`.
 `keywatch` and `kw` are optional shell aliases exposed via `key-watch init ...`.
 
+## GitHub Action
+
+Use the root Action from a public workflow. The major tag follows compatible `2.x` releases; pin an exact release tag or commit SHA when immutable dependencies are required.
+
+```yaml
+name: Secret scan
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  keywatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - id: keywatch
+        uses: pixincreate/KeyWatch@v2
+        with:
+          paths: "."
+          exit-mode: strict
+```
+
+The Action installs the synchronized KeyWatch release, verifies SHA-256 checksums for the binary and `detectors.toml`, disables repository detector discovery, and writes a JSON report. It supports Linux x64 and macOS x64/arm64 runners; Windows runners are not supported.
+
+| Input       | Default                | Purpose                                                                  |
+| ----------- | ---------------------- | ------------------------------------------------------------------------ |
+| `version`   | Action release version | Exact KeyWatch release to install                                        |
+| `paths`     | `.`                    | Space-separated paths or globs to scan                                   |
+| `args`      | empty                  | Additional scanner arguments that do not override Action-managed options |
+| `exit-mode` | `strict`               | `strict`, `critical`, or `always`                                        |
+| `output`    | temporary report       | JSON report path                                                         |
+| `config`    | empty                  | Explicit trusted `.keywatch.toml` path                                   |
+| `verbose`   | `false`                | Deprecated; enabling it is rejected to prevent secret disclosure in logs |
+
+The `findings-count` and `exit-code` outputs are available as `${{ steps.keywatch.outputs['findings-count'] }}` and `${{ steps.keywatch.outputs['exit-code'] }}`.
+
+## Container Image
+
+The GitHub Container Registry image is a separate distribution channel for Linux x64 environments:
+
+```sh
+docker pull ghcr.io/pixincreate/keywatch:2
+docker run --rm \
+  --volume "$PWD:/workspace:ro" \
+  --workdir /workspace \
+  ghcr.io/pixincreate/keywatch:2 scan .
+```
+
+Images are published as `x.y.z`, `x.y`, `x`, and `latest`, with build provenance attached. Exact semver tags are the reproducible choice. After the first publication, a repository owner must make the GHCR package public in the package settings to allow anonymous pulls; no separate GHCR account is required. The image runs as a non-root user and uses the image-owned detector configuration at `/etc/keywatch/detectors.toml`.
+
 ## Uninstall
 
 ### If installed with `cargo install`
