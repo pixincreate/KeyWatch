@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 - Cloud/monitoring/AI service detectors: Vercel, Netlify, Supabase, Datadog, New Relic, Sentry, PagerDuty, Anthropic, HuggingFace, Groq, Replicate, LangSmith
 - **GitHub Action** — composite action (`action.yml`) for CI/CD integration
 - **Docker support** — multi-stage Dockerfile with `--locked` flag, stripped binary, non-root user, and git installed for `--git-history` scanning and hook installation
+- **Public distribution verification** — the root GitHub Action verifies release binary and detector checksums, while GHCR images publish semver, major, and latest tags with provenance
 - `.dockerignore` for optimized Docker builds
 - **Config file support** — `.keywatch.toml` with custom rules, detector overrides, and exclude patterns
 - **SARIF 2.1.0 output** — `--format sarif` enables GitHub Code Scanning and SARIF viewer integration
@@ -39,6 +40,8 @@ All notable changes to this project will be documented in this file.
 - Local hook installation now resolves Git's hooks directory directly, improving worktree and submodule compatibility
 - `exit-mode critical` now fails on both HIGH and CRITICAL findings
 - Detector descriptions and comments cleaned up for minimal noise
+- Release preparation now synchronizes the Action version with Cargo metadata and runs CI before publishing tags
+- CI now validates Action shell behavior, checksum failures, release automation, and container smoke behavior
 
 ### Fixed
 

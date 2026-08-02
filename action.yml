@@ -3,6 +3,10 @@ description: 'Scan files and directories for secrets with KeyWatch'
 author: 'Pa1Nark'
 
 inputs:
+  version:
+    description: 'Exact KeyWatch release version to install'
+    required: false
+    default: '1.1.0'
   paths:
     description: 'Paths to scan (space-separated, supports globs)'
     required: false
@@ -43,10 +47,11 @@ runs:
       shell: bash
       env:
         GITHUB_TOKEN: ${{ github.token }}
+        INPUT_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
 
-        for required_tool in curl jq; do
+        for required_tool in curl; do
           if ! command -v "$required_tool" >/dev/null 2>&1; then
             echo "ERROR: $required_tool is required on this runner" >&2
             exit 1
@@ -54,23 +59,19 @@ runs:
         done
 
         REPO="pixincreate/KeyWatch"
-        VERSION="${KEYWATCH_VERSION:-latest}"
+        VERSION="$INPUT_VERSION"
 
         curl_args=(-fsSL)
         if [ -n "${GITHUB_TOKEN:-}" ]; then
           curl_args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
         fi
 
-        if [ "$VERSION" = "latest" ]; then
-          release_json=$(curl "${curl_args[@]}" \
-            "https://api.github.com/repos/$REPO/releases/latest")
-          VERSION=$(jq -er '.tag_name' <<<"$release_json")
-        elif [[ "$VERSION" != v* ]]; then
+        if [[ "$VERSION" != v* ]]; then
           VERSION="v$VERSION"
         fi
 
-        if [[ ! "$VERSION" =~ ^v[0-9A-Za-z._-]+$ ]]; then
-          echo "ERROR: invalid KeyWatch version/tag '$VERSION'" >&2
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+          echo "ERROR: invalid KeyWatch release version '$VERSION'" >&2
           exit 1
         fi
 
@@ -109,16 +110,41 @@ runs:
         binary_path="$bin_dir/key-watch$exe_suffix"
         asset_name="keywatch-$asset_os-$asset_arch$exe_suffix"
         binary_url="https://github.com/$REPO/releases/download/$VERSION/$asset_name"
-        config_url="https://raw.githubusercontent.com/$REPO/$VERSION/detectors.toml"
+        binary_checksum_url="$binary_url.sha256"
+        config_url="https://github.com/$REPO/releases/download/$VERSION/detectors.toml"
+        config_checksum_url="$config_url.sha256"
+        binary_checksum_path="$install_dir/$asset_name.sha256"
+        config_checksum_path="$install_dir/detectors.toml.sha256"
 
         mkdir -p "$bin_dir"
 
         echo "Downloading KeyWatch $VERSION for $asset_os-$asset_arch..."
-        curl -fsSL "$binary_url" -o "$binary_path"
-        chmod +x "$binary_path"
+        curl "${curl_args[@]}" "$binary_url" -o "$binary_path"
+        curl "${curl_args[@]}" "$binary_checksum_url" -o "$binary_checksum_path"
 
-        echo "Downloading KeyWatch detectors config from $VERSION..."
-        curl -fsSL "$config_url" -o "$config_path"
+        echo "Downloading KeyWatch detectors config from release $VERSION..."
+        curl "${curl_args[@]}" "$config_url" -o "$config_path"
+        curl "${curl_args[@]}" "$config_checksum_url" -o "$config_checksum_path"
+
+        expected_binary_checksum=$(awk 'NR == 1 { print $1 }' "$binary_checksum_path")
+        expected_config_checksum=$(awk 'NR == 1 { print $1 }' "$config_checksum_path")
+        if [ "$asset_os" = "darwin" ]; then
+          actual_binary_checksum=$(shasum -a 256 "$binary_path" | awk '{ print $1 }')
+          actual_config_checksum=$(shasum -a 256 "$config_path" | awk '{ print $1 }')
+        else
+          actual_binary_checksum=$(sha256sum "$binary_path" | awk '{ print $1 }')
+          actual_config_checksum=$(sha256sum "$config_path" | awk '{ print $1 }')
+        fi
+        if [ "$actual_binary_checksum" != "$expected_binary_checksum" ]; then
+          echo "ERROR: KeyWatch binary checksum verification failed" >&2
+          exit 1
+        fi
+        if [ "$actual_config_checksum" != "$expected_config_checksum" ]; then
+          echo "ERROR: detectors.toml checksum verification failed" >&2
+          exit 1
+        fi
+
+        chmod +x "$binary_path"
 
         export PATH="$bin_dir:$PATH"
         export KEYWATCH_CONFIG_PATH="$config_path"
