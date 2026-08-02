@@ -1,5 +1,7 @@
-use key_watch::cli::{CliOptions, Command, ExitMode, HookAction, HookInstallArgs, HookType, Shell};
-use key_watch::hooks::{generate_pre_commit_hook, generate_pre_push_hook};
+use key_watch::cli::{
+    CliOptions, CliValidationError, Command, ExitMode, HookAction, HookInstallArgs, HookType, Shell,
+};
+use key_watch::{generate_pre_commit_hook, generate_pre_push_hook};
 #[cfg(unix)]
 use std::{
     fs,
@@ -59,12 +61,12 @@ fn generated_binary_name() -> String {
 }
 
 #[cfg(unix)]
-fn run_hook_with_args(
+fn run_hook(
     hook: &str,
+    hook_args: &[&str],
     git_script: &str,
     keywatch_script: &str,
     cwd: &Path,
-    hook_args: &[&str],
 ) -> Output {
     let bin_dir = cwd.join("bin");
     fs::create_dir_all(&bin_dir).expect("create fake bin dir");
@@ -90,8 +92,37 @@ fn run_hook_with_args(
 }
 
 #[cfg(unix)]
-fn run_hook(hook: &str, git_script: &str, keywatch_script: &str, cwd: &Path) -> Output {
-    run_hook_with_args(hook, git_script, keywatch_script, cwd, &[])
+fn run_hook_with_packaged_keywatch(hook: &str, cwd: &Path) -> Output {
+    let bin_dir = cwd.join("bin");
+    fs::create_dir_all(&bin_dir).expect("create fake bin dir");
+    write_executable(&bin_dir.join("git"), "#!/bin/bash\nexit 1\n");
+    fs::copy(
+        env!("CARGO_BIN_EXE_key-watch"),
+        bin_dir.join(generated_binary_name()),
+    )
+    .expect("copy KeyWatch binary");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("detectors.toml"),
+        bin_dir.join("detectors.toml"),
+    )
+    .expect("copy packaged detectors");
+
+    let hook_path = cwd.join("hook.sh");
+    fs::write(&hook_path, hook).expect("write hook");
+    let path = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    std::process::Command::new("bash")
+        .arg(&hook_path)
+        .arg("origin")
+        .current_dir(cwd)
+        .env("PATH", path)
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .output()
+        .expect("run hook with packaged KeyWatch")
 }
 
 #[cfg(unix)]
@@ -101,7 +132,6 @@ fn keywatch_script_that_records_args(marker: &Path) -> String {
         marker.display()
     )
 }
-
 #[test]
 fn test_hook_generation_pre_commit() {
     let options = hook_install_args(HookType::PreCommit, None, None, Some("*.log,*.tmp"));
@@ -189,7 +219,7 @@ fn test_pre_commit_failure_output_does_not_print_matched_secret() {
     let git_script =
         "#!/bin/bash\nif [ \"$1\" = \"diff\" ]; then printf 'secret.txt\\0'; exit 0; fi\nexit 1\n";
     let keywatch_script = "#!/bin/bash\nprintf 'MATCHED_SECRET_VALUE\\n'\nprintf 'MATCHED_SECRET_VALUE\\n' >&2\nexit 1\n";
-    let output = run_hook(&hook, git_script, keywatch_script, &temp_dir);
+    let output = run_hook(&hook, &[], git_script, keywatch_script, &temp_dir);
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&output.stdout),
@@ -220,7 +250,7 @@ fn test_pre_commit_skips_staged_symlinks() {
     let git_script =
         "#!/bin/bash\nif [ \"$1\" = \"diff\" ]; then printf 'linked.txt\\0'; exit 0; fi\nexit 1\n";
     let keywatch_script = format!("#!/bin/bash\nprintf ran > '{}'\nexit 1\n", marker.display());
-    let output = run_hook(&hook, git_script, &keywatch_script, &temp_dir);
+    let output = run_hook(&hook, &[], git_script, &keywatch_script, &temp_dir);
 
     assert!(
         output.status.success(),
@@ -249,7 +279,7 @@ fn test_pre_push_allows_normalized_https_and_scp_equivalent() {
     ));
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://github.com/org/repo.git/\\n'; exit 0; fi\nexit 1\n";
     let keywatch_script = "#!/bin/bash\nexit 0\n";
-    let output = run_hook(&hook, git_script, keywatch_script, &temp_dir);
+    let output = run_hook(&hook, &["origin"], git_script, keywatch_script, &temp_dir);
 
     assert!(
         output.status.success(),
@@ -273,7 +303,13 @@ fn test_pre_push_allows_https_userinfo_case_and_default_port() {
         None,
     ));
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://x-access-token:T@GitHub.COM:443/ORG/REPO.git\\n'; exit 0; fi\nexit 1\n";
-    let output = run_hook(&hook, git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
+    let output = run_hook(
+        &hook,
+        &["origin"],
+        git_script,
+        "#!/bin/bash\nexit 0\n",
+        &temp_dir,
+    );
 
     assert!(output.status.success());
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
@@ -293,7 +329,13 @@ fn test_pre_push_blocks_https_userinfo_case_and_default_port() {
         None,
     ));
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://user@GitHub.COM:443/ORG/REPO.git\\n'; exit 0; fi\nexit 1\n";
-    let output = run_hook(&hook, git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
+    let output = run_hook(
+        &hook,
+        &["origin"],
+        git_script,
+        "#!/bin/bash\nexit 0\n",
+        &temp_dir,
+    );
 
     assert_eq!(output.status.code(), Some(1));
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
@@ -308,69 +350,13 @@ fn test_pre_push_rejects_spoofed_substring_remote() {
 
     let hook = generate_pre_push_hook(&hook_install_args(
         HookType::PrePush,
-        Some("git@evil.example:org/repo.git"),
+        Some("github.com/org/repo"),
         None,
         None,
     ));
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://evil.example/github.com/org/repo.git\\n'; exit 0; fi\nexit 1\n";
     let keywatch_script = "#!/bin/bash\nexit 0\n";
-    let output = run_hook(&hook, git_script, keywatch_script, &temp_dir);
-
-    assert_eq!(output.status.code(), Some(1));
-
-    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
-}
-
-#[cfg(unix)]
-#[test]
-fn test_pre_push_blocks_when_actual_pushed_remote_is_unallowed() {
-    let temp_dir = unique_temp_dir("pre_push_blocks_actual_unallowed");
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).expect("create temp dir");
-
-    let hook = generate_pre_push_hook(&hook_install_args(
-        HookType::PrePush,
-        Some("github.com/org/repo"),
-        None,
-        None,
-    ));
-    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'git@github.com:org/repo.git\\n'; exit 0; fi\nexit 1\n";
-    let keywatch_script = "#!/bin/bash\nexit 0\n";
-    let output = run_hook_with_args(
-        &hook,
-        git_script,
-        keywatch_script,
-        &temp_dir,
-        &["mirror", "https://evil.example/org/repo.git"],
-    );
-
-    assert_eq!(output.status.code(), Some(1));
-
-    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
-}
-
-#[cfg(unix)]
-#[test]
-fn test_pre_push_blocks_when_actual_pushed_remote_is_blocked() {
-    let temp_dir = unique_temp_dir("pre_push_blocks_actual_blocked");
-    let _ = fs::remove_dir_all(&temp_dir);
-    fs::create_dir_all(&temp_dir).expect("create temp dir");
-
-    let hook = generate_pre_push_hook(&hook_install_args(
-        HookType::PrePush,
-        None,
-        Some("https://evil.example/org/repo.git"),
-        None,
-    ));
-    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'git@github.com:org/repo.git\\n'; exit 0; fi\nexit 1\n";
-    let keywatch_script = "#!/bin/bash\nexit 0\n";
-    let output = run_hook_with_args(
-        &hook,
-        git_script,
-        keywatch_script,
-        &temp_dir,
-        &["origin", "https://evil.example/org/repo.git"],
-    );
+    let output = run_hook(&hook, &["origin"], git_script, keywatch_script, &temp_dir);
 
     assert_eq!(output.status.code(), Some(1));
 
@@ -392,7 +378,7 @@ fn test_pre_push_blocks_normalized_https_and_scp_equivalent() {
     ));
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'git@github.com:org/repo.git\\n'; exit 0; fi\nexit 1\n";
     let keywatch_script = "#!/bin/bash\nexit 0\n";
-    let output = run_hook(&hook, git_script, keywatch_script, &temp_dir);
+    let output = run_hook(&hook, &["origin"], git_script, keywatch_script, &temp_dir);
 
     assert_eq!(output.status.code(), Some(1));
 
@@ -413,18 +399,18 @@ fn test_pre_push_uses_named_remote_push_url_when_argv_url_is_absent() {
         None,
     ));
     let git_script = "#!/bin/bash\nif [ \"$1 $2 $3\" = \"remote get-url --push\" ] && [ \"$4\" = \"mirror\" ]; then printf 'https://push.example/org/repo.git\\n'; exit 0; fi\nif [ \"$1 $2 $3\" = \"remote get-url mirror\" ]; then printf 'https://fetch.example/org/repo.git\\n'; exit 0; fi\nexit 1\n";
-    let output = run_hook_with_args(
+    let output = run_hook(
         &hook,
+        &["mirror"],
         git_script,
         &keywatch_script_that_records_args(&marker),
         &temp_dir,
-        &["mirror"],
     );
 
     assert!(output.status.success());
     assert_eq!(
         fs::read_to_string(&marker).expect("read scanner args"),
-        "scan . --exit-mode critical\n"
+        "scan . --exit-mode critical --no-config-discovery\n"
     );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
@@ -442,12 +428,12 @@ fn test_pre_push_falls_back_to_named_remote_fetch_url() {
         None,
     ));
     let git_script = "#!/bin/bash\nif [ \"$1 $2 $3\" = \"remote get-url --push\" ]; then exit 1; fi\nif [ \"$1 $2\" = \"remote get-url\" ] && [ \"$3\" = \"mirror\" ]; then printf 'https://fetch.example/org/repo.git\\n'; exit 0; fi\nexit 1\n";
-    let output = run_hook_with_args(
+    let output = run_hook(
         &hook,
+        &["mirror"],
         git_script,
         "#!/bin/bash\nexit 0\n",
         &temp_dir,
-        &["mirror"],
     );
 
     assert!(output.status.success());
@@ -467,7 +453,7 @@ fn test_pre_push_ignores_invalid_configured_entries() {
         None,
     ));
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'git@github.com:org/repo.git\\n'; exit 0; fi\nexit 1\n";
-    let output = run_hook(&hook, git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
+    let output = run_hook(&hook, &[], git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
 
     assert!(output.status.success());
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
@@ -486,7 +472,7 @@ fn test_pre_push_fails_closed_for_unnormalizable_remote_when_filters_exist() {
         None,
     ));
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'not-a-repo\\n'; exit 0; fi\nexit 1\n";
-    let output = run_hook(&hook, git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
+    let output = run_hook(&hook, &[], git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
 
     assert_eq!(output.status.code(), Some(1));
     assert!(
@@ -507,6 +493,7 @@ fn test_pre_push_scans_unnormalizable_remote_when_no_filters_exist() {
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'not-a-repo\\n'; exit 0; fi\nexit 1\n";
     let output = run_hook(
         &hook,
+        &[],
         git_script,
         &keywatch_script_that_records_args(&marker),
         &temp_dir,
@@ -515,7 +502,70 @@ fn test_pre_push_scans_unnormalizable_remote_when_no_filters_exist() {
     assert!(output.status.success());
     assert_eq!(
         fs::read_to_string(&marker).expect("read scanner args"),
-        "scan . --exit-mode critical\n"
+        "scan . --exit-mode critical --no-config-discovery\n"
+    );
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_ignores_repository_config_that_disables_scanning() {
+    let temp_dir = unique_temp_dir("pre_push_ignores_repository_config");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    fs::write(temp_dir.join(".keywatch.toml"), "exclude = [\"**/*\"]\n")
+        .expect("write repository config");
+    fs::write(
+        temp_dir.join("secret.txt"),
+        "master_api_key = \"abcdefghijklmnopqrstuvwxyz1234\"\n",
+    )
+    .expect("write critical secret");
+
+    let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
+    let keywatch_script = format!(
+        "#!/bin/bash\nKEYWATCH_CONFIG_PATH=\"{}\" exec \"{}\" \"$@\"\n",
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("detectors.toml")
+            .display(),
+        env!("CARGO_BIN_EXE_key-watch")
+    );
+    let output = run_hook(
+        &hook,
+        &["origin"],
+        "#!/bin/bash\nexit 1\n",
+        &keywatch_script,
+        &temp_dir,
+    );
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "repository config must not suppress pre-push scanning: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_ignores_repository_detector_overrides() {
+    let temp_dir = unique_temp_dir("pre_push_ignores_repository_detectors");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    fs::write(temp_dir.join("detectors.toml"), "detectors = []\n")
+        .expect("write repository detector overrides");
+    fs::write(
+        temp_dir.join("secret.txt"),
+        "master_api_key = \"abcdefghijklmnopqrstuvwxyz1234\"\n",
+    )
+    .expect("write high-severity secret");
+
+    let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
+    let output = run_hook_with_packaged_keywatch(&hook, &temp_dir);
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "repository detectors must not suppress pre-push scanning: {}",
+        String::from_utf8_lossy(&output.stderr)
     );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
@@ -534,6 +584,62 @@ fn test_hook_shell_escaping() {
         hook.contains("'ghp_test'\"'\"'repos123'"),
         "Should escape single quotes"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_blocks_unallowed_actual_push_remote_even_when_origin_is_allowed() {
+    let temp_dir = unique_temp_dir("pre_push_blocks_actual_remote");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some("github.com/org/repo"),
+        None,
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://github.com/org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nexit 0\n";
+    let output = run_hook(
+        &hook,
+        &["origin", "https://evil.example/acme/blocked.git"],
+        git_script,
+        keywatch_script,
+        &temp_dir,
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_blocks_blocked_actual_push_remote_even_when_origin_is_safe() {
+    let temp_dir = unique_temp_dir("pre_push_blocks_blocked_actual_remote");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        None,
+        Some("https://evil.example/acme/blocked.git"),
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'https://github.com/org/repo.git\n'; exit 0; fi\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nexit 0\n";
+    let output = run_hook(
+        &hook,
+        &["origin", "https://evil.example/acme/blocked.git"],
+        git_script,
+        keywatch_script,
+        &temp_dir,
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
 
 #[test]
@@ -640,6 +746,60 @@ fn test_cli_scan_defaults_to_strict_exit_mode() {
 }
 
 #[test]
+fn test_cli_scan_can_disable_config_discovery() {
+    use clap::Parser;
+
+    let options = CliOptions::try_parse_from([
+        "key-watch",
+        "scan",
+        ".",
+        "--no-config-discovery",
+        "--config",
+        "trusted.toml",
+    ])
+    .expect("trusted explicit config with disabled discovery should parse");
+
+    match options.command {
+        Command::Scan(scan_args) => {
+            assert!(scan_args.no_config_discovery);
+            assert_eq!(scan_args.config.as_deref(), Some("trusted.toml"));
+        }
+        _ => panic!("expected scan command"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn test_cli_scan_ignores_repository_config_when_discovery_is_disabled() {
+    let temp_dir = unique_temp_dir("disabled_config_discovery");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    fs::write(temp_dir.join(".keywatch.toml"), "exclude = [\"**/*\"]\n")
+        .expect("write repository config");
+    fs::write(
+        temp_dir.join("secret.txt"),
+        "AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP\n",
+    )
+    .expect("write secret fixture");
+
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .env(
+            "KEYWATCH_CONFIG_PATH",
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("detectors.toml"),
+        )
+        .args([
+            "scan",
+            temp_dir.to_str().expect("temp path should be UTF-8"),
+            "--no-config-discovery",
+        ])
+        .output()
+        .expect("run key-watch");
+
+    assert_eq!(output.status.code(), Some(1));
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[test]
 fn test_cli_pre_commit_rejects_blocked_repos() {
     use clap::Parser;
 
@@ -656,8 +816,10 @@ fn test_cli_pre_commit_rejects_blocked_repos() {
     let error = options
         .validate()
         .expect_err("pre-commit should reject blocked repos");
-    assert!(
-        error.contains("--allowed-repos and --blocked-repos are only supported for pre-push hooks")
+    assert_eq!(error, CliValidationError::PreCommitRepositoryFilters);
+    assert_eq!(
+        error.to_string(),
+        "--allowed-repos and --blocked-repos are only supported for pre-push hooks"
     );
 }
 
@@ -698,8 +860,10 @@ fn test_cli_pre_commit_rejects_repo_filters() {
     let error = options
         .validate()
         .expect_err("pre-commit should reject repo filters");
-    assert!(
-        error.contains("--allowed-repos and --blocked-repos are only supported for pre-push hooks")
+    assert_eq!(error, CliValidationError::PreCommitRepositoryFilters);
+    assert_eq!(
+        error.to_string(),
+        "--allowed-repos and --blocked-repos are only supported for pre-push hooks"
     );
 }
 
@@ -720,7 +884,11 @@ fn test_cli_pre_push_rejects_exclude() {
     let error = options
         .validate()
         .expect_err("pre-push should reject exclude patterns");
-    assert!(error.contains("--exclude is only supported for pre-commit hooks"));
+    assert_eq!(error, CliValidationError::PrePushExclude);
+    assert_eq!(
+        error.to_string(),
+        "--exclude is only supported for pre-commit hooks"
+    );
 }
 
 #[test]

@@ -1,3 +1,7 @@
+mod error;
+
+pub use error::DetectorInitError;
+
 use crate::report::{ParseSeverityError, Severity};
 use regex::Regex;
 use serde::Deserialize;
@@ -20,26 +24,43 @@ pub enum DetectorError {
 }
 
 impl fmt::Display for DetectorError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             DetectorError::InvalidPattern { detector, source } => {
-                write!(f, "invalid pattern in detector '{}': {}", detector, source)
+                write!(
+                    formatter,
+                    "invalid pattern in detector '{}': {}",
+                    detector, source
+                )
             }
             DetectorError::InvalidAllowlistPattern { detector, source } => {
                 write!(
-                    f,
+                    formatter,
                     "invalid allowlist pattern in detector '{}': {}",
                     detector, source
                 )
             }
             DetectorError::InvalidSeverity { detector, source } => {
-                write!(f, "invalid severity in detector '{}': {}", detector, source)
+                write!(
+                    formatter,
+                    "invalid severity in detector '{}': {}",
+                    detector, source
+                )
             }
         }
     }
 }
 
-impl std::error::Error for DetectorError {}
+impl std::error::Error for DetectorError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidPattern { source, .. } | Self::InvalidAllowlistPattern { source, .. } => {
+                Some(source)
+            }
+            Self::InvalidSeverity { source, .. } => Some(source),
+        }
+    }
+}
 
 pub struct Detector {
     pub name: String,
@@ -73,9 +94,9 @@ impl Detector {
             })?;
 
         let mut compiled_allowlist = Vec::new();
-        for pat in allowlist {
+        for pattern in allowlist {
             let compiled =
-                Regex::new(pat).map_err(|source| DetectorError::InvalidAllowlistPattern {
+                Regex::new(pattern).map_err(|source| DetectorError::InvalidAllowlistPattern {
                     detector: name.to_string(),
                     source,
                 })?;
@@ -97,10 +118,10 @@ impl Detector {
         if self.keywords.is_empty() {
             return true;
         }
-        let lower = content.to_lowercase();
+        let lowercase_content = content.to_lowercase();
         self.keywords
             .iter()
-            .any(|kw| lower.contains(&kw.to_lowercase()))
+            .any(|keyword| lowercase_content.contains(&keyword.to_lowercase()))
     }
 
     pub fn has_sufficient_entropy(&self, matched: &str) -> bool {
@@ -111,18 +132,18 @@ impl Detector {
     }
 }
 
-fn shannon_entropy(s: &str) -> f64 {
-    if s.is_empty() {
+fn shannon_entropy(input: &str) -> f64 {
+    if input.is_empty() {
         return 0.0;
     }
     let mut counts = std::collections::HashMap::new();
-    for ch in s.chars() {
-        *counts.entry(ch).or_insert(0) += 1;
+    for character in input.chars() {
+        *counts.entry(character).or_insert(0) += 1;
     }
-    let len = s.len() as f64;
-    counts.values().fold(0.0, |acc, &count| {
-        let p = count as f64 / len;
-        acc - p * p.log2()
+    let input_length = input.len() as f64;
+    counts.values().fold(0.0, |entropy, &count| {
+        let probability = count as f64 / input_length;
+        entropy - probability * probability.log2()
     })
 }
 
@@ -142,59 +163,83 @@ struct DetectorConfig {
     entropy: Option<f64>,
 }
 
-fn find_detectors_config() -> std::path::PathBuf {
+fn find_detectors_config(include_repository_config: bool) -> Option<std::path::PathBuf> {
     std::env::var("KEYWATCH_CONFIG_PATH")
         .map(std::path::PathBuf::from)
         .ok()
-        .filter(|p| p.exists())
+        .filter(|path| path.exists())
         .or_else(|| {
-            let p = std::path::PathBuf::from("detectors.toml");
-            if p.exists() { Some(p) } else { None }
+            if !include_repository_config {
+                return None;
+            }
+
+            let repository_config = std::path::PathBuf::from("detectors.toml");
+            repository_config.exists().then_some(repository_config)
         })
         .or_else(|| {
             dirs::config_dir()
-                .map(|p| p.join("keywatch").join("detectors.toml"))
-                .filter(|p| p.exists())
+                .map(|config_directory| config_directory.join("keywatch").join("detectors.toml"))
+                .filter(|path| path.exists())
         })
         .or_else(|| {
             std::env::current_exe()
                 .ok()
-                .and_then(|p| p.parent().map(|d| d.join("detectors.toml")))
-                .filter(|p| p.exists())
+                .and_then(|executable_path| {
+                    executable_path
+                        .parent()
+                        .map(|directory| directory.join("detectors.toml"))
+                })
+                .filter(|path| path.exists())
         })
-        .unwrap_or_else(|| std::path::PathBuf::from("detectors.toml"))
 }
 
-pub fn initialize_detectors() -> Result<Vec<Detector>, Box<dyn std::error::Error>> {
-    let config_path = find_detectors_config();
-    let toml_contents = fs::read_to_string(&config_path)
-        .map_err(|err| format!("Failed to read {}: {}", config_path.display(), err))?;
+pub fn initialize_detectors() -> Result<Vec<Detector>, DetectorInitError> {
+    initialize_detectors_from_config(true)
+}
+
+pub(crate) fn initialize_trusted_detectors() -> Result<Vec<Detector>, DetectorInitError> {
+    initialize_detectors_from_config(false)
+}
+
+fn initialize_detectors_from_config(
+    include_repository_config: bool,
+) -> Result<Vec<Detector>, DetectorInitError> {
+    let config_path = find_detectors_config(include_repository_config)
+        .ok_or(DetectorInitError::ConfigNotFound)?;
+    let toml_contents =
+        fs::read_to_string(&config_path).map_err(|source| DetectorInitError::ReadConfig {
+            path: config_path.clone(),
+            source,
+        })?;
 
     let config: DetectorsConfig = toml::from_str(&toml_contents)
-        .map_err(|err| format!("Failed to parse detectors.toml: {}", err))?;
+        .map_err(|source| DetectorInitError::ParseConfig { source })?;
 
     let mut seen_names = std::collections::HashSet::new();
-    for det in &config.detectors {
-        if !seen_names.insert(det.name.as_str()) {
-            return Err(format!("duplicate detector name '{}'", det.name).into());
+    for detector_config in &config.detectors {
+        if !seen_names.insert(detector_config.name.as_str()) {
+            return Err(DetectorInitError::DuplicateName {
+                detector: detector_config.name.clone(),
+            });
         }
     }
 
-    Ok(config
+    config
         .detectors
         .into_iter()
-        .map(|det| {
-            let allowlist = det.allowlist.as_deref().unwrap_or_default();
-            let keywords = det.keywords.as_deref().unwrap_or_default();
+        .map(|detector_config| {
+            let allowlist = detector_config.allowlist.as_deref().unwrap_or_default();
+            let keywords = detector_config.keywords.as_deref().unwrap_or_default();
             Detector::new(
-                &det.name,
-                &det.pattern,
-                &det.finding_type,
-                &det.severity,
+                &detector_config.name,
+                &detector_config.pattern,
+                &detector_config.finding_type,
+                &detector_config.severity,
                 allowlist,
                 keywords,
-                det.entropy,
+                detector_config.entropy,
             )
         })
-        .collect::<Result<Vec<_>, _>>()?)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| DetectorInitError::InvalidDetector { source })
 }

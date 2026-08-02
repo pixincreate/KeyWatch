@@ -123,6 +123,9 @@ key-watch verify-integrity
 ## Options
 
 - `scan <path>...` - Scan one or more files or directories
+- `scan --config <path>` - Load configuration from an explicit `.keywatch.toml` path
+- `scan --no-config-discovery` - Ignore discovered repository config unless `--config` is explicit
+- `scan --format <json|sarif>` - Choose the report format written to stdout or the output file
 - `scan --stdin` - Read content from stdin instead of files
 - `scan --git-history` - Scan git history (`git log -p`) for committed secrets
 - `scan --output <path>` - Save report to file
@@ -190,6 +193,121 @@ password = 'known-test-password' # keywatch:ignore
 - Otherwise KeyWatch creates a managed hooks directory and configures `git config --global core.hooksPath`
 - KeyWatch refuses to overwrite a non-KeyWatch global hook file
 - KeyWatch also refuses to remove a non-KeyWatch global hook file
+
+## Architecture
+
+### System Overview
+
+```mermaid
+flowchart TD
+    CLI["key-watch CLI"]
+    Scan["scan command"]
+    Hooks["hook install / uninstall"]
+    Setup["init / verify-integrity"]
+
+    Sources["Scan sources<br/>files, directories, stdin, or git history"]
+    BuiltIns["detectors.toml<br/>built-in rules"]
+    UserConfig[".keywatch.toml or --config<br/>custom rules, overrides, excludes"]
+    Detectors["Merged detector set"]
+    Pipeline["Detection pipeline"]
+    Findings["Findings + ScanMetadata"]
+    BaselineAction{"Baseline action"}
+    BaselineFilter["Filter known findings<br/>--baseline"]
+    BaselineUpdate["Write updated baseline<br/>--update-baseline"]
+    BaselineFile["Baseline JSON + exit"]
+    Report["JSON or SARIF 2.1.0 report"]
+    Destination["stdout or --output<br/>summary + exit code"]
+
+    HookTargets["Git hook targets<br/>local or global"]
+    PreCommit["pre-commit<br/>scan staged files"]
+    PrePush["pre-push<br/>check policy, then scan repository"]
+
+    CLI --> Scan
+    CLI --> Hooks
+    CLI --> Setup
+
+    Hooks --> HookTargets
+    HookTargets --> PreCommit
+    HookTargets --> PrePush
+    PreCommit --> Scan
+    PrePush --> Scan
+
+    Scan --> Sources
+    Scan --> BuiltIns
+    Scan --> UserConfig
+    BuiltIns --> Detectors
+    UserConfig --> Detectors
+    Sources --> Pipeline
+    Detectors --> Pipeline
+    Pipeline --> Findings
+    Findings --> BaselineAction
+    BaselineAction -->|none| Report
+    BaselineAction -->|filter| BaselineFilter
+    BaselineAction -->|update| BaselineUpdate
+    BaselineFilter --> Report
+    BaselineUpdate --> BaselineFile
+    Report --> Destination
+```
+
+### Architecture Overview
+
+KeyWatch is organized into five layers. Data flows top to bottom: input sources and configuration feed the detection pipeline, findings pass through post-processing, and results are serialized to stdout or a file.
+
+1. **Input** — the CLI accepts files, directories, stdin, or git history (`--git-history`). Flags control exclusion (`--exclude`), baselineing (`--baseline`, `--update-baseline`), output format (`--format`), config path (`--config`), and exit behavior (`--exit-mode`).
+2. **Configuration** — `detectors.toml` ships with the binary and holds the built-in rules. An optional `.keywatch.toml` adds custom rules, per-detector severity/enable overrides, and exclude patterns. Configuration merges — it never replaces defaults.
+3. **Detection pipeline** — six stages run per file: collect files (recursive walk, skipping `.git` and binary files), apply exclude globs, pre-filter by keyword (fast path that avoids regex on irrelevant files), match regexes (single-line and multiline `(?s)`), gate on Shannon entropy, and apply allowlists plus inline `keywatch:ignore` suppression. Files are scanned in parallel with rayon.
+4. **Post-processing** — an optional baseline filter suppresses findings already recorded in the baseline file, keyed by a salted SHA-256 fingerprint of the matched content.
+5. **Output** — findings serialize as JSON or SARIF 2.1.0 and are written to stdout or an output file, followed by a severity summary and an exit code derived from the exit mode.
+
+### Detection Pipeline
+
+```mermaid
+flowchart TD
+    Start["scan command"]
+    Config["Load optional configuration"]
+    Detectors["Initialize built-in and custom detectors"]
+    Mode{"Input mode"}
+
+    Paths["Files or directories"]
+    Stdin["stdin stream"]
+    History["git log patch stream"]
+
+    Collect["Collect targets<br/>recursive walk, skip symlinks and .git"]
+    Dedupe["Sort and deduplicate targets"]
+    Exclude["Apply CLI and config exclude globs"]
+    Read["Read text files<br/>skip binary and non-UTF-8 content"]
+    Parallel["Scan files in parallel with rayon"]
+    Stream["Scan stream in overlapping chunks"]
+
+    Keyword["Keyword pre-filter"]
+    Regex["Line and multiline regex matching"]
+    Entropy["Entropy threshold"]
+    Suppress["Detector allowlist + inline suppression"]
+    Emit["Emit Finding"]
+    Result["Return findings + metadata"]
+
+    Start --> Config --> Detectors --> Mode
+    Mode -->|paths| Paths
+    Mode -->|stdin| Stdin
+    Mode -->|git history| History
+
+    Paths --> Collect --> Dedupe --> Exclude --> Read --> Parallel
+    Stdin --> Stream
+    History --> Stream
+
+    Parallel --> Keyword
+    Stream --> Keyword
+    Keyword --> Regex --> Entropy --> Suppress --> Emit --> Result
+```
+
+### Core Data Types
+
+- **Detector** — a named rule: regex, finding type, severity, optional keywords for pre-filtering, an entropy threshold, and an allowlist.
+- **Finding** — one detected secret: file path, line number, finding type, severity, matched content, and the detector that produced it.
+- **Severity** — `Critical`, `High`, `Medium`, `Low`.
+- **KeywatchConfig** — parsed `.keywatch.toml`: custom rules, per-detector overrides, and exclude patterns.
+- **Baseline** — versioned collection of fingerprint entries; filters out already-known findings.
+- **ScanMetadata** — files scanned, total lines, and excluded files, reported alongside findings.
 
 ## Development
 

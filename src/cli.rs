@@ -1,4 +1,42 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CliValidationError {
+    GitHistoryWithStdin,
+    GitHistoryWithMultiplePaths,
+    StdinWithPaths,
+    MissingScanInput,
+    PreCommitRepositoryFilters,
+    PrePushExclude,
+}
+
+impl Display for CliValidationError {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::GitHistoryWithStdin => {
+                formatter.write_str("Cannot specify both --git-history and --stdin")
+            }
+            Self::GitHistoryWithMultiplePaths => {
+                formatter.write_str("Cannot specify more than one path with --git-history")
+            }
+            Self::StdinWithPaths => formatter.write_str("Cannot specify both --stdin and paths"),
+            Self::MissingScanInput => {
+                formatter.write_str("Must specify paths, use --stdin, or use --git-history")
+            }
+            Self::PreCommitRepositoryFilters => formatter.write_str(
+                "--allowed-repos and --blocked-repos are only supported for pre-push hooks",
+            ),
+            Self::PrePushExclude => {
+                formatter.write_str("--exclude is only supported for pre-commit hooks")
+            }
+        }
+    }
+}
+
+impl Error for CliValidationError {}
 
 /// KeyWatch: A secret scanner for your files and directories.
 #[derive(Parser, Debug)]
@@ -9,7 +47,7 @@ pub struct CliOptions {
 }
 
 impl CliOptions {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), CliValidationError> {
         match &self.command {
             Command::Scan(args) => args.validate(),
             Command::Hook(args) => args.validate(),
@@ -72,24 +110,36 @@ pub struct ScanArgs {
     /// Update the baseline file with current findings instead of scanning
     #[arg(long)]
     pub update_baseline: bool,
+
+    /// Path to .keywatch.toml config file
+    #[arg(long)]
+    pub config: Option<String>,
+
+    /// Disable automatic config discovery (an explicit --config still loads)
+    #[arg(long, default_value_t = false)]
+    pub no_config_discovery: bool,
+
+    /// Output format for the report (json or sarif)
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub format: OutputFormat,
 }
 
 impl ScanArgs {
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), CliValidationError> {
         if self.git_history {
             if self.stdin {
-                return Err("Cannot specify both --git-history and --stdin".to_string());
+                return Err(CliValidationError::GitHistoryWithStdin);
             }
             if self.paths.len() > 1 {
-                return Err("Cannot specify more than one path with --git-history".to_string());
+                return Err(CliValidationError::GitHistoryWithMultiplePaths);
             }
             return Ok(());
         }
         if self.stdin && !self.paths.is_empty() {
-            return Err("Cannot specify both --stdin and paths".to_string());
+            return Err(CliValidationError::StdinWithPaths);
         }
         if !self.stdin && self.paths.is_empty() {
-            return Err("Must specify paths, use --stdin, or use --git-history".to_string());
+            return Err(CliValidationError::MissingScanInput);
         }
         Ok(())
     }
@@ -102,7 +152,7 @@ pub struct HookArgs {
 }
 
 impl HookArgs {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), CliValidationError> {
         match &self.action {
             HookAction::Install(args) => args.validate(),
             HookAction::Uninstall(_) => Ok(()),
@@ -143,19 +193,16 @@ pub struct HookInstallArgs {
 }
 
 impl HookInstallArgs {
-    fn validate(&self) -> Result<(), String> {
+    fn validate(&self) -> Result<(), CliValidationError> {
         match self.hook_type {
             HookType::PreCommit => {
                 if self.allowed_repos.is_some() || self.blocked_repos.is_some() {
-                    return Err(
-                        "--allowed-repos and --blocked-repos are only supported for pre-push hooks"
-                            .to_string(),
-                    );
+                    return Err(CliValidationError::PreCommitRepositoryFilters);
                 }
             }
             HookType::PrePush => {
                 if self.exclude.is_some() {
-                    return Err("--exclude is only supported for pre-commit hooks".to_string());
+                    return Err(CliValidationError::PrePushExclude);
                 }
             }
         }
@@ -214,6 +261,21 @@ pub enum ExitMode {
     Always,
     Critical,
     Strict,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+pub enum OutputFormat {
+    Json,
+    Sarif,
+}
+
+impl OutputFormat {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Json => "json",
+            Self::Sarif => "sarif",
+        }
+    }
 }
 
 impl ExitMode {

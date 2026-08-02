@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Public Rust APIs now return module-local typed errors instead of `String` or boxed errors. This affects CLI validation, baseline, configuration, detector initialization, scanner, hook, and `run_cli()` return types and requires a major-version release.
+
 ### Added
 
 - **CRITICAL severity support** — findings can now be scored as Critical, High, Medium, or Low
@@ -19,9 +23,15 @@ All notable changes to this project will be documented in this file.
 - **GitHub Action** — composite action (`action.yml`) for CI/CD integration
 - **Docker support** — multi-stage Dockerfile with `--locked` flag, stripped binary, non-root user, and git installed for `--git-history` scanning and hook installation
 - `.dockerignore` for optimized Docker builds
+- **Config file support** — `.keywatch.toml` with custom rules, detector overrides, and exclude patterns
+- **SARIF 2.1.0 output** — `--format sarif` enables GitHub Code Scanning and SARIF viewer integration
+- **`--config` CLI flag** — specify a custom path to `.keywatch.toml`
+- **Pre-commit `language: system`** — generated hooks use `language: system` for faster execution
 
 ### Changed
 
+- `get_severity_counts()` now returns 4-tuple (Critical, High, Medium, Low) instead of 3-tuple
+- `run_scan()` accepts optional `config` parameter for merging user configuration
 - Simplified distribution to a single shipped binary: `key-watch`
 - Git hook installation now supports first-class global hooks via `core.hooksPath`
 - Installation guidance is now cargo-first, with manual GitHub Releases setup documented step by step
@@ -48,6 +58,10 @@ All notable changes to this project will be documented in this file.
 - Duplicate Cargo binary wrappers for `keywatch` and `watch`
 - `scripts/install.sh` in favor of documented `cargo install` and manual release-binary setup
 - ~1650 lines of redundant context-based detectors; kept only prefix-based detectors plus GenericKeyValueDetector
+
+### Documentation
+
+- README architecture documentation now uses two inline GitHub-compatible Mermaid diagrams for the system overview and detection pipeline, alongside the layer-by-layer overview and core data type reference
 
 ## [1.1.0] - 2026-05-05
 

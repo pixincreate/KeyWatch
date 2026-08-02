@@ -1,4 +1,4 @@
-use key_watch::detector::{Detector, DetectorError};
+use key_watch::detector::{Detector, DetectorError, DetectorInitError};
 use key_watch::report::Severity;
 use std::str::FromStr;
 
@@ -209,4 +209,13 @@ fn test_initialize_detectors_all_names_unique() {
             det.name
         );
     }
+}
+
+#[test]
+fn test_detector_init_error_duplicate_name_display() {
+    let error = DetectorInitError::DuplicateName {
+        detector: "Dup".to_string(),
+    };
+
+    assert_eq!(error.to_string(), "duplicate detector name 'Dup'");
 }

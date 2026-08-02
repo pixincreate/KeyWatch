@@ -134,7 +134,7 @@ main() {
     fi
     remote_url=$(resolve_remote_url "$remote_name" "$remote_url_arg")
     enforce_repository_policy "$remote_url" || exit 1
-    "$KEYWATCH_BIN" scan . --exit-mode critical
+    "$KEYWATCH_BIN" scan . --exit-mode critical --no-config-discovery
     exit $?
 }
 

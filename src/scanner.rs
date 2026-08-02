@@ -1,11 +1,16 @@
 use crate::cli::ScanArgs;
-use crate::detector::{Detector, initialize_detectors};
+use crate::config::KeywatchConfig;
+use crate::detector::{Detector, initialize_detectors, initialize_trusted_detectors};
 use crate::report::{Finding, ScanMetadata};
 use glob::Pattern;
 use rayon::prelude::*;
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+
+mod error;
+
+pub use error::ScannerError;
 
 const INLINE_SUPPRESS: &str = "keywatch:ignore";
 
@@ -113,12 +118,12 @@ fn scan_content(
     (findings, total_lines)
 }
 
-fn scan_stream<R: BufRead>(
-    reader: R,
+fn scan_stream<ReaderType: BufRead>(
+    reader: ReaderType,
     path: &str,
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
-) -> Result<(Vec<Finding>, usize), String> {
+) -> Result<(Vec<Finding>, usize), ScannerError> {
     const CHUNK_SIZE: usize = 1000;
     const OVERLAP_LINES: usize = 50;
 
@@ -128,7 +133,10 @@ fn scan_stream<R: BufRead>(
     let mut line_offset = 0;
 
     for line_result in reader.lines() {
-        let line = line_result.map_err(|e| format!("Read error on {}: {}", path, e))?;
+        let line = line_result.map_err(|source| ScannerError::ReadStream {
+            path: path.to_string(),
+            source,
+        })?;
         total_lines += 1;
 
         scan_line_detectors(
@@ -170,8 +178,21 @@ fn scan_stream<R: BufRead>(
     Ok((findings, total_lines))
 }
 
-pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String> {
-    let detectors = initialize_detectors().map_err(|err| err.to_string())?;
+pub fn run_scan(
+    args: &ScanArgs,
+    config: Option<&KeywatchConfig>,
+) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
+    let mut detectors = if args.no_config_discovery {
+        initialize_trusted_detectors()
+    } else {
+        initialize_detectors()
+    }
+    .map_err(|source| ScannerError::DetectorInit { source })?;
+
+    if let Some(cfg) = config {
+        cfg.apply_to(&mut detectors)
+            .map_err(|source| ScannerError::Config { source })?;
+    }
     let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
         .iter()
         .partition(|detector| detector.regex.as_str().contains("(?s)"));
@@ -195,9 +216,9 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
             ])
             .stdout(std::process::Stdio::piped())
             .spawn()
-            .map_err(|err| format!("Failed to run git log: {}", err))?;
+            .map_err(|source| ScannerError::RunGitLog { source })?;
 
-        let stdout = child.stdout.take().ok_or("Failed to capture git stdout")?;
+        let stdout = child.stdout.take().ok_or(ScannerError::CaptureGitStdout)?;
         let reader = BufReader::new(stdout);
         let (findings, total_lines) = scan_stream(
             reader,
@@ -208,9 +229,9 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
 
         let status = child
             .wait()
-            .map_err(|e| format!("git process error: {}", e))?;
+            .map_err(|source| ScannerError::GitProcess { source })?;
         if !status.success() {
-            return Err("git log exited with non-zero status".to_string());
+            return Err(ScannerError::GitLogNonZero);
         }
 
         let metadata = ScanMetadata {
@@ -267,7 +288,7 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
     }
     let unique_paths: Vec<_> = unique_paths.into_iter().collect();
 
-    let exclude_patterns: Vec<Pattern> = args
+    let mut exclude_patterns: Vec<Pattern> = args
         .exclude
         .as_ref()
         .map(|exclude_str| {
@@ -275,13 +296,28 @@ pub fn run_scan(args: &ScanArgs) -> Result<(Vec<Finding>, ScanMetadata), String>
                 .split(',')
                 .filter(|pattern| !pattern.trim().is_empty())
                 .map(|pattern| {
-                    Pattern::new(pattern.trim())
-                        .map_err(|err| format!("Invalid exclude pattern '{}': {}", pattern, err))
+                    Pattern::new(pattern.trim()).map_err(|source| {
+                        ScannerError::InvalidExcludePattern {
+                            pattern: pattern.to_string(),
+                            source,
+                        }
+                    })
                 })
                 .collect::<Result<Vec<_>, _>>()
         })
         .transpose()?
         .unwrap_or_default();
+
+    if let Some(excludes) = config.and_then(|cfg| cfg.exclude.as_ref()) {
+        for pattern_str in excludes {
+            exclude_patterns.push(Pattern::new(pattern_str).map_err(|source| {
+                ScannerError::InvalidConfigExcludePattern {
+                    pattern: pattern_str.to_string(),
+                    source,
+                }
+            })?);
+        }
+    }
 
     let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
         .into_par_iter()
@@ -408,8 +444,8 @@ mod tests {
     use crate::detector::Detector;
     use std::io::Cursor;
 
-    fn make_detector(name: &str, pattern: &str, ftype: &str, sev: &str) -> Detector {
-        Detector::new(name, pattern, ftype, sev, &[], &[], None).unwrap()
+    fn make_detector(name: &str, pattern: &str, finding_type: &str, severity: &str) -> Detector {
+        Detector::new(name, pattern, finding_type, severity, &[], &[], None).unwrap()
     }
 
     #[test]
@@ -425,16 +461,25 @@ mod tests {
                 "HIGH",
             ),
         ];
-        let (multi, line): (Vec<_>, Vec<_>) = detectors
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|d| d.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.regex.as_str().contains("(?s)"));
 
-        let (findings, lines) = scan_stream(reader, "<test>", &multi, &line).unwrap();
+        let (findings, total_lines) =
+            scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
 
-        assert_eq!(lines, 2);
+        assert_eq!(total_lines, 2);
         assert_eq!(findings.len(), 2);
-        assert!(findings.iter().any(|f| f.finding_type == "AWS Key"));
-        assert!(findings.iter().any(|f| f.finding_type == "Password"));
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.finding_type == "AWS Key")
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.finding_type == "Password")
+        );
     }
 
     #[test]
@@ -447,11 +492,12 @@ mod tests {
             "Password",
             "HIGH",
         )];
-        let (multi, line): (Vec<_>, Vec<_>) = detectors
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|d| d.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.regex.as_str().contains("(?s)"));
 
-        let (findings, _) = scan_stream(reader, "<test>", &multi, &line).unwrap();
+        let (findings, _) =
+            scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
         assert!(
             findings.is_empty(),
             "Suppressed line should produce no findings"
@@ -468,11 +514,12 @@ mod tests {
             "Private Key",
             "HIGH",
         )];
-        let (multi, line): (Vec<_>, Vec<_>) = detectors
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|d| d.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.regex.as_str().contains("(?s)"));
 
-        let (findings, _) = scan_stream(reader, "<test>", &multi, &line).unwrap();
+        let (findings, _) =
+            scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].finding_type, "Private Key");
     }
@@ -480,8 +527,11 @@ mod tests {
     #[test]
     fn test_scan_stream_large_input_chunked() {
         let mut content = String::new();
-        for i in 0..2500 {
-            content.push_str(&format!("line {}: password = 'secret{}'\n", i, i));
+        for line_number in 0..2500 {
+            content.push_str(&format!(
+                "line {}: password = 'secret{}'\n",
+                line_number, line_number
+            ));
         }
         let reader = Cursor::new(content);
         let detectors = [make_detector(
@@ -490,12 +540,13 @@ mod tests {
             "Password",
             "HIGH",
         )];
-        let (multi, line): (Vec<_>, Vec<_>) = detectors
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|d| d.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.regex.as_str().contains("(?s)"));
 
-        let (findings, lines) = scan_stream(reader, "<test>", &multi, &line).unwrap();
-        assert_eq!(lines, 2500);
+        let (findings, total_lines) =
+            scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
+        assert_eq!(total_lines, 2500);
         assert_eq!(
             findings.len(),
             2500,
