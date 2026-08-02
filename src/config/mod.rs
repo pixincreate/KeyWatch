@@ -28,10 +28,10 @@ impl KeywatchConfig {
     /// the passed-in vector is left untouched (fail-closed / transactional).
     pub fn apply_to(&self, detectors: &mut Vec<Detector>) -> Result<(), String> {
         // Phase 1 — validate: build every new detector before touching `detectors`.
-        let mut staged: Vec<Detector> = Vec::new();
+        let mut staged_detectors: Vec<Detector> = Vec::new();
         if let Some(rules) = &self.rules {
             for rule in rules {
-                let det = Detector::new(
+                let detector = Detector::new(
                     &rule.name,
                     &rule.pattern,
                     &rule.finding_type,
@@ -41,21 +41,24 @@ impl KeywatchConfig {
                     None,
                 )
                 .map_err(|err| format!("custom rule '{}': {}", rule.name, err))?;
-                staged.push(det);
+                staged_detectors.push(detector);
             }
         }
 
         // Phase 2 — commit: all validation passed, mutate.
-        detectors.extend(staged);
+        detectors.extend(staged_detectors);
 
         if let Some(overrides) = &self.overrides {
-            detectors.retain(|det| match overrides.get(&det.name) {
-                Some(ov) => ov.enabled != Some(false),
+            detectors.retain(|detector| match overrides.get(&detector.name) {
+                Some(detector_override) => detector_override.enabled != Some(false),
                 None => true,
             });
-            for det in detectors.iter_mut() {
-                if let Some(sev) = overrides.get(&det.name).and_then(|o| o.severity) {
-                    det.severity = sev;
+            for detector in detectors.iter_mut() {
+                if let Some(severity) = overrides
+                    .get(&detector.name)
+                    .and_then(|detector_override| detector_override.severity)
+                {
+                    detector.severity = severity;
                 }
             }
         }
@@ -96,17 +99,17 @@ impl KeywatchConfig {
         scan_paths: &[String],
         cwd: &Path,
     ) -> Result<Option<Self>, String> {
-        let config_path: Option<String> = if let Some(p) = explicit_path {
-            if !Path::new(p).exists() {
-                return Err(format!("Config file not found: '{}'", p));
+        let config_path: Option<String> = if let Some(path) = explicit_path {
+            if !Path::new(path).exists() {
+                return Err(format!("Config file not found: '{}'", path));
             }
-            Some(p.to_string())
+            Some(path.to_string())
         } else {
             find_config_candidates(scan_paths, cwd)
         };
 
         let config_path = match config_path {
-            Some(p) => p,
+            Some(path) => path,
             None => return Ok(None),
         };
 
@@ -146,11 +149,12 @@ const CONFIG_NAMES: [&str; 3] = [".keywatch.toml", "keywatch.toml", ".kw.toml"];
 fn find_config_candidates(scan_paths: &[String], cwd: &Path) -> Option<String> {
     let search_dir: PathBuf = match scan_paths.first() {
         Some(first) => {
-            let p = Path::new(first);
-            if p.is_dir() {
-                p.to_path_buf()
+            let scan_path = Path::new(first);
+            if scan_path.is_dir() {
+                scan_path.to_path_buf()
             } else {
-                p.parent()
+                scan_path
+                    .parent()
                     .map(Path::to_path_buf)
                     .filter(|parent| parent != Path::new(""))
                     .unwrap_or_else(|| PathBuf::from("."))
@@ -162,6 +166,6 @@ fn find_config_candidates(scan_paths: &[String], cwd: &Path) -> Option<String> {
     CONFIG_NAMES
         .iter()
         .map(|name| search_dir.join(name))
-        .find(|p| p.exists())
-        .and_then(|p| p.to_str().map(str::to_string))
+        .find(|candidate_path| candidate_path.exists())
+        .and_then(|candidate_path| candidate_path.to_str().map(str::to_string))
 }

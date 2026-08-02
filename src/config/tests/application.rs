@@ -6,7 +6,7 @@ use crate::report::Severity;
 fn test_severity_deserialize_case_insensitive() {
     #[derive(serde::Deserialize)]
     struct Wrap {
-        s: Severity,
+        severity: Severity,
     }
 
     for (input, expected) in [
@@ -19,10 +19,10 @@ fn test_severity_deserialize_case_insensitive() {
         ("low", Severity::Low),
         ("LOW", Severity::Low),
     ] {
-        let toml_str = format!("s = \"{input}\"");
+        let toml_str = format!("severity = \"{input}\"");
         let wrap: Wrap = toml::from_str(&toml_str)
             .unwrap_or_else(|err| panic!("failed to parse '{input}': {err}"));
-        assert_eq!(wrap.s, expected, "input = {input}");
+        assert_eq!(wrap.severity, expected, "input = {input}");
     }
 }
 
@@ -31,10 +31,10 @@ fn test_severity_deserialize_invalid_aborts() {
     #[derive(Debug, serde::Deserialize)]
     struct Wrap {
         #[allow(dead_code)]
-        s: Severity,
+        severity: Severity,
     }
 
-    let result: Result<Wrap, _> = toml::from_str("s = \"BOGUS\"");
+    let result: Result<Wrap, _> = toml::from_str("severity = \"BOGUS\"");
     assert!(
         result.is_err(),
         "invalid severity must fail deserialization"

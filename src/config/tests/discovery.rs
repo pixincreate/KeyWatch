@@ -15,7 +15,12 @@ fn test_config_discovery_directory_root() {
     let config = KeywatchConfig::load_for_paths(None, &paths)
         .unwrap()
         .expect("config should be found in directory");
-    let names: Vec<_> = config.rules.unwrap().into_iter().map(|r| r.name).collect();
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
     assert!(names.contains(&"DirRule".to_string()));
 }
 
@@ -33,7 +38,12 @@ fn test_config_discovery_file_parent() {
     let config = KeywatchConfig::load_for_paths(None, &paths)
         .unwrap()
         .expect("config should be found in file's parent directory");
-    let names: Vec<_> = config.rules.unwrap().into_iter().map(|r| r.name).collect();
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
     assert!(names.contains(&"FileParentRule".to_string()));
 }
 
@@ -52,7 +62,12 @@ fn test_explicit_config_takes_precedence() {
     let config = KeywatchConfig::load_for_paths(Some(explicit_cfg.to_str().unwrap()), &paths)
         .unwrap()
         .expect("explicit config must be loaded");
-    let names: Vec<_> = config.rules.unwrap().into_iter().map(|r| r.name).collect();
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
     assert!(names.contains(&"ExplicitRule".to_string()));
 }
 
@@ -91,7 +106,12 @@ fn test_candidate_filename_order_keywatch_toml_before_kw_toml() {
     let config = KeywatchConfig::load_for_paths(None, &paths)
         .unwrap()
         .expect("should find keywatch.toml");
-    let names: Vec<_> = config.rules.unwrap().into_iter().map(|r| r.name).collect();
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
     assert!(
         names.contains(&"KW".to_string()),
         "keywatch.toml should win"
@@ -120,7 +140,12 @@ fn test_candidate_filename_dotted_wins_over_plain() {
     let config = KeywatchConfig::load_for_paths(None, &paths)
         .unwrap()
         .expect("should find .keywatch.toml");
-    let names: Vec<_> = config.rules.unwrap().into_iter().map(|r| r.name).collect();
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
     assert!(
         names.contains(&"Dotted".to_string()),
         ".keywatch.toml should win"
@@ -143,6 +168,11 @@ fn test_load_none_uses_supplied_cwd() {
     let config = KeywatchConfig::load_for_paths_at_cwd(None, &[], dir.path())
         .unwrap()
         .expect("config should be found in supplied cwd");
-    let names: Vec<_> = config.rules.unwrap().into_iter().map(|r| r.name).collect();
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
     assert!(names.contains(&"CwdRule".to_string()));
 }
