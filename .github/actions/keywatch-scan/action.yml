@@ -1,0 +1,281 @@
+name: 'KeyWatch Scan'
+description: 'Scan files and directories for secrets with KeyWatch'
+author: 'Pa1Nark'
+
+inputs:
+  paths:
+    description: 'Paths to scan (space-separated, supports globs)'
+    required: false
+    default: '.'
+  args:
+    description: 'Additional CLI arguments to pass to key-watch'
+    required: false
+    default: ''
+  exit-mode:
+    description: 'Exit code behavior: strict, critical, or always'
+    required: false
+    default: 'strict'
+  output:
+    description: 'Path to write the JSON report file'
+    required: false
+    default: ''
+  verbose:
+    description: 'Deprecated: verbose scanner output is disabled to avoid logging matched secrets'
+    required: false
+    default: 'false'
+
+outputs:
+  findings-count:
+    description: 'Number of findings detected'
+    value: ${{ steps.scan.outputs.findings_count }}
+  exit-code:
+    description: 'Exit code from the scan'
+    value: ${{ steps.scan.outputs.exit_code }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install KeyWatch
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+
+        for required_tool in curl jq; do
+          if ! command -v "$required_tool" >/dev/null 2>&1; then
+            echo "ERROR: $required_tool is required on this runner" >&2
+            exit 1
+          fi
+        done
+
+        REPO="pixincreate/KeyWatch"
+        VERSION="${KEYWATCH_VERSION:-latest}"
+
+        curl_args=(-fsSL)
+        if [ -n "${GITHUB_TOKEN:-}" ]; then
+          curl_args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+        fi
+
+        if [ "$VERSION" = "latest" ]; then
+          release_json=$(curl "${curl_args[@]}" \
+            "https://api.github.com/repos/$REPO/releases/latest")
+          VERSION=$(jq -er '.tag_name' <<<"$release_json")
+        elif [[ "$VERSION" != v* ]]; then
+          VERSION="v$VERSION"
+        fi
+
+        if [[ ! "$VERSION" =~ ^v[0-9A-Za-z._-]+$ ]]; then
+          echo "ERROR: invalid KeyWatch version/tag '$VERSION'" >&2
+          exit 1
+        fi
+
+        case "$RUNNER_OS" in
+          Linux) asset_os="linux"; exe_suffix="" ;;
+          macOS) asset_os="darwin"; exe_suffix="" ;;
+          Windows)
+            echo "ERROR: Windows runners are not supported by this composite action" >&2
+            exit 1
+            ;;
+          *)
+            echo "ERROR: unsupported runner OS: $RUNNER_OS" >&2
+            exit 1
+            ;;
+        esac
+
+        case "$RUNNER_ARCH" in
+          X64) asset_arch="x86_64" ;;
+          ARM64)
+            if [ "$asset_os" = "darwin" ]; then
+              asset_arch="aarch64"
+            else
+              echo "ERROR: unsupported runner architecture for $RUNNER_OS: $RUNNER_ARCH" >&2
+              exit 1
+            fi
+            ;;
+          *)
+            echo "ERROR: unsupported runner architecture: $RUNNER_ARCH" >&2
+            exit 1
+            ;;
+        esac
+
+        install_dir="$RUNNER_TEMP/keywatch/$VERSION"
+        bin_dir="$install_dir/bin"
+        config_path="$install_dir/detectors.toml"
+        binary_path="$bin_dir/key-watch$exe_suffix"
+        asset_name="keywatch-$asset_os-$asset_arch$exe_suffix"
+        binary_url="https://github.com/$REPO/releases/download/$VERSION/$asset_name"
+        config_url="https://raw.githubusercontent.com/$REPO/$VERSION/detectors.toml"
+
+        mkdir -p "$bin_dir"
+
+        echo "Downloading KeyWatch $VERSION for $asset_os-$asset_arch..."
+        curl -fsSL "$binary_url" -o "$binary_path"
+        chmod +x "$binary_path"
+
+        echo "Downloading KeyWatch detectors config from $VERSION..."
+        curl -fsSL "$config_url" -o "$config_path"
+
+        export PATH="$bin_dir:$PATH"
+        export KEYWATCH_CONFIG_PATH="$config_path"
+        echo "$bin_dir" >> "$GITHUB_PATH"
+        echo "KEYWATCH_CONFIG_PATH=$config_path" >> "$GITHUB_ENV"
+
+        echo "Installed KeyWatch $VERSION ($asset_name)"
+        key-watch --version
+
+    - name: Run KeyWatch Scan
+      id: scan
+      shell: bash
+      env:
+        INPUT_PATHS: ${{ inputs.paths }}
+        INPUT_ARGS: ${{ inputs.args }}
+        INPUT_EXIT_MODE: ${{ inputs.exit-mode }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+        INPUT_VERBOSE: ${{ inputs.verbose }}
+      run: |
+        set -euo pipefail
+
+        for required_tool in jq; do
+          if ! command -v "$required_tool" >/dev/null 2>&1; then
+            echo "ERROR: $required_tool is required on this runner" >&2
+            exit 1
+          fi
+        done
+
+        if [ -z "${KEYWATCH_CONFIG_PATH:-}" ] || [ ! -f "$KEYWATCH_CONFIG_PATH" ]; then
+          echo "ERROR: KEYWATCH_CONFIG_PATH is not set to a readable detectors.toml" >&2
+          exit 1
+        fi
+
+        case "$INPUT_EXIT_MODE" in
+          always|critical|strict) ;;
+          *)
+            echo "ERROR: invalid exit-mode '$INPUT_EXIT_MODE' (expected: always, critical, strict)" >&2
+            exit 1
+            ;;
+        esac
+
+        verbose_normalized=$(tr '[:upper:]' '[:lower:]' <<<"$INPUT_VERBOSE")
+        case "$verbose_normalized" in
+          true|1|yes|on)
+            echo "ERROR: verbose output is disabled in this action to avoid logging matched secrets" >&2
+            exit 1
+            ;;
+          false|0|no|off|"") ;;
+          *)
+            echo "ERROR: invalid verbose value '$INPUT_VERBOSE' (expected: true or false)" >&2
+            exit 1
+            ;;
+        esac
+
+        paths=()
+        if [ -n "$INPUT_PATHS" ]; then
+          read -r -a paths <<<"$INPUT_PATHS"
+        fi
+
+        expanded_paths=()
+        if ((${#paths[@]})); then
+          for path_token in "${paths[@]}"; do
+            case "$path_token" in
+              *'*'*|*'?'*|*'['*)
+                matches=()
+                while IFS= read -r match; do
+                  matches+=("$match")
+                done < <(compgen -G "$path_token" || true)
+
+                if ((${#matches[@]})); then
+                  expanded_paths+=("${matches[@]}")
+                else
+                  expanded_paths+=("$path_token")
+                fi
+                ;;
+              *)
+                expanded_paths+=("$path_token")
+                ;;
+            esac
+          done
+        fi
+
+        extra_args=()
+        if [ -n "$INPUT_ARGS" ]; then
+          read -r -a extra_args <<<"$INPUT_ARGS"
+        fi
+
+        if ((${#extra_args[@]})); then
+          for arg in "${extra_args[@]}"; do
+            case "$arg" in
+              --verbose|--verbose=*|-v*|--format|--format=*|-f|-f*|--output|--output=*|-o|-o*|--exit-mode|--exit-mode=*)
+                echo "ERROR: '$arg' is managed by action inputs and cannot be passed through args" >&2
+                exit 1
+                ;;
+            esac
+          done
+        fi
+
+        if [ -n "$INPUT_OUTPUT" ]; then
+          report_path="$INPUT_OUTPUT"
+          report_dir=$(dirname -- "$report_path")
+          if [ "$report_dir" != "." ]; then
+            mkdir -p "$report_dir"
+          fi
+        else
+          report_path="$RUNNER_TEMP/keywatch-report.json"
+          mkdir -p "$(dirname -- "$report_path")"
+        fi
+
+        keywatch_args=(scan)
+        keywatch_args+=(--exit-mode "$INPUT_EXIT_MODE")
+        if ((${#extra_args[@]})); then
+          keywatch_args+=("${extra_args[@]}")
+        fi
+        keywatch_args+=(--output "$report_path")
+        if ((${#expanded_paths[@]})); then
+          keywatch_args+=(-- "${expanded_paths[@]}")
+        fi
+
+        rm -f -- "$report_path"
+
+        echo "Running KeyWatch scan..."
+        set +e
+        key-watch "${keywatch_args[@]}"
+        scan_status=$?
+        set -e
+
+        findings_count="unknown"
+        report_status="missing"
+        if [ -s "$report_path" ]; then
+          if jq -e '.findings | type == "array"' "$report_path" >/dev/null 2>&1; then
+            findings_count=$(jq -r '.findings | length' "$report_path")
+            report_status="ok"
+          else
+            report_status="malformed"
+          fi
+        fi
+
+        action_status=$scan_status
+        if [ "$report_status" != "ok" ] && [ "$scan_status" -eq 0 ]; then
+          echo "ERROR: KeyWatch exited successfully but the JSON report is $report_status" >&2
+          action_status=2
+        fi
+
+        {
+          echo "exit_code=$scan_status"
+          echo "findings_count=$findings_count"
+        } >> "$GITHUB_OUTPUT"
+
+        {
+          echo "## KeyWatch Scan Results"
+          echo ""
+          echo "| Metric | Value |"
+          echo "|--------|-------|"
+          echo "| Findings | $findings_count |"
+          echo "| Exit Code | $scan_status |"
+          echo "| Report | $report_status |"
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        exit "$action_status"
+
+branding:
+  icon: 'shield'
+  color: 'blue'

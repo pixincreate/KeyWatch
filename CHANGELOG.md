@@ -16,6 +16,9 @@ All notable changes to this project will be documented in this file.
 - **Stdin scanning** — `scan --stdin` reads content from stdin instead of files
 - **Git history scanning** — `scan --git-history` scans `git log -p` output for committed secrets
 - Cloud/monitoring/AI service detectors: Vercel, Netlify, Supabase, Datadog, New Relic, Sentry, PagerDuty, Anthropic, HuggingFace, Groq, Replicate, LangSmith
+- **GitHub Action** — composite action (`action.yml`) for CI/CD integration
+- **Docker support** — multi-stage Dockerfile with `--locked` flag, stripped binary, non-root user, and git installed for `--git-history` scanning and hook installation
+- `.dockerignore` for optimized Docker builds
 
 ### Changed
 
@@ -36,6 +39,9 @@ All notable changes to this project will be documented in this file.
 - `Severity::from_string()` now trims whitespace from input before parsing
 - `scan_stream()` chunk overlap fixed for accurate multiline detection on split chunks
 - Graceful error handling when `git` is not installed on the system
+- `action.yml` removed `eval "$CMD"` pattern for security
+- `action.yml` removed hardcoded GitHub authentication header
+- `.dockerignore` now preserves `Cargo.lock` for reproducible builds
 
 ### Removed
 
