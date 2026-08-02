@@ -20,13 +20,13 @@ fn git_available() -> bool {
 }
 
 fn init_git_repo(path: &Path) -> Result<(), String> {
-    fs::create_dir_all(path).map_err(|e| format!("create repo dir: {e}"))?;
+    fs::create_dir_all(path).map_err(|error| format!("create repo dir: {error}"))?;
 
     let status = Command::new("git")
         .args(["init", "--quiet"])
         .current_dir(path)
         .status()
-        .map_err(|e| format!("git init: {e}"))?;
+        .map_err(|error| format!("git init: {error}"))?;
     if !status.success() {
         return Err("git init failed".to_string());
     }
@@ -36,7 +36,7 @@ fn init_git_repo(path: &Path) -> Result<(), String> {
             .args(["config", key, value])
             .current_dir(path)
             .status()
-            .map_err(|e| format!("git config {key}: {e}"))?;
+            .map_err(|error| format!("git config {key}: {error}"))?;
         if !status.success() {
             return Err(format!("git config {key} failed"));
         }
@@ -47,13 +47,13 @@ fn init_git_repo(path: &Path) -> Result<(), String> {
 
 fn commit_file(path: &Path, file_name: &str, contents: &str, message: &str) -> Result<(), String> {
     let file_path = path.join(file_name);
-    fs::write(&file_path, contents).map_err(|e| format!("write file: {e}"))?;
+    fs::write(&file_path, contents).map_err(|error| format!("write file: {error}"))?;
 
     let status = Command::new("git")
         .args(["add", file_name])
         .current_dir(path)
         .status()
-        .map_err(|e| format!("git add: {e}"))?;
+        .map_err(|error| format!("git add: {error}"))?;
     if !status.success() {
         return Err("git add failed".to_string());
     }
@@ -62,7 +62,7 @@ fn commit_file(path: &Path, file_name: &str, contents: &str, message: &str) -> R
         .args(["commit", "-m", message, "--quiet"])
         .current_dir(path)
         .status()
-        .map_err(|e| format!("git commit: {e}"))?;
+        .map_err(|error| format!("git commit: {error}"))?;
     if !status.success() {
         return Err("git commit failed".to_string());
     }
@@ -81,12 +81,12 @@ fn run_git_history_scan(current_dir: &Path, extra_args: &[&str]) -> Result<Outpu
         .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
         .current_dir(current_dir)
         .output()
-        .map_err(|e| format!("run key-watch scan --git-history: {e}"))
+        .map_err(|error| format!("run key-watch scan --git-history: {error}"))
 }
 
 #[cfg(unix)]
 fn symlink_file(original: &Path, link: &Path) -> Result<(), String> {
-    std::os::unix::fs::symlink(original, link).map_err(|e| format!("create symlink: {e}"))
+    std::os::unix::fs::symlink(original, link).map_err(|error| format!("create symlink: {error}"))
 }
 
 #[test]
@@ -565,9 +565,9 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
     let outside_file = test_dir.join("outside-secret.txt");
     let link_path = test_dir.join("linked-secret.txt");
     let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&test_dir).map_err(|e| format!("create test dir: {e}"))?;
+    fs::create_dir_all(&test_dir).map_err(|error| format!("create test dir: {error}"))?;
     fs::write(&outside_file, "AWS Key: AKIAABCDEFGHIJKLMNOP\n")
-        .map_err(|e| format!("write outside secret: {e}"))?;
+        .map_err(|error| format!("write outside secret: {error}"))?;
     symlink_file(&outside_file, &link_path)?;
 
     let options = ScanArgs {
@@ -595,7 +595,7 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
         "Symlink should not count as scanned"
     );
 
-    fs::remove_dir_all(&test_dir).map_err(|e| format!("cleanup: {e}"))?;
+    fs::remove_dir_all(&test_dir).map_err(|error| format!("cleanup: {error}"))?;
     Ok(())
 }
 
@@ -607,9 +607,9 @@ fn test_recursive_symlink_path_is_skipped() -> Result<(), String> {
     let scan_root = test_dir.join("scan-root");
     let link_path = scan_root.join("linked-secret.txt");
     let _ = fs::remove_dir_all(&test_dir);
-    fs::create_dir_all(&scan_root).map_err(|e| format!("create scan root: {e}"))?;
+    fs::create_dir_all(&scan_root).map_err(|error| format!("create scan root: {error}"))?;
     fs::write(&outside_file, "AWS Key: AKIAABCDEFGHIJKLMNOP\n")
-        .map_err(|e| format!("write outside secret: {e}"))?;
+        .map_err(|error| format!("write outside secret: {error}"))?;
     symlink_file(&outside_file, &link_path)?;
 
     let options = ScanArgs {
@@ -640,7 +640,7 @@ fn test_recursive_symlink_path_is_skipped() -> Result<(), String> {
         "Recursive symlink should not count as scanned"
     );
 
-    fs::remove_dir_all(&test_dir).map_err(|e| format!("cleanup: {e}"))?;
+    fs::remove_dir_all(&test_dir).map_err(|error| format!("cleanup: {error}"))?;
     Ok(())
 }
 
@@ -868,7 +868,8 @@ fn test_inline_suppression_ignores_marked_lines() -> Result<(), String> {
 
     let content = "\
 AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\nemail = user@example.com // keywatch:ignore\nFirebase: AIzaSy012345678901234567890123456789012\n";
-    fs::write(&test_file, content).map_err(|e| format!("Unable to write test file: {}", e))?;
+    fs::write(&test_file, content)
+        .map_err(|error| format!("Unable to write test file: {error}"))?;
 
     let path_str = test_file.to_string_lossy().to_string();
 
@@ -910,7 +911,7 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
         "Firebase key without suppression should still be found"
     );
 
-    fs::remove_file(test_file).map_err(|e| format!("Cleanup failed: {}", e))?;
+    fs::remove_file(test_file).map_err(|error| format!("Cleanup failed: {error}"))?;
     Ok(())
 }
 
@@ -943,17 +944,17 @@ fn test_stdin_scanning_integration() -> Result<(), String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| format!("spawn key-watch --stdin: {}", e))?;
+        .map_err(|error| format!("spawn key-watch --stdin: {error}"))?;
 
     let mut stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
     stdin
         .write_all(b"AWS Key: AKIAABCDEFGHIJKLMNOP\npassword = 'secret123'\n")
-        .map_err(|e| format!("write to stdin: {}", e))?;
+        .map_err(|error| format!("write to stdin: {error}"))?;
     drop(stdin);
 
     let output = child
         .wait_with_output()
-        .map_err(|e| format!("wait: {}", e))?;
+        .map_err(|error| format!("wait: {error}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1101,7 +1102,7 @@ fn test_git_history_does_not_execute_textconv_helpers() -> Result<(), String> {
         .args(["config", "diff.keywatchmarker.textconv", &helper])
         .current_dir(&repo_dir)
         .status()
-        .map_err(|e| format!("git config textconv: {e}"))?;
+        .map_err(|error| format!("git config textconv: {error}"))?;
     if !status.success() {
         return Err("git config textconv failed".to_string());
     }
