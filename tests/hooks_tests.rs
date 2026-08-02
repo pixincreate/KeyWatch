@@ -94,6 +94,14 @@ fn run_hook(hook: &str, git_script: &str, keywatch_script: &str, cwd: &Path) -> 
     run_hook_with_args(hook, git_script, keywatch_script, cwd, &[])
 }
 
+#[cfg(unix)]
+fn keywatch_script_that_records_args(marker: &Path) -> String {
+    format!(
+        "#!/bin/bash\nprintf '%s\\n' \"$*\" > '{}'\nexit 0\n",
+        marker.display()
+    )
+}
+
 #[test]
 fn test_hook_generation_pre_commit() {
     let options = hook_install_args(HookType::PreCommit, None, None, Some("*.log,*.tmp"));
@@ -144,24 +152,24 @@ fn test_hook_generation_pre_push() {
         "Should use scan subcommand for pre-push"
     );
     assert!(
-        hook.contains("CURRENT_REMOTE=${2:-}"),
-        "Should prefer the pushed remote URL from hook argv"
+        hook.matches("scan . --exit-mode critical").count() == 1,
+        "Should invoke KeyWatch exactly once for scanning"
     );
     assert!(
-        hook.contains("REMOTE_NAME=${1:-origin}"),
-        "Should name the remote explicitly before fallback"
+        hook.contains("resolve_remote_url"),
+        "Should keep remote resolution readable in the shell hook"
     );
     assert!(
-        hook.contains("git remote get-url --push"),
-        "Should fall back to the remote name when argv URL is absent"
+        hook.contains("normalize_repository_url"),
+        "Should keep repository canonicalization readable in the shell hook"
     );
     assert!(
-        hook.contains("normalize_repo"),
-        "Should normalize remote and configured repo identities"
+        hook.contains("repository_list_contains"),
+        "Should keep exact list membership readable in the shell hook"
     );
     assert!(
-        hook.contains("[ \"$CURRENT_REPO\" = \"$allowed_repo\" ]"),
-        "Should compare allowed repos by exact identity"
+        hook.contains("enforce_repository_policy"),
+        "Should keep repository policy in the shell hook"
     );
     assert!(
         !hook.contains("*\"$allowed_repo\"*"),
@@ -388,6 +396,127 @@ fn test_pre_push_blocks_normalized_https_and_scp_equivalent() {
 
     assert_eq!(output.status.code(), Some(1));
 
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_uses_named_remote_push_url_when_argv_url_is_absent() {
+    let temp_dir = unique_temp_dir("pre_push_named_push_url");
+    let marker = temp_dir.join("keywatch-args");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some("https://push.example/org/repo.git"),
+        None,
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1 $2 $3\" = \"remote get-url --push\" ] && [ \"$4\" = \"mirror\" ]; then printf 'https://push.example/org/repo.git\\n'; exit 0; fi\nif [ \"$1 $2 $3\" = \"remote get-url mirror\" ]; then printf 'https://fetch.example/org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let output = run_hook_with_args(
+        &hook,
+        git_script,
+        &keywatch_script_that_records_args(&marker),
+        &temp_dir,
+        &["mirror"],
+    );
+
+    assert!(output.status.success());
+    assert_eq!(
+        fs::read_to_string(&marker).expect("read scanner args"),
+        "scan . --exit-mode critical\n"
+    );
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_falls_back_to_named_remote_fetch_url() {
+    let temp_dir = unique_temp_dir("pre_push_named_fetch_url");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some("https://fetch.example/org/repo.git"),
+        None,
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1 $2 $3\" = \"remote get-url --push\" ]; then exit 1; fi\nif [ \"$1 $2\" = \"remote get-url\" ] && [ \"$3\" = \"mirror\" ]; then printf 'https://fetch.example/org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let output = run_hook_with_args(
+        &hook,
+        git_script,
+        "#!/bin/bash\nexit 0\n",
+        &temp_dir,
+        &["mirror"],
+    );
+
+    assert!(output.status.success());
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_ignores_invalid_configured_entries() {
+    let temp_dir = unique_temp_dir("pre_push_invalid_config_entries");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some("not-a-repo,https://github.com/org/repo"),
+        Some("not-a-repo"),
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'git@github.com:org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let output = run_hook(&hook, git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
+
+    assert!(output.status.success());
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_fails_closed_for_unnormalizable_remote_when_filters_exist() {
+    let temp_dir = unique_temp_dir("pre_push_invalid_remote_filtered");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(
+        HookType::PrePush,
+        Some("https://github.com/org/repo"),
+        None,
+        None,
+    ));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'not-a-repo\\n'; exit 0; fi\nexit 1\n";
+    let output = run_hook(&hook, git_script, "#!/bin/bash\nexit 0\n", &temp_dir);
+
+    assert_eq!(output.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("Error: unable to validate remote not-a-repo")
+    );
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_scans_unnormalizable_remote_when_no_filters_exist() {
+    let temp_dir = unique_temp_dir("pre_push_invalid_remote_unfiltered");
+    let marker = temp_dir.join("keywatch-args");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'not-a-repo\\n'; exit 0; fi\nexit 1\n";
+    let output = run_hook(
+        &hook,
+        git_script,
+        &keywatch_script_that_records_args(&marker),
+        &temp_dir,
+    );
+
+    assert!(output.status.success());
+    assert_eq!(
+        fs::read_to_string(&marker).expect("read scanner args"),
+        "scan . --exit-mode critical\n"
+    );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
 
