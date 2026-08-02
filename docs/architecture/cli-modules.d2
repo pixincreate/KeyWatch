@@ -1,0 +1,49 @@
+direction: right
+
+classes: {
+  boundary: {
+    style: {
+      fill: "#FBFBFA"
+      stroke: "#C8C6C1"
+      stroke-width: 2
+      border-radius: 10
+    }
+  }
+  entry: {
+    style: {
+      fill: "#E1F3FE"
+      stroke: "#4A84A8"
+      border-radius: 8
+    }
+  }
+  core: {
+    style: {
+      fill: "#EDF3EC"
+      stroke: "#5C805F"
+      border-radius: 8
+    }
+  }
+  support: {
+    style: {
+      fill: "#F7F6F3"
+      stroke: "#9A9892"
+      border-radius: 8
+    }
+  }
+  external: {
+    style: {
+      fill: "#FBF3DB"
+      stroke: "#A9873E"
+      border-radius: 8
+    }
+  }
+}
+
+distribution: "DISTRIBUTION\nRelease · Action · Docker" {class: support}
+entry: "ENTRY\nTerminal · hooks · automation" {class: external}
+facade: "CLI FACADE\nparse · validate · dispatch" {class: entry}
+commands: "COMMANDS\nscan · hooks · init · integrity" {class: core}
+engine: "SCAN ENGINE\nconfig → detector → scanner\n→ baseline → report" {class: core}
+runtime: "RUNTIME\nfiles · stdin · git · output" {class: external}
+
+distribution -> entry -> facade -> commands -> engine -> runtime
