@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Public Rust APIs now return module-local typed errors instead of `String` or boxed errors. This affects CLI validation, baseline, configuration, detector initialization, scanner, hook, and `run_cli()` return types and requires a major-version release.
+
 ### Added
 
 - **CRITICAL severity support** — findings can now be scored as Critical, High, Medium, or Low
