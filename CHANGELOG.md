@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-08-02
+
+### Fixed
+
+- GitHub Release asset publishing no longer fails when Action validation generates Python bytecode caches
+
 ## [2.0.0] - 2026-08-02
 
 ### Breaking Changes
