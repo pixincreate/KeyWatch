@@ -1,5 +1,6 @@
-use key_watch::baseline::{Baseline, BaselineEntry};
+use key_watch::baseline::{Baseline, BaselineEntry, BaselineError};
 use key_watch::report::{Finding, Severity};
+use std::fs;
 use tempfile::tempdir;
 
 fn make_finding(file: &str, line: usize, ftype: &str, content: &str, plugin: &str) -> Finding {
@@ -116,11 +117,34 @@ fn test_baseline_save_and_load() -> Result<(), String> {
         }],
     };
 
-    baseline.save(&temp_file)?;
-    let loaded = Baseline::load(&temp_file)?;
+    baseline
+        .save(&temp_file)
+        .map_err(|error| error.to_string())?;
+    let loaded = Baseline::load(&temp_file).map_err(|error| error.to_string())?;
     assert_eq!(loaded.entries.len(), 1);
     assert_eq!(loaded.entries[0].file_path, "a.txt");
     assert_eq!(loaded.entries[0].line_number, 1);
+    Ok(())
+}
+
+#[test]
+fn test_baseline_load_reports_parse_error_for_invalid_json() -> Result<(), String> {
+    let temp_dir = tempdir().map_err(|err| err.to_string())?;
+    let temp_file = temp_dir.path().join("baseline.json");
+    fs::write(&temp_file, "{not valid json").map_err(|error| error.to_string())?;
+
+    match Baseline::load(&temp_file) {
+        Err(BaselineError::Parse { path, source }) => {
+            assert_eq!(path, temp_file);
+            assert!(
+                BaselineError::Parse { path, source }
+                    .to_string()
+                    .starts_with("Failed to parse baseline '")
+            );
+        }
+        other => panic!("expected parse error, got {other:?}"),
+    }
+
     Ok(())
 }
 

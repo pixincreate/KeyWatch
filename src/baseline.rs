@@ -1,6 +1,11 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, fs, path::Path};
+use std::{
+    collections::HashSet,
+    error::Error,
+    fmt, fs, io,
+    path::{Path, PathBuf},
+};
 
 use crate::report::Finding;
 
@@ -67,6 +72,71 @@ pub struct Baseline {
     pub entries: Vec<BaselineEntry>,
 }
 
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum BaselineError {
+    Read {
+        path: PathBuf,
+        source: io::Error,
+    },
+    Parse {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    Serialize {
+        source: serde_json::Error,
+    },
+    Write {
+        path: PathBuf,
+        source: io::Error,
+    },
+}
+
+impl fmt::Display for BaselineError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Read { path, source } => {
+                write!(
+                    formatter,
+                    "Failed to read baseline '{}': {}",
+                    path.display(),
+                    source
+                )
+            }
+            Self::Parse { path, source } => {
+                write!(
+                    formatter,
+                    "Failed to parse baseline '{}': {}",
+                    path.display(),
+                    source
+                )
+            }
+            Self::Serialize { source } => {
+                write!(formatter, "Failed to serialize baseline: {}", source)
+            }
+            Self::Write { path, source } => {
+                write!(
+                    formatter,
+                    "Failed to write baseline '{}': {}",
+                    path.display(),
+                    source
+                )
+            }
+        }
+    }
+}
+
+impl Error for BaselineError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Read { source, .. } => Some(source),
+            Self::Parse { source, .. } => Some(source),
+            Self::Serialize { source } => Some(source),
+            Self::Write { source, .. } => Some(source),
+        }
+    }
+}
+
 impl Baseline {
     pub fn new() -> Self {
         Self {
@@ -75,30 +145,37 @@ impl Baseline {
         }
     }
 
-    pub fn load(path: &Path) -> Result<Self, String> {
+    pub fn load(path: &Path) -> Result<Self, BaselineError> {
         if !path.exists() {
             return Ok(Self::new());
         }
 
-        let contents = fs::read_to_string(path)
-            .map_err(|err| format!("Failed to read baseline '{}': {}", path.display(), err))?;
+        let contents = fs::read_to_string(path).map_err(|source| BaselineError::Read {
+            path: path.to_path_buf(),
+            source,
+        })?;
 
         if contents.trim().is_empty() {
             return Ok(Self::new());
         }
 
-        let baseline: Baseline = serde_json::from_str(&contents)
-            .map_err(|err| format!("Failed to parse baseline '{}': {}", path.display(), err))?;
+        let baseline: Baseline =
+            serde_json::from_str(&contents).map_err(|source| BaselineError::Parse {
+                path: path.to_path_buf(),
+                source,
+            })?;
 
         Ok(baseline)
     }
 
-    pub fn save(&self, path: &Path) -> Result<(), String> {
+    pub fn save(&self, path: &Path) -> Result<(), BaselineError> {
         let json = serde_json::to_string_pretty(self)
-            .map_err(|err| format!("Failed to serialize baseline: {}", err))?;
+            .map_err(|source| BaselineError::Serialize { source })?;
 
-        fs::write(path, json)
-            .map_err(|err| format!("Failed to write baseline '{}': {}", path.display(), err))?;
+        fs::write(path, json).map_err(|source| BaselineError::Write {
+            path: path.to_path_buf(),
+            source,
+        })?;
 
         Ok(())
     }
