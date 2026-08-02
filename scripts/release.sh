@@ -108,9 +108,13 @@ update_version_files() {
 ## [$VERSION] - $DATE/" \
         CHANGELOG.md && rm CHANGELOG.md.bak
 
-    echo "Updated version to $VERSION in Cargo.toml and CHANGELOG.md"
+    sed -i.bak \
+        -e "/^  version:$/,/^  paths:$/ s/^    default: .*/    default: '$VERSION'/" \
+        action.yml && rm action.yml.bak
 
-    cargo update --quiet
+    echo "Updated version to $VERSION in Cargo.toml, action.yml, and CHANGELOG.md"
+
+    cargo check --quiet
 }
 
 ensure_clean_master() {
@@ -146,8 +150,8 @@ create_pr() {
 
     update_version_files
 
-    git add Cargo.toml CHANGELOG.md Cargo.lock
-    git commit -m "release(KeyWatch): version $VERSION [skip ci]"
+    git add Cargo.toml CHANGELOG.md Cargo.lock action.yml
+    git commit -m "release(KeyWatch): version $VERSION"
     git push -u origin "$RELEASE_BRANCH"
 
     if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
