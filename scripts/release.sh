@@ -102,11 +102,16 @@ update_version_files() {
         Cargo.toml
     rm Cargo.toml.bak
 
-    sed -i.bak \
-        -e "s/^## \[Unreleased\]$/## [Unreleased]\
-\
-## [$VERSION] - $DATE/" \
-        CHANGELOG.md && rm CHANGELOG.md.bak
+    local changelog_tmp
+    changelog_tmp=$(mktemp "${TMPDIR:-/tmp}/keywatch-changelog.XXXXXX")
+    awk -v version="$VERSION" -v release_date="$DATE" '
+        { print }
+        $0 == "## [Unreleased]" {
+            print ""
+            print "## [" version "] - " release_date
+        }
+    ' CHANGELOG.md > "$changelog_tmp"
+    mv "$changelog_tmp" CHANGELOG.md
 
     sed -i.bak \
         -e "/^  version:$/,/^  paths:$/ s/^    default: .*/    default: '$VERSION'/" \
