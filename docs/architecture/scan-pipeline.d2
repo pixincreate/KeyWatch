@@ -1,0 +1,61 @@
+direction: right
+
+classes: {
+  boundary: {
+    style: {
+      fill: "#FBFBFA"
+      stroke: "#C8C6C1"
+      stroke-width: 2
+      border-radius: 10
+    }
+  }
+  action: {
+    style: {
+      fill: "#EDF3EC"
+      stroke: "#5C805F"
+      border-radius: 8
+    }
+  }
+  decision: {
+    shape: diamond
+    style: {
+      fill: "#FBF3DB"
+      stroke: "#A9873E"
+    }
+  }
+  output: {
+    style: {
+      fill: "#E1F3FE"
+      stroke: "#4A84A8"
+      border-radius: 8
+    }
+  }
+  error: {
+    style: {
+      fill: "#FDEBEC"
+      stroke: "#A64B48"
+      border-radius: 8
+    }
+  }
+}
+
+start: "SCAN\nvalidated input" {class: output}
+
+prepare: "1 · PREPARE\npolicy + detector rules" {class: action}
+
+input: "2 · INPUT\npaths in parallel\nstdin / git in chunks" {class: action}
+
+detect: "3 · DETECT\nkeyword → regex → entropy\n→ suppression → findings" {class: action}
+
+baseline: "4 · BASELINE\nkeep or filter" {class: decision}
+
+baseline_done: "BASELINE UPDATED\nsave + return\nskip reporting" {class: output}
+
+report: "5 · REPORT\nJSON / SARIF\nsummary + optional file" {class: action}
+
+exit: "6 · EXIT\n0 clean · 1 findings\n2 validation / config / runtime" {class: output}
+
+start -> prepare -> input -> detect -> baseline
+baseline -> baseline_done: --update-baseline
+baseline -> report: normal scan
+report -> exit
