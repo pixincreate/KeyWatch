@@ -95,6 +95,40 @@ fn run_hook(hook: &str, git_script: &str, keywatch_script: &str, cwd: &Path) -> 
 }
 
 #[cfg(unix)]
+fn run_hook_with_packaged_keywatch(hook: &str, cwd: &Path) -> Output {
+    let bin_dir = cwd.join("bin");
+    fs::create_dir_all(&bin_dir).expect("create fake bin dir");
+    write_executable(&bin_dir.join("git"), "#!/bin/bash\nexit 1\n");
+    fs::copy(
+        env!("CARGO_BIN_EXE_key-watch"),
+        bin_dir.join(generated_binary_name()),
+    )
+    .expect("copy KeyWatch binary");
+    fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("detectors.toml"),
+        bin_dir.join("detectors.toml"),
+    )
+    .expect("copy packaged detectors");
+
+    let hook_path = cwd.join("hook.sh");
+    fs::write(&hook_path, hook).expect("write hook");
+    let path = format!(
+        "{}:{}",
+        bin_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+
+    std::process::Command::new("bash")
+        .arg(&hook_path)
+        .arg("origin")
+        .current_dir(cwd)
+        .env("PATH", path)
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .output()
+        .expect("run hook with packaged KeyWatch")
+}
+
+#[cfg(unix)]
 fn keywatch_script_that_records_args(marker: &Path) -> String {
     format!(
         "#!/bin/bash\nprintf '%s\\n' \"$*\" > '{}'\nexit 0\n",
@@ -424,7 +458,7 @@ fn test_pre_push_uses_named_remote_push_url_when_argv_url_is_absent() {
     assert!(output.status.success());
     assert_eq!(
         fs::read_to_string(&marker).expect("read scanner args"),
-        "scan . --exit-mode critical\n"
+        "scan . --exit-mode critical --no-config-discovery\n"
     );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
@@ -515,7 +549,7 @@ fn test_pre_push_scans_unnormalizable_remote_when_no_filters_exist() {
     assert!(output.status.success());
     assert_eq!(
         fs::read_to_string(&marker).expect("read scanner args"),
-        "scan . --exit-mode critical\n"
+        "scan . --exit-mode critical --no-config-discovery\n"
     );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
@@ -553,6 +587,31 @@ fn test_pre_push_ignores_repository_config_that_disables_scanning() {
         output.status.code(),
         Some(1),
         "repository config must not suppress pre-push scanning: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_ignores_repository_detector_overrides() {
+    let temp_dir = unique_temp_dir("pre_push_ignores_repository_detectors");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    fs::write(temp_dir.join("detectors.toml"), "detectors = []\n")
+        .expect("write repository detector overrides");
+    fs::write(
+        temp_dir.join("secret.txt"),
+        "master_api_key = \"abcdefghijklmnopqrstuvwxyz1234\"\n",
+    )
+    .expect("write high-severity secret");
+
+    let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
+    let output = run_hook_with_packaged_keywatch(&hook, &temp_dir);
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "repository detectors must not suppress pre-push scanning: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
@@ -715,6 +774,10 @@ fn test_cli_scan_ignores_repository_config_when_discovery_is_disabled() {
     .expect("write secret fixture");
 
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .env(
+            "KEYWATCH_CONFIG_PATH",
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("detectors.toml"),
+        )
         .args([
             "scan",
             temp_dir.to_str().expect("temp path should be UTF-8"),

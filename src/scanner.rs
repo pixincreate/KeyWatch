@@ -1,6 +1,6 @@
 use crate::cli::ScanArgs;
 use crate::config::KeywatchConfig;
-use crate::detector::{Detector, initialize_detectors};
+use crate::detector::{Detector, initialize_detectors, initialize_trusted_detectors};
 use crate::report::{Finding, ScanMetadata};
 use glob::Pattern;
 use rayon::prelude::*;
@@ -175,7 +175,12 @@ pub fn run_scan(
     args: &ScanArgs,
     config: Option<&KeywatchConfig>,
 ) -> Result<(Vec<Finding>, ScanMetadata), String> {
-    let mut detectors = initialize_detectors().map_err(|err| err.to_string())?;
+    let mut detectors = if args.no_config_discovery {
+        initialize_trusted_detectors()
+    } else {
+        initialize_detectors()
+    }
+    .map_err(|err| err.to_string())?;
 
     if let Some(cfg) = config {
         cfg.apply_to(&mut detectors)?;
