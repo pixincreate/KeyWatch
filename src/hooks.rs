@@ -5,6 +5,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
 
+mod error;
+pub use error::HookError;
+
 const PRE_PUSH_TEMPLATE: &str = include_str!("../templates/pre-push.sh");
 const PRE_COMMIT_TEMPLATE: &str = include_str!("../templates/pre-commit.sh");
 
@@ -79,7 +82,7 @@ fn hook_binary_name() -> String {
 /// Writes the rendered hook script to the resolved target path and makes it
 /// executable. For global installs, a managed hooks directory is created and
 /// configured via `git config --global core.hooksPath` if none is set.
-pub fn install_hook(args: &HookInstallArgs) -> Result<(), String> {
+pub fn install_hook(args: &HookInstallArgs) -> Result<(), HookError> {
     let hook_content = match args.hook_type {
         crate::cli::HookType::PrePush => generate_pre_push_hook(args),
         crate::cli::HookType::PreCommit => generate_pre_commit_hook(args),
@@ -93,12 +96,9 @@ pub fn install_hook(args: &HookInstallArgs) -> Result<(), String> {
     }
 
     if let Some(parent) = install_target.path.parent() {
-        fs::create_dir_all(parent).map_err(|err| {
-            format!(
-                "Failed to create hook directory '{}': {}",
-                parent.display(),
-                err
-            )
+        fs::create_dir_all(parent).map_err(|source| HookError::CreateHookDirectory {
+            path: parent.to_path_buf(),
+            source,
         })?;
     }
 
@@ -107,10 +107,14 @@ pub fn install_hook(args: &HookInstallArgs) -> Result<(), String> {
     }
 
     let hook_path = install_target.path.to_string_lossy().into_owned();
-    utils::write_to_file(&hook_path, &hook_content)
-        .map_err(|err| format!("Failed to install hook '{}': {}", hook_path, err))?;
-    utils::make_executable(&hook_path)
-        .map_err(|err| format!("Failed to make hook executable '{}': {}", hook_path, err))?;
+    utils::write_to_file(&hook_path, &hook_content).map_err(|source| HookError::InstallHook {
+        path: PathBuf::from(&hook_path),
+        source,
+    })?;
+    utils::make_executable(&hook_path).map_err(|source| HookError::MakeHookExecutable {
+        path: PathBuf::from(&hook_path),
+        source,
+    })?;
 
     if install_target.configured_global_path {
         println!(
@@ -136,7 +140,7 @@ pub fn install_hook(args: &HookInstallArgs) -> Result<(), String> {
 ///
 /// Only removes hooks that KeyWatch previously installed (verified via the
 /// marker comment). Missing hooks are reported as a no-op success.
-pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), String> {
+pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
     let hook_type_str = args.hook_type.as_str();
     let install_target = resolve_hook_uninstall_target(hook_type_str, args.global)?;
 
@@ -159,12 +163,9 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), String> {
         "remove",
     )?;
 
-    fs::remove_file(&install_target.path).map_err(|err| {
-        format!(
-            "Failed to remove hook '{}': {}",
-            install_target.path.display(),
-            err
-        )
+    fs::remove_file(&install_target.path).map_err(|source| HookError::RemoveHook {
+        path: install_target.path.clone(),
+        source,
     })?;
 
     if install_target.is_global {
@@ -190,7 +191,7 @@ struct HookInstallTarget {
 }
 
 impl HookInstallTarget {
-    fn local(hook_type: &str) -> Result<Self, String> {
+    fn local(hook_type: &'static str) -> Result<Self, HookError> {
         let hooks_dir = resolve_local_hooks_dir()?;
         Ok(Self {
             path: hooks_dir.join(hook_type),
@@ -200,7 +201,7 @@ impl HookInstallTarget {
         })
     }
 
-    fn global(hook_type: &str) -> Result<Self, String> {
+    fn global(hook_type: &'static str) -> Result<Self, HookError> {
         if let Some(hooks_dir) = read_global_hooks_path()? {
             return Ok(Self {
                 path: hooks_dir.join(hook_type),
@@ -217,12 +218,11 @@ impl HookInstallTarget {
             env::var_os("USERPROFILE"),
         )?;
 
-        fs::create_dir_all(&managed_dir).map_err(|err| {
-            format!(
-                "Failed to create global hooks directory '{}': {}",
-                managed_dir.display(),
-                err
-            )
+        fs::create_dir_all(&managed_dir).map_err(|source| {
+            HookError::CreateGlobalHooksDirectory {
+                path: managed_dir.clone(),
+                source,
+            }
         })?;
         configure_global_hooks_path(&managed_dir)?;
 
@@ -235,7 +235,10 @@ impl HookInstallTarget {
     }
 }
 
-fn resolve_hook_install_target(hook_type: &str, global: bool) -> Result<HookInstallTarget, String> {
+fn resolve_hook_install_target(
+    hook_type: &'static str,
+    global: bool,
+) -> Result<HookInstallTarget, HookError> {
     if global {
         HookInstallTarget::global(hook_type)
     } else {
@@ -244,9 +247,9 @@ fn resolve_hook_install_target(hook_type: &str, global: bool) -> Result<HookInst
 }
 
 fn resolve_hook_uninstall_target(
-    hook_type: &str,
+    hook_type: &'static str,
     global: bool,
-) -> Result<HookInstallTarget, String> {
+) -> Result<HookInstallTarget, HookError> {
     if !global {
         return HookInstallTarget::local(hook_type);
     }
@@ -269,39 +272,39 @@ fn resolve_hook_uninstall_target(
     })
 }
 
-fn resolve_local_hooks_dir() -> Result<PathBuf, String> {
+fn resolve_local_hooks_dir() -> Result<PathBuf, HookError> {
     resolve_local_hooks_dir_from(Path::new("."))
 }
 
-fn resolve_local_hooks_dir_from(cwd: &Path) -> Result<PathBuf, String> {
+fn resolve_local_hooks_dir_from(cwd: &Path) -> Result<PathBuf, HookError> {
     let output = ProcessCommand::new("git")
         .current_dir(cwd)
         .args(["rev-parse", "--path-format=absolute", "--git-path", "hooks"])
         .output()
-        .map_err(|err| format!("Failed to resolve git hooks directory: {}", err))?;
+        .map_err(|source| HookError::ResolveGitHooksDirectory { source })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if stderr.is_empty() {
-            "Local hook installation requires running inside a git repository".to_string()
+            HookError::MissingLocalRepository
         } else {
-            format!("Failed to resolve git hooks directory: {}", stderr)
+            HookError::ResolveGitHooksDirectoryFromGit { stderr }
         });
     }
 
     let hooks_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if hooks_path.is_empty() {
-        return Err("Failed to resolve git hooks directory".to_string());
+        return Err(HookError::EmptyGitHooksDirectory);
     }
 
     Ok(PathBuf::from(hooks_path))
 }
 
-fn read_global_hooks_path() -> Result<Option<PathBuf>, String> {
+fn read_global_hooks_path() -> Result<Option<PathBuf>, HookError> {
     let output = ProcessCommand::new("git")
         .args(["config", "--global", "--path", "--get", "core.hooksPath"])
         .output()
-        .map_err(|err| format!("Failed to read git config core.hooksPath: {}", err))?;
+        .map_err(|source| HookError::ReadGlobalHooksPath { source })?;
 
     if output.status.success() {
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -318,10 +321,7 @@ fn read_global_hooks_path() -> Result<Option<PathBuf>, String> {
     }
 
     let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    Err(format!(
-        "Failed to read git config core.hooksPath: {}",
-        stderr
-    ))
+    Err(HookError::ReadGlobalHooksPathFromGit { stderr })
 }
 
 fn managed_global_hooks_dir(
@@ -329,7 +329,7 @@ fn managed_global_hooks_dir(
     home: Option<std::ffi::OsString>,
     appdata: Option<std::ffi::OsString>,
     userprofile: Option<std::ffi::OsString>,
-) -> Result<PathBuf, String> {
+) -> Result<PathBuf, HookError> {
     if let Some(xdg) = xdg_config_home {
         return Ok(PathBuf::from(xdg).join("key-watch").join("hooks"));
     }
@@ -348,33 +348,32 @@ fn managed_global_hooks_dir(
             .join("key-watch")
             .join("hooks"));
     }
-    Err("Could not determine a directory for global git hooks".to_string())
+    Err(HookError::MissingGlobalHooksBaseDir)
 }
 
-fn configure_global_hooks_path(hooks_dir: &Path) -> Result<(), String> {
+fn configure_global_hooks_path(hooks_dir: &Path) -> Result<(), HookError> {
     let output = ProcessCommand::new("git")
         .args(["config", "--global", "core.hooksPath"])
         .arg(hooks_dir)
         .output()
-        .map_err(|err| format!("Failed to configure git global core.hooksPath: {}", err))?;
+        .map_err(|source| HookError::ConfigureGlobalHooksPath { source })?;
 
     if output.status.success() {
         Ok(())
     } else {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        Err(format!(
-            "git config --global core.hooksPath {} failed: {}",
-            hooks_dir.display(),
-            stderr
-        ))
+        Err(HookError::ConfigureGlobalHooksPathWithGit {
+            hooks_dir: hooks_dir.to_path_buf(),
+            stderr,
+        })
     }
 }
 
-fn ensure_global_hook_target_is_safe(hook_path: &Path) -> Result<(), String> {
+fn ensure_global_hook_target_is_safe(hook_path: &Path) -> Result<(), HookError> {
     ensure_hook_target_is_keywatch_managed(hook_path, true, "overwrite")
 }
 
-fn ensure_local_hook_target_is_safe_to_create(hook_path: &Path) -> Result<(), String> {
+fn ensure_local_hook_target_is_safe_to_create(hook_path: &Path) -> Result<(), HookError> {
     resolve_local_hooks_dir()?;
     if hook_path.exists() {
         ensure_hook_target_is_keywatch_managed(hook_path, false, "overwrite")?;
@@ -386,35 +385,34 @@ fn ensure_local_hook_target_is_safe_to_create(hook_path: &Path) -> Result<(), St
 fn ensure_hook_target_is_keywatch_managed(
     hook_path: &Path,
     is_global: bool,
-    action: &str,
-) -> Result<(), String> {
+    action: &'static str,
+) -> Result<(), HookError> {
     if !hook_path.exists() {
         return Ok(());
     }
 
-    let content = fs::read_to_string(hook_path).map_err(|err| {
-        format!(
-            "Failed to inspect existing hook '{}': {}",
-            hook_path.display(),
-            err
-        )
-    })?;
+    let content =
+        fs::read_to_string(hook_path).map_err(|source| HookError::InspectExistingHook {
+            path: hook_path.to_path_buf(),
+            source,
+        })?;
 
     if content.contains(KEYWATCH_MARKER) {
         return Ok(());
     }
 
     let scope = if is_global { "global" } else { "local" };
-    Err(format!(
-        "Refusing to {action} existing {scope} hook at '{}'. Merge it manually or remove it yourself.",
-        hook_path.display()
-    ))
+    Err(HookError::RefuseExistingHook {
+        action,
+        scope,
+        path: hook_path.to_path_buf(),
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
+        HookError, ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
         managed_global_hooks_dir, resolve_hook_uninstall_target, resolve_local_hooks_dir_from,
     };
     use std::env;
@@ -488,7 +486,11 @@ mod tests {
 
         let error = ensure_global_hook_target_is_safe(&hook_path)
             .expect_err("foreign hook should be rejected");
-        assert!(error.contains("Refusing to overwrite existing global hook"));
+        assert!(
+            error
+                .to_string()
+                .contains("Refusing to overwrite existing global hook")
+        );
 
         fs::remove_file(&hook_path).expect("remove hook file");
         fs::remove_dir_all(&temp_dir).expect("remove temp dir");
@@ -534,7 +536,11 @@ mod tests {
 
         let error = ensure_local_hook_target_is_safe_to_create(&hook_path)
             .expect_err("foreign local hook should be rejected");
-        assert!(error.contains("Refusing to overwrite existing local hook"));
+        assert!(
+            error
+                .to_string()
+                .contains("Refusing to overwrite existing local hook")
+        );
 
         fs::remove_file(&hook_path).expect("remove hook file");
         fs::remove_dir_all(&temp_dir).expect("remove temp dir");
@@ -579,6 +585,10 @@ mod tests {
         let error = managed_global_hooks_dir(None, None, None, None)
             .expect_err("missing env inputs should fail");
 
-        assert!(error.contains("Could not determine a directory for global git hooks"));
+        assert!(matches!(error, HookError::MissingGlobalHooksBaseDir));
+        assert_eq!(
+            error.to_string(),
+            "Could not determine a directory for global git hooks"
+        );
     }
 }
