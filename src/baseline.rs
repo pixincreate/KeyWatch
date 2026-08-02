@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{collections::HashSet, fmt::Write as _, fs, path::Path};
+use std::{collections::HashSet, fs, path::Path};
 
 use crate::report::Finding;
 
@@ -19,11 +19,7 @@ fn hash_content(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(HASH_DOMAIN_SEPARATOR.as_bytes());
     hasher.update(content.as_bytes());
-    let mut output = String::with_capacity(64);
-    for byte in hasher.finalize() {
-        let _ = write!(&mut output, "{:02x}", byte);
-    }
-    output
+    format!("{:x}", hasher.finalize())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
