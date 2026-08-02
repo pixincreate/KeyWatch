@@ -196,109 +196,25 @@ password = 'known-test-password' # keywatch:ignore
 
 ## Architecture
 
-### System Overview
+KeyWatch is a single Rust CLI organized as a modular monolith. `main.rs` owns startup and maps validation, configuration, or runtime failures to exit code `2`. `run_cli()` validates and routes commands, while the scan coordinator currently terminates successful scan execution with code `0` or `1`. Focused modules own detector loading, repository policy, scanning, baselines, reports, hooks, and filesystem or process adapters.
 
-```mermaid
-flowchart TD
-    CLI["key-watch CLI"]
-    Scan["scan command"]
-    Hooks["hook install / uninstall"]
-    Setup["init / verify-integrity"]
+### CLI Modules and Adapters
 
-    Sources["Scan sources<br/>files, directories, stdin, or git history"]
-    BuiltIns["detectors.toml<br/>built-in rules"]
-    UserConfig[".keywatch.toml or --config<br/>custom rules, overrides, excludes"]
-    Detectors["Merged detector set"]
-    Pipeline["Detection pipeline"]
-    Findings["Findings + ScanMetadata"]
-    BaselineAction{"Baseline action"}
-    BaselineFilter["Filter known findings<br/>--baseline"]
-    BaselineUpdate["Write updated baseline<br/>--update-baseline"]
-    BaselineFile["Baseline JSON + exit"]
-    Report["JSON or SARIF 2.1.0 report"]
-    Destination["stdout or --output<br/>summary + exit code"]
+![KeyWatch CLI module and adapter architecture](docs/architecture/cli-modules.svg)
 
-    HookTargets["Git hook targets<br/>local or global"]
-    PreCommit["pre-commit<br/>scan staged files"]
-    PrePush["pre-push<br/>check policy, then scan repository"]
+The green boxes are internal modules, blue boxes mark entry or output boundaries, and yellow boxes are external runtime or distribution adapters. Rust hook management renders and installs scripts; the shell templates are separate runtime adapters that invoke `key-watch scan`.
 
-    CLI --> Scan
-    CLI --> Hooks
-    CLI --> Setup
+### Scan Pipeline
 
-    Hooks --> HookTargets
-    HookTargets --> PreCommit
-    HookTargets --> PrePush
-    PreCommit --> Scan
-    PrePush --> Scan
+![KeyWatch scan pipeline](docs/architecture/scan-pipeline.svg)
 
-    Scan --> Sources
-    Scan --> BuiltIns
-    Scan --> UserConfig
-    BuiltIns --> Detectors
-    UserConfig --> Detectors
-    Sources --> Pipeline
-    Detectors --> Pipeline
-    Pipeline --> Findings
-    Findings --> BaselineAction
-    BaselineAction -->|none| Report
-    BaselineAction -->|filter| BaselineFilter
-    BaselineAction -->|update| BaselineUpdate
-    BaselineFilter --> Report
-    BaselineUpdate --> BaselineFile
-    Report --> Destination
-```
+Path scans collect and process files in parallel, while stdin and git history use overlapping stream chunks. Baseline updates short-circuit normal report generation. Scan results exit with code `0` or `1`; validation, configuration, and runtime failures are mapped to code `2` at the process boundary.
 
-### Architecture Overview
+### Detector and Configuration Trust Boundaries
 
-KeyWatch is organized into five layers. Data flows top to bottom: input sources and configuration feed the detection pipeline, findings pass through post-processing, and results are serialized to stdout or a file.
+![KeyWatch detector and configuration trust boundaries](docs/architecture/detector-config-trust.svg)
 
-1. **Input** — the CLI accepts files, directories, stdin, or git history (`--git-history`). Flags control exclusion (`--exclude`), baselineing (`--baseline`, `--update-baseline`), output format (`--format`), config path (`--config`), and exit behavior (`--exit-mode`).
-2. **Configuration** — `detectors.toml` ships with the binary and holds the built-in rules. An optional `.keywatch.toml` adds custom rules, per-detector severity/enable overrides, and exclude patterns. Configuration merges — it never replaces defaults.
-3. **Detection pipeline** — six stages run per file: collect files (recursive walk, skipping `.git` and binary files), apply exclude globs, pre-filter by keyword (fast path that avoids regex on irrelevant files), match regexes (single-line and multiline `(?s)`), gate on Shannon entropy, and apply allowlists plus inline `keywatch:ignore` suppression. Files are scanned in parallel with rayon.
-4. **Post-processing** — an optional baseline filter suppresses findings already recorded in the baseline file, keyed by a salted SHA-256 fingerprint of the matched content.
-5. **Output** — findings serialize as JSON or SARIF 2.1.0 and are written to stdout or an output file, followed by a severity summary and an exit code derived from the exit mode.
-
-### Detection Pipeline
-
-```mermaid
-flowchart TD
-    Start["scan command"]
-    Config["Load optional configuration"]
-    Detectors["Initialize built-in and custom detectors"]
-    Mode{"Input mode"}
-
-    Paths["Files or directories"]
-    Stdin["stdin stream"]
-    History["git log patch stream"]
-
-    Collect["Collect targets<br/>recursive walk, skip symlinks and .git"]
-    Dedupe["Sort and deduplicate targets"]
-    Exclude["Apply CLI and config exclude globs"]
-    Read["Read text files<br/>skip binary and non-UTF-8 content"]
-    Parallel["Scan files in parallel with rayon"]
-    Stream["Scan stream in overlapping chunks"]
-
-    Keyword["Keyword pre-filter"]
-    Regex["Line and multiline regex matching"]
-    Entropy["Entropy threshold"]
-    Suppress["Detector allowlist + inline suppression"]
-    Emit["Emit Finding"]
-    Result["Return findings + metadata"]
-
-    Start --> Config --> Detectors --> Mode
-    Mode -->|paths| Paths
-    Mode -->|stdin| Stdin
-    Mode -->|git history| History
-
-    Paths --> Collect --> Dedupe --> Exclude --> Read --> Parallel
-    Stdin --> Stream
-    History --> Stream
-
-    Parallel --> Keyword
-    Stream --> Keyword
-    Keyword --> Regex --> Entropy --> Suppress --> Emit --> Result
-```
+Detector definitions and repository policy are separate configuration systems. External detector sources retain precedence, with compiled-in rules as the final fallback. Trusted scans skip repository-owned discovery but still honor explicit configuration and non-repository detector sources.
 
 ### Core Data Types
 
@@ -308,6 +224,8 @@ flowchart TD
 - **KeywatchConfig** — parsed `.keywatch.toml`: custom rules, per-detector overrides, and exclude patterns.
 - **Baseline** — versioned collection of fingerprint entries; filters out already-known findings.
 - **ScanMetadata** — files scanned, total lines, and excluded files, reported alongside findings.
+
+The canonical diagram sources are in `docs/architecture/*.d2`. Run `scripts/render-diagrams.sh render` with D2 v0.7.1 after editing them, or `scripts/render-diagrams.sh check` to detect stale SVGs.
 
 ## Development
 

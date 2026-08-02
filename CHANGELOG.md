@@ -42,6 +42,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Cargo-installed and standalone binaries now fall back to embedded detector rules when no external `detectors.toml` is available
 - CRITICAL severity was silently downgraded to LOW at runtime
 - All clippy warnings resolved (`Default` impl, redundant closures, identity maps)
 - Public API unit tests moved to `tests/` directory (only private API tests remain in `src/`)
@@ -61,7 +62,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-- README architecture documentation now uses two inline GitHub-compatible Mermaid diagrams for the system overview and detection pipeline, alongside the layer-by-layer overview and core data type reference
+- README architecture documentation now uses three source-controlled D2 diagrams with generated SVGs for CLI modules and adapters, the scan pipeline, and detector/configuration trust boundaries
 
 ## [1.1.0] - 2026-05-05
 
