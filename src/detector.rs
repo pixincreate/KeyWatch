@@ -5,7 +5,9 @@ pub use error::DetectorInitError;
 use crate::report::{ParseSeverityError, Severity};
 use regex::Regex;
 use serde::Deserialize;
-use std::{fmt, fs, str::FromStr};
+use std::{borrow::Cow, fmt, fs, str::FromStr};
+
+const EMBEDDED_DETECTORS_CONFIG: &str = include_str!("../detectors.toml");
 
 #[derive(Debug)]
 pub enum DetectorError {
@@ -204,13 +206,15 @@ pub(crate) fn initialize_trusted_detectors() -> Result<Vec<Detector>, DetectorIn
 fn initialize_detectors_from_config(
     include_repository_config: bool,
 ) -> Result<Vec<Detector>, DetectorInitError> {
-    let config_path = find_detectors_config(include_repository_config)
-        .ok_or(DetectorInitError::ConfigNotFound)?;
-    let toml_contents =
-        fs::read_to_string(&config_path).map_err(|source| DetectorInitError::ReadConfig {
-            path: config_path.clone(),
-            source,
-        })?;
+    let toml_contents = match find_detectors_config(include_repository_config) {
+        Some(config_path) => Cow::Owned(fs::read_to_string(&config_path).map_err(|source| {
+            DetectorInitError::ReadConfig {
+                path: config_path,
+                source,
+            }
+        })?),
+        None => Cow::Borrowed(EMBEDDED_DETECTORS_CONFIG),
+    };
 
     let config: DetectorsConfig = toml::from_str(&toml_contents)
         .map_err(|source| DetectorInitError::ParseConfig { source })?;

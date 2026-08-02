@@ -73,16 +73,47 @@ fn test_exit_code_on_no_secrets() {
 fn test_runtime_errors_exit_with_code_two() {
     let test_dir = setup_scan_dir("exit_runtime_error", false);
     let temp_file = test_dir.join("secret.txt");
+    let invalid_detectors = test_dir.join("invalid-detectors.toml");
     fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+    fs::write(&invalid_detectors, "[[detectors]").expect("Write invalid detector config");
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
+        .env("KEYWATCH_CONFIG_PATH", invalid_detectors)
         .arg("scan")
         .arg(&temp_file)
         .status()
         .expect("Run key-watch");
 
     assert_eq!(status.code(), Some(2), "Should exit 2 on runtime errors");
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_embedded_detectors_enable_standalone_scan() {
+    // Given a standalone binary with no detector configuration on disk.
+    let test_dir = setup_scan_dir("embedded_detectors", false);
+    let temp_file = test_dir.join("secret.txt");
+    fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+
+    // When the binary scans a file containing a built-in detector match.
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .env("HOME", &test_dir)
+        .env("XDG_CONFIG_HOME", &test_dir)
+        .env("APPDATA", &test_dir)
+        .env("USERPROFILE", &test_dir)
+        .arg("scan")
+        .arg(&temp_file)
+        .output()
+        .expect("Run standalone key-watch");
+
+    // Then embedded detectors identify the secret instead of producing a config error.
+    assert_eq!(output.status.code(), Some(1));
+    assert!(output.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("potential secret(s) detected"));
 
     fs::remove_dir_all(test_dir).expect("Cleanup");
 }
