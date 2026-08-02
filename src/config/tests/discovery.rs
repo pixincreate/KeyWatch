@@ -1,5 +1,5 @@
 use super::{minimal_rule_toml, write_file};
-use crate::config::KeywatchConfig;
+use crate::config::{ConfigError, KeywatchConfig};
 use tempfile::TempDir;
 
 #[test]
@@ -81,11 +81,12 @@ fn test_no_paths_no_config_in_cwd_returns_ok() {
 fn test_explicit_nonexistent_path_returns_error() {
     let result = KeywatchConfig::load_for_paths(Some("/nonexistent/path/config.toml"), &[]);
     assert!(result.is_err());
-    let msg = result.err().unwrap();
-    assert!(
-        msg.contains("not found"),
-        "error should say 'not found': {msg}"
-    );
+    match result.err().unwrap() {
+        ConfigError::NotFound { path } => {
+            assert_eq!(path, "/nonexistent/path/config.toml");
+        }
+        other => panic!("expected NotFound error, got {other:?}"),
+    }
 }
 
 #[test]

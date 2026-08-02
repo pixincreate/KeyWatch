@@ -1,7 +1,10 @@
 use crate::detector::Detector;
+use crate::detector::DetectorError;
 use crate::report::Severity;
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::error::Error as StdError;
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -21,12 +24,70 @@ pub struct KeywatchConfig {
     pub exclude: Option<Vec<String>>,
 }
 
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum ConfigError {
+    CurrentDirectory {
+        source: std::io::Error,
+    },
+    NotFound {
+        path: String,
+    },
+    Read {
+        path: String,
+        source: std::io::Error,
+    },
+    Invalid {
+        source: toml::de::Error,
+    },
+    CustomRule {
+        name: String,
+        source: DetectorError,
+    },
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ConfigError::CurrentDirectory { source } => {
+                write!(
+                    formatter,
+                    "Failed to determine current directory: {}",
+                    source
+                )
+            }
+            ConfigError::NotFound { path } => {
+                write!(formatter, "Config file not found: '{}'", path)
+            }
+            ConfigError::Read { path, source } => {
+                write!(formatter, "Failed to read config '{}': {}", path, source)
+            }
+            ConfigError::Invalid { source } => write!(formatter, "Invalid config: {}", source),
+            ConfigError::CustomRule { name, source } => {
+                write!(formatter, "custom rule '{}': {}", name, source)
+            }
+        }
+    }
+}
+
+impl StdError for ConfigError {
+    fn source(&self) -> Option<&(dyn StdError + 'static)> {
+        match self {
+            ConfigError::CurrentDirectory { source } => Some(source),
+            ConfigError::NotFound { .. } => None,
+            ConfigError::Read { source, .. } => Some(source),
+            ConfigError::Invalid { source } => Some(source),
+            ConfigError::CustomRule { source, .. } => Some(source),
+        }
+    }
+}
+
 impl KeywatchConfig {
     /// Validate then apply this config to a detector set.
     ///
     /// All custom detectors are built in a scratch buffer first; on any error
     /// the passed-in vector is left untouched (fail-closed / transactional).
-    pub fn apply_to(&self, detectors: &mut Vec<Detector>) -> Result<(), String> {
+    pub fn apply_to(&self, detectors: &mut Vec<Detector>) -> Result<(), ConfigError> {
         // Phase 1 — validate: build every new detector before touching `detectors`.
         let mut staged_detectors: Vec<Detector> = Vec::new();
         if let Some(rules) = &self.rules {
@@ -40,7 +101,10 @@ impl KeywatchConfig {
                     &[],
                     None,
                 )
-                .map_err(|err| format!("custom rule '{}': {}", rule.name, err))?;
+                .map_err(|source| ConfigError::CustomRule {
+                    name: rule.name.clone(),
+                    source,
+                })?;
                 staged_detectors.push(detector);
             }
         }
@@ -69,9 +133,9 @@ impl KeywatchConfig {
     /// Load from an explicit path. When `path` is `None`, discovery starts in
     /// the current working directory.
     /// Returns `None` when no config file is found (config is optional).
-    pub fn load(path: Option<&str>) -> Result<Option<Self>, String> {
-        let cwd = std::env::current_dir()
-            .map_err(|err| format!("Failed to determine current directory: {}", err))?;
+    pub fn load(path: Option<&str>) -> Result<Option<Self>, ConfigError> {
+        let cwd =
+            std::env::current_dir().map_err(|source| ConfigError::CurrentDirectory { source })?;
         Self::load_for_paths_at_cwd(path, &[], &cwd)
     }
 
@@ -88,9 +152,9 @@ impl KeywatchConfig {
     pub fn load_for_paths(
         explicit_path: Option<&str>,
         scan_paths: &[String],
-    ) -> Result<Option<Self>, String> {
-        let cwd = std::env::current_dir()
-            .map_err(|err| format!("Failed to determine current directory: {}", err))?;
+    ) -> Result<Option<Self>, ConfigError> {
+        let cwd =
+            std::env::current_dir().map_err(|source| ConfigError::CurrentDirectory { source })?;
         Self::load_for_paths_at_cwd(explicit_path, scan_paths, &cwd)
     }
 
@@ -98,10 +162,12 @@ impl KeywatchConfig {
         explicit_path: Option<&str>,
         scan_paths: &[String],
         cwd: &Path,
-    ) -> Result<Option<Self>, String> {
+    ) -> Result<Option<Self>, ConfigError> {
         let config_path: Option<String> = if let Some(path) = explicit_path {
             if !Path::new(path).exists() {
-                return Err(format!("Config file not found: '{}'", path));
+                return Err(ConfigError::NotFound {
+                    path: path.to_string(),
+                });
             }
             Some(path.to_string())
         } else {
@@ -113,12 +179,14 @@ impl KeywatchConfig {
             None => return Ok(None),
         };
 
-        let contents = fs::read_to_string(&config_path)
-            .map_err(|err| format!("Failed to read config '{}': {}", config_path, err))?;
+        let contents = fs::read_to_string(&config_path).map_err(|source| ConfigError::Read {
+            path: config_path.clone(),
+            source,
+        })?;
 
         toml::from_str(&contents)
             .map(Some)
-            .map_err(|err| format!("Invalid config: {}", err))
+            .map_err(|source| ConfigError::Invalid { source })
     }
 }
 

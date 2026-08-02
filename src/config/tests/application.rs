@@ -1,5 +1,6 @@
 use super::make_detectors;
-use crate::config::{DetectorOverride, KeywatchConfig};
+use crate::config::{ConfigError, DetectorOverride, KeywatchConfig};
+use crate::detector::DetectorError;
 use crate::report::Severity;
 
 #[test]
@@ -76,9 +77,19 @@ severity = "HIGH"
     let original_len = detectors.len();
     let result = config.apply_to(&mut detectors);
 
-    assert!(result.is_err(), "invalid regex must return Err");
-    let msg = result.unwrap_err();
-    assert!(msg.contains("Bad"), "error must name the rule: {msg}");
+    let error = result.expect_err("invalid regex must return Err");
+    match &error {
+        ConfigError::CustomRule { name, source } => {
+            assert_eq!(name, "Bad");
+            assert!(matches!(source, &DetectorError::InvalidPattern { .. }));
+        }
+        other => panic!("expected CustomRule error, got {other:?}"),
+    }
+    let display = error.to_string();
+    assert!(
+        display.starts_with("custom rule 'Bad': "),
+        "display prefix must be stable: {display}"
+    );
     assert_eq!(
         detectors.len(),
         original_len,
@@ -107,7 +118,7 @@ severity = "HIGH"
     let original_len = detectors.len();
     let result = config.apply_to(&mut detectors);
 
-    assert!(result.is_err());
+    assert!(matches!(result, Err(ConfigError::CustomRule { .. })));
     assert_eq!(
         detectors.len(),
         original_len,
