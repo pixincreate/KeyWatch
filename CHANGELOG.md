@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-02
+
 ### Breaking Changes
 
 - Public Rust APIs now return module-local typed errors instead of `String` or boxed errors. This affects CLI validation, baseline, configuration, detector initialization, scanner, hook, and `run_cli()` return types and requires a major-version release.
