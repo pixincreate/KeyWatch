@@ -1,3 +1,7 @@
+mod error;
+
+pub use error::DetectorInitError;
+
 use crate::report::{ParseSeverityError, Severity};
 use regex::Regex;
 use serde::Deserialize;
@@ -47,7 +51,16 @@ impl fmt::Display for DetectorError {
     }
 }
 
-impl std::error::Error for DetectorError {}
+impl std::error::Error for DetectorError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::InvalidPattern { source, .. } | Self::InvalidAllowlistPattern { source, .. } => {
+                Some(source)
+            }
+            Self::InvalidSeverity { source, .. } => Some(source),
+        }
+    }
+}
 
 pub struct Detector {
     pub name: String,
@@ -180,33 +193,38 @@ fn find_detectors_config(include_repository_config: bool) -> Option<std::path::P
         })
 }
 
-pub fn initialize_detectors() -> Result<Vec<Detector>, Box<dyn std::error::Error>> {
+pub fn initialize_detectors() -> Result<Vec<Detector>, DetectorInitError> {
     initialize_detectors_from_config(true)
 }
 
-pub(crate) fn initialize_trusted_detectors() -> Result<Vec<Detector>, Box<dyn std::error::Error>> {
+pub(crate) fn initialize_trusted_detectors() -> Result<Vec<Detector>, DetectorInitError> {
     initialize_detectors_from_config(false)
 }
 
 fn initialize_detectors_from_config(
     include_repository_config: bool,
-) -> Result<Vec<Detector>, Box<dyn std::error::Error>> {
+) -> Result<Vec<Detector>, DetectorInitError> {
     let config_path = find_detectors_config(include_repository_config)
-        .ok_or("Failed to locate detectors.toml")?;
-    let toml_contents = fs::read_to_string(&config_path)
-        .map_err(|err| format!("Failed to read {}: {}", config_path.display(), err))?;
+        .ok_or(DetectorInitError::ConfigNotFound)?;
+    let toml_contents =
+        fs::read_to_string(&config_path).map_err(|source| DetectorInitError::ReadConfig {
+            path: config_path.clone(),
+            source,
+        })?;
 
     let config: DetectorsConfig = toml::from_str(&toml_contents)
-        .map_err(|err| format!("Failed to parse detectors.toml: {}", err))?;
+        .map_err(|source| DetectorInitError::ParseConfig { source })?;
 
     let mut seen_names = std::collections::HashSet::new();
     for detector_config in &config.detectors {
         if !seen_names.insert(detector_config.name.as_str()) {
-            return Err(format!("duplicate detector name '{}'", detector_config.name).into());
+            return Err(DetectorInitError::DuplicateName {
+                detector: detector_config.name.clone(),
+            });
         }
     }
 
-    Ok(config
+    config
         .detectors
         .into_iter()
         .map(|detector_config| {
@@ -222,5 +240,6 @@ fn initialize_detectors_from_config(
                 detector_config.entropy,
             )
         })
-        .collect::<Result<Vec<_>, _>>()?)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| DetectorInitError::InvalidDetector { source })
 }
