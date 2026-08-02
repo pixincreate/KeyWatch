@@ -1,5 +1,6 @@
 # AI
 /.sisyphus
+/.omo
 
 # Rust builds
 /target

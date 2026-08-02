@@ -11,6 +11,7 @@ pub struct CliOptions {
 impl CliOptions {
     pub fn validate(&self) -> Result<(), String> {
         match &self.command {
+            Command::Scan(args) => args.validate(),
             Command::Hook(args) => args.validate(),
             _ => Ok(()),
         }
@@ -38,8 +39,15 @@ pub enum Command {
 #[derive(Args, Debug)]
 pub struct ScanArgs {
     /// Paths to scan (files or directories)
-    #[arg(required = true)]
     pub paths: Vec<String>,
+
+    /// Read input from stdin instead of files
+    #[arg(long, default_value_t = false)]
+    pub stdin: bool,
+
+    /// Scan git history instead of files
+    #[arg(long, default_value_t = false)]
+    pub git_history: bool,
 
     /// Output the result to a file
     #[arg(short, long)]
@@ -56,6 +64,35 @@ pub struct ScanArgs {
     /// Exit code behavior
     #[arg(long, value_enum, default_value_t = ExitMode::Strict)]
     pub exit_mode: ExitMode,
+
+    /// Path to a baseline file for suppressing known findings
+    #[arg(long)]
+    pub baseline: Option<String>,
+
+    /// Update the baseline file with current findings instead of scanning
+    #[arg(long)]
+    pub update_baseline: bool,
+}
+
+impl ScanArgs {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.git_history {
+            if self.stdin {
+                return Err("Cannot specify both --git-history and --stdin".to_string());
+            }
+            if self.paths.len() > 1 {
+                return Err("Cannot specify more than one path with --git-history".to_string());
+            }
+            return Ok(());
+        }
+        if self.stdin && !self.paths.is_empty() {
+            return Err("Cannot specify both --stdin and paths".to_string());
+        }
+        if !self.stdin && self.paths.is_empty() {
+            return Err("Must specify paths, use --stdin, or use --git-history".to_string());
+        }
+        Ok(())
+    }
 }
 
 #[derive(Args, Debug)]

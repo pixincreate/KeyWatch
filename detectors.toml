@@ -3,6 +3,7 @@ name = "AWSKeyDetector"
 pattern = "\\bAKIA[0-9A-Z]{16}\\b"
 finding_type = "AWS Access Key"
 severity = "HIGH"
+keywords = ["AKIA"]
 
 [[detectors]]
 name = "GoogleAPIKeyDetector"
@@ -10,30 +11,35 @@ pattern = "\\bAIza[0-9A-Za-z\\-_]{35}\\b"
 finding_type = "Google API Key"
 severity = "HIGH"
 description = "Covers Google, Firebase, and YouTube API keys (same pattern)"
+keywords = ["AIza"]
 
 [[detectors]]
 name = "SlackTokenDetector"
 pattern = "\\bxox[pboa]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32}\\b"
 finding_type = "Slack Token"
 severity = "HIGH"
+keywords = ["xoxb-", "xoxp-", "xoxo-", "xoxr-"]
 
 [[detectors]]
 name = "GitHubTokenDetector"
 pattern = "\\b(?i)(github|ghp|gho|ghu|ghs)_[0-9a-zA-Z]{36,255}\\b"
 finding_type = "GitHub Token"
 severity = "HIGH"
+keywords = ["ghp_", "gho_", "ghu_", "ghs_"]
 
 [[detectors]]
 name = "JWTokenDetector"
 pattern = "\\beyJ[A-Za-z0-9-_=]+\\.eyJ[A-Za-z0-9-_=]+\\.?[A-Za-z0-9-_.+/=]*\\b"
 finding_type = "JWT Token"
 severity = "MEDIUM"
+keywords = ["eyJ"]
 
 [[detectors]]
 name = "SSHPrivateKeyDetector"
 pattern = "-----BEGIN (RSA|DSA|EC|OPENSSH) PRIVATE KEY-----"
 finding_type = "SSH Private Key"
 severity = "HIGH"
+keywords = ["BEGIN RSA PRIVATE KEY", "BEGIN DSA PRIVATE KEY", "BEGIN EC PRIVATE KEY", "BEGIN OPENSSH PRIVATE KEY"]
 
 [[detectors]]
 name = "PrivateKeyDetector"
@@ -46,6 +52,7 @@ name = "PasswordDetector"
 pattern = "(?i)(password|passwd|pwd)\\s*[:=]\\s*(?-i)[\"']?([^\"'\\n]+)[\"']?"
 finding_type = "Password"
 severity = "HIGH"
+keywords = ["password", "passwd", "pwd"]
 
 [[detectors]]
 name = "EmailDetector"
@@ -82,54 +89,64 @@ name = "GenericKeyValueDetector"
 pattern = "(?i)(api_?key|secret|password|token|access_?key|security_?key|_key|credential|auth)\\s*[:=]\\s*(?-i)[\"']?([a-zA-Z0-9\\-_=]{10,})[\"']?"
 finding_type = "Generic Key/Secret"
 severity = "HIGH"
+keywords = ["api_key", "secret", "password", "token", "access_key", "credential"]
+entropy = 2.5
 
 [[detectors]]
 name = "CertificateDetector"
 pattern = "-----BEGIN CERTIFICATE-----"
 finding_type = "Certificate"
 severity = "MEDIUM"
+keywords = ["BEGIN CERTIFICATE"]
 
 [[detectors]]
 name = "DatabaseURLDetector"
 pattern = "(?i)(mysql|postgres|mongodb|redis)://[^'\"\\s]+@[^'\"\\s]+"
 finding_type = "Database URL"
 severity = "MEDIUM"
+keywords = ["mysql://", "postgres://", "mongodb://", "redis://"]
 
 [[detectors]]
 name = "Base64Detector"
 pattern = "\\b[A-Za-z0-9+/]{20,}[=]{0,2}\\b"
 finding_type = "Base64 Encoded String"
 severity = "LOW"
+entropy = 3.0
 
 [[detectors]]
 name = "HighEntropyDetector"
 pattern = "\\b[a-f0-9]{48,}\\b|\\b[A-Fa-f0-9]{48,}\\b"
 finding_type = "High Entropy String"
 severity = "MEDIUM"
+entropy = 4.0
 
 [[detectors]]
 name = "StripeAPIKeyDetector"
 pattern = "\\b(?:sk|pk)_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
 finding_type = "Stripe API Key"
 severity = "HIGH"
+keywords = ["sk_test_", "sk_live_", "pk_test_", "pk_live_"]
 
 [[detectors]]
 name = "AdyenAPIKeyDetector"
 pattern = "\\b(?:ws|sk|pk)_[0-9a-zA-Z]{10,}@[a-zA-Z]+\\.[a-zA-Z]+\\b"
 finding_type = "Adyen API Key"
 severity = "HIGH"
+keywords = ["ws_", "sk_", "pk_"]
 
 [[detectors]]
 name = "PaymentGatewayKeyDetector"
 pattern = "\\b(?:api_?key|secret)_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
 finding_type = "Generic Payment Gateway Key"
 severity = "HIGH"
+keywords = ["api_key_test", "api_key_live", "secret_test", "secret_live"]
 
 [[detectors]]
 name = "RandomString"
 pattern = "\"[a-zA-Z0-9\\-_=]{35,}\""
 finding_type = "Random String"
 severity = "LOW"
+entropy = 3.5
 
 
 [[detectors]]
@@ -137,102 +154,127 @@ name = "TwilioAPIKeyDetector"
 pattern = "SK[0-9a-fA-F]{32}"
 finding_type = "Twilio API Key"
 severity = "HIGH"
+keywords = ["SK"]
 
 [[detectors]]
 name = "SendGridAPIKeyDetector"
 pattern = "SG\\.[A-Za-z0-9]{22}\\.[A-Za-z0-9]{42,43}"
 finding_type = "SendGrid API Key"
 severity = "HIGH"
+keywords = ["SG."]
 
 [[detectors]]
 name = "MailgunAPIKeyDetector"
 pattern = "key-[0-9a-zA-Z]{32}"
 finding_type = "Mailgun API Key"
 severity = "HIGH"
+keywords = ["key-"]
 
 [[detectors]]
 name = "DigitalOceanTokenDetector"
 pattern = "dop_v1_[a-f0-9]{64}"
 finding_type = "DigitalOcean API Token"
 severity = "HIGH"
+keywords = ["dop_v1_"]
 
 [[detectors]]
 name = "HerokuAPIKeyDetector"
 pattern = "\\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\b"
 finding_type = "Heroku API Key"
 severity = "HIGH"
+keywords = ["heroku"]
 
 [[detectors]]
 name = "NPMTokenDetector"
 pattern = "npm_[0-9a-zA-Z]{36}"
 finding_type = "NPM Token"
 severity = "HIGH"
+keywords = ["npm_"]
 
 [[detectors]]
 name = "DiscordTokenDetector"
 pattern = "(mfa\\.[0-9a-zA-Z_-]{84}|[\\w-]{24}\\.[\\w-]{6}\\.[\\w-]{27})"
 finding_type = "Discord Token"
 severity = "HIGH"
+keywords = ["mfa."]
 
 [[detectors]]
 name = "OpenAIAPIKeyDetector"
-pattern = "sk-[0-9a-zA-Z]{48}"
+pattern = "\\bsk-[a-zA-Z0-9]{48,}\\b"
 finding_type = "OpenAI API Key"
 severity = "HIGH"
+description = "OpenAI API keys (sk- prefix + 48+ alphanumeric chars). Covers both standard and project-scoped keys."
+keywords = ["sk-"]
+
+[[detectors]]
+name = "OpenCodeAPIKeyDetector"
+pattern = "(?i)(?:opencode|OPENCODE_API_KEY)[\\s'\":=]+[\"']?(sk-[a-zA-Z0-9]{20,})[\"']?"
+finding_type = "OpenCode API Key"
+severity = "HIGH"
+description = "OpenCode AI API keys (sk- prefix). Detected via context (opencode/OPENCODE_API_KEY). Shares sk- prefix with OpenAI and Kimi."
 
 [[detectors]]
 name = "AzureStorageAccountKeyDetector"
 pattern = "DefaultEndpointsProtocol=https;AccountName=[^;]+;AccountKey=[^;]+"
 finding_type = "Azure Storage Account Key"
 severity = "HIGH"
+keywords = ["AccountKey", "DefaultEndpointsProtocol"]
 
 [[detectors]]
 name = "MongoDBConnectionStringDetector"
 pattern = "mongodb(?:\\+srv)?://[^:]+:[^@]+@[^/]+"
 finding_type = "MongoDB Connection String"
 severity = "HIGH"
+keywords = ["mongodb://", "mongodb+srv://"]
 
 [[detectors]]
 name = "CloudinaryURLDetector"
 pattern = "cloudinary://[0-9]+:[0-9A-Za-z\\-_]+@[0-9A-Za-z\\-_]+"
 finding_type = "Cloudinary URL"
 severity = "HIGH"
+keywords = ["cloudinary://"]
 
 [[detectors]]
 name = "PrivateKeyContentDetector"
-pattern = "-----BEGIN RSA PRIVATE KEY-----[\\s\\S]*?-----END RSA PRIVATE KEY-----"
+pattern = "(?s)-----BEGIN RSA PRIVATE KEY-----.*?-----END RSA PRIVATE KEY-----"
 finding_type = "Private Key Content"
 severity = "HIGH"
+keywords = ["BEGIN RSA PRIVATE KEY"]
 
 [[detectors]]
 name = "DockerHubTokenDetector"
 pattern = "dckr_pat_[0-9a-zA-Z_-]{52,56}"
 finding_type = "DockerHub Token"
 severity = "HIGH"
+keywords = ["dckr_pat_"]
 
 [[detectors]]
 name = "CircleCITokenDetector"
 pattern = "CIRCLE_[0-9a-zA-Z_-]{40}"
 finding_type = "CircleCI Token"
 severity = "HIGH"
+keywords = ["CIRCLE_"]
 
 [[detectors]]
 name = "SquareAccessTokenDetector"
 pattern = "sq0atp-[0-9A-Za-z\\-_]{22}"
 finding_type = "Square Access Token"
 severity = "HIGH"
+keywords = ["sq0atp-"]
 
 [[detectors]]
 name = "SquareOAuthSecretDetector"
 pattern = "sq0csp-[0-9A-Za-z\\-_]{43}"
 finding_type = "Square OAuth Secret"
 severity = "HIGH"
+keywords = ["sq0csp-"]
 
 [[detectors]]
 name = "GoogleOAuthTokenDetector"
 pattern = "ya29\\.[0-9A-Za-z\\-_]+"
 finding_type = "Google OAuth Token"
 severity = "HIGH"
+keywords = ["ya29."]
 
 [[detectors]]
 name = "AadhaarCardDetector"
@@ -257,3 +299,529 @@ name = "ABHADetector"
 pattern = "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{2}\\b"
 finding_type = "ABHA Health ID"
 severity = "HIGH"
+
+
+[[detectors]]
+name = "AnthropicAPIKeyDetector"
+pattern = "\\bsk-ant-(?:admin01|api03)-[a-zA-Z0-9_\\-]{93}AA\\b"
+finding_type = "Anthropic API Key"
+severity = "HIGH"
+keywords = ["sk-ant-"]
+
+[[detectors]]
+name = "HuggingFaceTokenDetector"
+pattern = "\\b(?:hf_|api_org_)[a-zA-Z0-9]{34}\\b"
+finding_type = "Hugging Face Token"
+severity = "HIGH"
+keywords = ["hf_", "api_org_"]
+
+[[detectors]]
+name = "GroqAPIKeyDetector"
+pattern = "\\bgsk_[a-zA-Z0-9]{52}\\b"
+finding_type = "Groq API Key"
+severity = "HIGH"
+keywords = ["gsk_"]
+
+[[detectors]]
+name = "ReplicateAPITokenDetector"
+pattern = "\\br8_[0-9A-Za-z\\-_]{37}\\b"
+finding_type = "Replicate API Token"
+severity = "HIGH"
+keywords = ["r8_"]
+
+[[detectors]]
+name = "LangSmithAPIKeyDetector"
+pattern = "\\blsv2_(?:pt|sk)_[a-f0-9]{32}_[a-f0-9]{10}\\b"
+finding_type = "LangSmith API Key"
+severity = "HIGH"
+keywords = ["lsv2_pt_", "lsv2_sk_"]
+
+[[detectors]]
+name = "KimiMoonshotAPIKeyDetector"
+pattern = "\\bsk-[a-zA-Z0-9]{30,}\\b"
+finding_type = "Kimi/Moonshot API Key"
+severity = "MEDIUM"
+keywords = ["sk-"]
+
+[[detectors]]
+name = "VercelTokenDetector"
+pattern = "\\b(?:vcp|vci|vca|vcr|vck)_[a-zA-Z0-9]{24}\\b"
+finding_type = "Vercel Token"
+severity = "HIGH"
+keywords = ["vcp_", "vci_", "vca_", "vcr_", "vck_"]
+
+[[detectors]]
+name = "NetlifyTokenDetector"
+pattern = "\\bnf[a-z]_[a-zA-Z0-9_]{36}\\b"
+finding_type = "Netlify Token"
+severity = "HIGH"
+keywords = ["nf_"]
+
+[[detectors]]
+name = "SupabaseTokenDetector"
+pattern = "\\bsbp_[a-z0-9]{40}\\b"
+finding_type = "Supabase API Token"
+severity = "HIGH"
+keywords = ["sbp_"]
+
+[[detectors]]
+name = "ConvexDeployKeyDetector"
+pattern = "(?:prod|dev|preview):[a-z0-9-]+\\|[a-zA-Z0-9_-]+\\.eyJ[a-zA-Z0-9_-]*\\.[a-zA-Z0-9_-]+"
+finding_type = "Convex Deploy Key"
+severity = "HIGH"
+keywords = ["convex"]
+
+[[detectors]]
+name = "DatadogAppKeyDetector"
+pattern = "\\bddapp_[a-zA-Z0-9]{34}\\b"
+finding_type = "Datadog Application Key"
+severity = "HIGH"
+keywords = ["ddapp_"]
+
+[[detectors]]
+name = "NewRelicAPIKeyDetector"
+pattern = "\\bNRAK-[a-z0-9]{27}\\b"
+finding_type = "New Relic API Key"
+severity = "HIGH"
+keywords = ["NRAK-"]
+
+[[detectors]]
+name = "NewRelicBrowserKeyDetector"
+pattern = "\\bNRJS-[a-f0-9]{19}\\b"
+finding_type = "New Relic Browser Key"
+severity = "HIGH"
+keywords = ["NRJS-"]
+
+[[detectors]]
+name = "NewRelicInsertKeyDetector"
+pattern = "\\bNRII-[a-z0-9\\-]{32}\\b"
+finding_type = "New Relic Insert Key"
+severity = "HIGH"
+keywords = ["NRII-"]
+
+[[detectors]]
+name = "PagerDutyTokenDetector"
+pattern = "\\bu\\+[a-zA-Z0-9_+\\-]{18}\\b"
+finding_type = "PagerDuty Token"
+severity = "HIGH"
+keywords = ["u+"]
+
+[[detectors]]
+name = "SentryAuthTokenDetector"
+pattern = "\\bsntryu_[a-f0-9]{64}\\b"
+finding_type = "Sentry Auth Token"
+severity = "HIGH"
+keywords = ["sntryu_"]
+
+[[detectors]]
+name = "SentryOrgTokenDetector"
+pattern = "\\bsntrys_eyJ[a-zA-Z0-9+/]{10,200}(?:LCJyZWdpb25fdXJs|InJlZ2lvbl91cmwi|cmVnaW9uX3VybCI6)[a-zA-Z0-9+/]{10,200}={0,2}_[a-zA-Z0-9+/]{43}\\b"
+finding_type = "Sentry Org Token"
+severity = "HIGH"
+keywords = ["sntrys_"]
+
+[[detectors]]
+name = "ElasticCloudAPIKeyDetector"
+pattern = "\\bessu_[A-Za-z0-9+/]{4,}\\b"
+finding_type = "Elastic Cloud API Key"
+severity = "HIGH"
+keywords = ["essu_"]
+
+[[detectors]]
+name = "ConfluentAPIKeyDetector"
+pattern = "\\bcflt[A-Za-z0-9+/]{60}\\b"
+finding_type = "Confluent/Kafka API Key"
+severity = "HIGH"
+keywords = ["cflt"]
+
+[[detectors]]
+name = "AirtablePATDetector"
+pattern = "\\bpat[a-zA-Z0-9]{14}\\.[a-f0-9]{64}\\b"
+finding_type = "Airtable Personal Access Token"
+severity = "HIGH"
+keywords = ["pat"]
+
+[[detectors]]
+name = "HashicorpVaultTokenDetector"
+pattern = "\\bhvs\\.[a-zA-Z0-9]{24,}\\b"
+finding_type = "HashiCorp Vault Token"
+severity = "HIGH"
+keywords = ["hvs."]
+
+[[detectors]]
+name = "TerraformCloudTokenDetector"
+pattern = "\\b[a-zA-Z0-9]{14}\\.[a-zA-Z0-9]{6}\\.([a-zA-Z0-9]{38}|[a-zA-Z0-9]{46})\\b"
+finding_type = "Terraform Cloud Token"
+severity = "HIGH"
+keywords = ["terraform"]
+
+[[detectors]]
+name = "AtlassianTokenDetector"
+pattern = "\\bATATT[a-zA-Z0-9]{50,}\\b"
+finding_type = "Atlassian API Token"
+severity = "HIGH"
+keywords = ["ATATT"]
+
+[[detectors]]
+name = "AsanaPATDetector"
+pattern = "\\b1/[0-9]+:[a-f0-9]{32}\\b"
+finding_type = "Asana Personal Access Token"
+severity = "HIGH"
+keywords = ["1/"]
+
+[[detectors]]
+name = "LobAPIKeyDetector"
+pattern = "(?i)lob[_\\-]?api[_\\-]?key[\\s'\":=]+[\"']?(test_[a-f0-9]{35}|live_[a-f0-9]{35})[\"']?"
+finding_type = "Lob API Key"
+severity = "HIGH"
+keywords = ["lob_api_key", "test_", "live_"]
+
+[[detectors]]
+name = "PlaidSecretKeyDetector"
+pattern = "(?i)plaid[_\\-]?(?:secret|key)[\\s'\":=]+[\"']?(?:sk_live|sk_test|secret)_[a-f0-9]{30,40}[\"']?"
+finding_type = "Plaid Secret Key"
+severity = "HIGH"
+keywords = ["plaid", "sk_live", "sk_test"]
+
+[[detectors]]
+name = "OktaAPITokenDetector"
+pattern = "\\b00[a-zA-Z0-9_-]{40}\\b"
+finding_type = "Okta API Token"
+severity = "MEDIUM"
+keywords = ["00"]
+
+[[detectors]]
+name = "TwilioAccountSIDDetector"
+pattern = "\\bAC[a-f0-9]{32}\\b"
+finding_type = "Twilio Account SID"
+severity = "MEDIUM"
+keywords = ["AC"]
+
+[[detectors]]
+name = "StripeWebhookSecretDetector"
+pattern = "\\bwhsec_[a-zA-Z0-9]{32,}\\b"
+finding_type = "Stripe Webhook Secret"
+severity = "HIGH"
+keywords = ["whsec_"]
+
+[[detectors]]
+name = "RazorpayKeyDetector"
+pattern = "\\brzp_[a-zA-Z0-9]{14,}\\b"
+finding_type = "Razorpay Key"
+severity = "HIGH"
+keywords = ["rzp_"]
+
+[[detectors]]
+name = "PaystackKeyDetector"
+pattern = "\\bsk_live_[a-f0-9]{40}\\b|\\bsk_test_[a-f0-9]{40}\\b"
+finding_type = "Paystack Key"
+severity = "HIGH"
+keywords = ["sk_live_", "sk_test_"]
+
+[[detectors]]
+name = "ShopifyAccessTokenDetector"
+pattern = "\\bshpat_[a-fA-F0-9]{32}\\b"
+finding_type = "Shopify Access Token"
+severity = "HIGH"
+keywords = ["shpat_"]
+
+[[detectors]]
+name = "ShopifyAPIKeyDetector"
+pattern = "\\b[0-9a-f]{32}\\b"
+finding_type = "Shopify API Key"
+severity = "LOW"
+keywords = ["shopify"]
+
+[[detectors]]
+name = "WooCommerceAPIKeyDetector"
+pattern = "(?i)woocommerce[_\\-]?(?:api[_\\-]?key|consumer[_\\-]?key)[\\s'\":=]+[\"']?(ck_[a-f0-9]{40})[\"']?"
+finding_type = "WooCommerce API Key"
+severity = "HIGH"
+keywords = ["woocommerce", "ck_"]
+
+[[detectors]]
+name = "HubSpotAPIKeyDetector"
+pattern = "\\bpat-na1-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\b"
+finding_type = "HubSpot API Key"
+severity = "HIGH"
+keywords = ["pat-na1-"]
+
+[[detectors]]
+name = "IntercomAccessTokenDetector"
+pattern = "(?i)intercom[_\\-]?access[_\\-]?token[\\s'\":=]+[\"']?(d\\d{8}-[a-f0-9]{24})[\"']?"
+finding_type = "Intercom Access Token"
+severity = "HIGH"
+keywords = ["intercom"]
+
+[[detectors]]
+name = "GitLabPersonalAccessTokenDetector"
+pattern = "\\bglpat-[a-zA-Z0-9\\-_]{20,}\\b"
+finding_type = "GitLab Personal Access Token"
+severity = "HIGH"
+keywords = ["glpat-"]
+
+[[detectors]]
+name = "GitLabPipelineTokenDetector"
+pattern = "\\bglptt-[a-zA-Z0-9\\-_]{20,}\\b"
+finding_type = "GitLab Pipeline Token"
+severity = "HIGH"
+keywords = ["glptt-"]
+
+[[detectors]]
+name = "GitLabRunnerTokenDetector"
+pattern = "\\bglrt-[a-zA-Z0-9\\-_]{20,}\\b"
+finding_type = "GitLab Runner Token"
+severity = "HIGH"
+keywords = ["glrt-"]
+
+[[detectors]]
+name = "AzureDevOpsPATDetector"
+pattern = "\\b[a-z2-7]{52}\\b"
+finding_type = "Azure DevOps PAT"
+severity = "LOW"
+keywords = ["azure"]
+
+[[detectors]]
+name = "BuildkiteAPITokenDetector"
+pattern = "\\bbkua_[a-f0-9]{40}\\b"
+finding_type = "Buildkite API Token"
+severity = "HIGH"
+keywords = ["bkua_"]
+
+[[detectors]]
+name = "CodecovTokenDetector"
+pattern = "\\b[0-9a-f]{32}\\b"
+finding_type = "Codecov Token"
+severity = "LOW"
+entropy = 3.0
+
+[[detectors]]
+name = "NetlifyBuildHookDetector"
+pattern = "\\bhttps://api\\.netlify\\.com/build_hooks/[a-f0-9]{24}\\b"
+finding_type = "Netlify Build Hook"
+severity = "HIGH"
+keywords = ["netlify.com/build_hooks"]
+
+[[detectors]]
+name = "CloudflareAPITokenDetector"
+pattern = "\\b[a-zA-Z0-9_-]{40}\\b"
+finding_type = "Cloudflare API Token"
+severity = "LOW"
+keywords = ["cloudflare"]
+
+[[detectors]]
+name = "NgrokAPITokenDetector"
+pattern = "\\bngrok_[a-zA-Z0-9]{20,}\\b"
+finding_type = "Ngrok API Token"
+severity = "HIGH"
+keywords = ["ngrok_"]
+
+[[detectors]]
+name = "TailscaleAPIKeyDetector"
+pattern = "\\btskey-api-[a-zA-Z0-9]{20,}\\b"
+finding_type = "Tailscale API Key"
+severity = "HIGH"
+keywords = ["tskey-api-"]
+
+[[detectors]]
+name = "FlyIOTokenDetector"
+pattern = "\\bfo1_[a-zA-Z0-9]{30,}\\b"
+finding_type = "Fly.io Token"
+severity = "HIGH"
+keywords = ["fo1_"]
+
+[[detectors]]
+name = "RailwayTokenDetector"
+pattern = "\\brailway_[a-f0-9]{24,}\\b"
+finding_type = "Railway Token"
+severity = "HIGH"
+keywords = ["railway_"]
+
+[[detectors]]
+name = "RenderAPIKeyDetector"
+pattern = "\\brnd_[a-zA-Z0-9]{32,}\\b"
+finding_type = "Render API Key"
+severity = "HIGH"
+keywords = ["rnd_"]
+
+[[detectors]]
+name = "PlanetScaleTokenDetector"
+pattern = "(?i)planetscale[_\\-]?token[\\s'\":=]+[\"']?(pscale_tkn_[a-zA-Z0-9]{32,})[\"']?"
+finding_type = "PlanetScale Token"
+severity = "HIGH"
+keywords = ["planetscale", "pscale_tkn_"]
+
+[[detectors]]
+name = "SupabaseServiceRoleKeyDetector"
+pattern = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IiIsInJvbGUiOiJzZXJ2aWNlX3JvbGUiLCJpYXQiOjE2OTk5OTk5OTksImV4cCI6MjAxNTU3NTk5OX0\\.[a-zA-Z0-9_-]+"
+finding_type = "Supabase Service Role Key"
+severity = "HIGH"
+keywords = ["supabase", "service_role"]
+
+[[detectors]]
+name = "MailchimpAPIKeyDetector"
+pattern = "(?i)mailchimp[_\\-]?api[_\\-]?key[\\s'\":=]+[\"']?([a-f0-9]{32}-us[0-9]{1,2})[\"']?"
+finding_type = "Mailchimp API Key"
+severity = "HIGH"
+keywords = ["mailchimp"]
+
+[[detectors]]
+name = "MandrillAPIKeyDetector"
+pattern = "(?i)mandrill[_\\-]?api[_\\-]?key[\\s'\":=]+[\"']?([a-zA-Z0-9]{22}-us[0-9]{1,2})[\"']?"
+finding_type = "Mandrill API Key"
+severity = "HIGH"
+keywords = ["mandrill"]
+
+[[detectors]]
+name = "SegmentAPIKeyDetector"
+pattern = "(?i)segment[_\\-]?api[_\\-]?key[\\s'\":=]+[\"']?(?:wk_[a-f0-9]{32,}|[a-f0-9]{32,})[\"']?"
+finding_type = "Segment API Key"
+severity = "HIGH"
+keywords = ["segment"]
+
+[[detectors]]
+name = "FacebookAppSecretDetector"
+pattern = "(?i)facebook[_\\-]?app[_\\-]?secret[\\s'\":=]+[\"']?([a-f0-9]{32})[\"']?"
+finding_type = "Facebook App Secret"
+severity = "HIGH"
+keywords = ["facebook"]
+
+[[detectors]]
+name = "GoogleClientSecretDetector"
+pattern = "(?i)google[_\\-]?client[_\\-]?secret[\\s'\":=]+[\"']?(GOCSPX-[a-zA-Z0-9_-]{28})[\"']?"
+finding_type = "Google Client Secret"
+severity = "HIGH"
+keywords = ["GOCSPX-"]
+
+[[detectors]]
+name = "GCPServiceAccountKeyDetector"
+pattern = "\"type\"\\s*:\\s*\"service_account\""
+finding_type = "GCP Service Account Key"
+severity = "HIGH"
+keywords = ["service_account"]
+
+[[detectors]]
+name = "AzureStorageKeyDetector"
+pattern = "AccountKey=[A-Za-z0-9+/]{88}=="
+finding_type = "Azure Storage Key"
+severity = "HIGH"
+keywords = ["AccountKey"]
+
+[[detectors]]
+name = "WebhookSecretDetector"
+pattern = "(?i)whsec_[a-zA-Z0-9]{32,}"
+finding_type = "Webhook Signing Secret"
+severity = "HIGH"
+keywords = ["whsec_"]
+
+[[detectors]]
+name = "InternalAuthTokenDetector"
+pattern = "(?i)(?:internal|private)[_-]?(?:auth|api)[_-]?token[\\s'\":=]+[\"']?([a-zA-Z0-9\\-_]{20,})[\"']?"
+finding_type = "Internal Auth Token"
+severity = "HIGH"
+keywords = ["internal", "private"]
+
+[[detectors]]
+name = "ServiceAccountKeyDetector"
+pattern = "(?i)service[_\\-]?account[_\\-]?key[\\s'\":=]+[\"']?([a-zA-Z0-9\\-_]{20,})[\"']?"
+finding_type = "Service Account Key"
+severity = "HIGH"
+keywords = ["service_account"]
+
+[[detectors]]
+name = "MasterAPIKeyDetector"
+pattern = "(?i)master[_\\-]?api[_\\-]?key[\\s'\":=]+[\"']?([a-zA-Z0-9\\-_]{20,})[\"']?"
+finding_type = "Master API Key"
+severity = "CRITICAL"
+keywords = ["master"]
+
+[[detectors]]
+name = "RazorpayAPIKeyDetector"
+pattern = "\\b(rzp_(live|test)_[a-zA-Z0-9]{20,})\\b"
+finding_type = "Razorpay API Key"
+severity = "HIGH"
+keywords = ["rzp_live_", "rzp_test_"]
+
+[[detectors]]
+name = "PaystackSecretKeyDetector"
+pattern = "\\b(sk_(live|test)_[a-zA-Z0-9]{30,})\\b"
+finding_type = "Paystack Secret Key"
+severity = "HIGH"
+keywords = ["sk_live_", "sk_test_"]
+
+[[detectors]]
+name = "CREDAPITokenDetector"
+pattern = "(?i)cred[_\\-]?api[_\\-]?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{32,})[\"']?"
+finding_type = "CRED API Token"
+severity = "MEDIUM"
+keywords = ["cred_api", "cred-api"]
+
+[[detectors]]
+name = "PhonePeAPITokenDetector"
+pattern = "(?i)phonepe[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "PhonePe API Token"
+severity = "MEDIUM"
+keywords = ["phonepe_api", "phonepe-api", "phonepe_key", "phonepe-key"]
+
+[[detectors]]
+name = "PaytmAPITokenDetector"
+pattern = "(?i)paytm[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "Paytm API Token"
+severity = "MEDIUM"
+keywords = ["paytm_api", "paytm-api", "paytm_key", "paytm-key"]
+
+[[detectors]]
+name = "ZerodhaAPITokenDetector"
+pattern = "(?i)zerodha[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{16,})[\"']?"
+finding_type = "Zerodha API Token"
+severity = "MEDIUM"
+keywords = ["zerodha_api", "zerodha-api", "zerodha_key", "zerodha-key"]
+
+[[detectors]]
+name = "UpstoxAPITokenDetector"
+pattern = "(?i)upstox[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "Upstox API Token"
+severity = "MEDIUM"
+keywords = ["upstox_api", "upstox-api", "upstox_key", "upstox-key"]
+
+[[detectors]]
+name = "GrowwAPITokenDetector"
+pattern = "(?i)groww[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "Groww API Token"
+severity = "MEDIUM"
+keywords = ["groww_api", "groww-api", "groww_key", "groww-key"]
+
+[[detectors]]
+name = "AngelBrokingAPITokenDetector"
+pattern = "(?i)angel[_\\-]?broking[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "Angel Broking API Token"
+severity = "MEDIUM"
+keywords = ["angel_broking_api", "angel-broking-api", "angel_broking_key", "angel-broking-key"]
+
+[[detectors]]
+name = "ZebPayAPITokenDetector"
+pattern = "(?i)zebpay[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "ZebPay API Token"
+severity = "MEDIUM"
+keywords = ["zebpay_api", "zebpay-api", "zebpay_key", "zebpay-key"]
+
+[[detectors]]
+name = "CoinDCXAPITokenDetector"
+pattern = "(?i)coindcx[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "CoinDCX API Token"
+severity = "MEDIUM"
+keywords = ["coindcx_api", "coindcx-api", "coindcx_key", "coindcx-key"]
+
+[[detectors]]
+name = "WazirXAPITokenDetector"
+pattern = "(?i)wazirx[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "WazirX API Token"
+severity = "MEDIUM"
+keywords = ["wazirx_api", "wazirx-api", "wazirx_key", "wazirx-key"]
+
+[[detectors]]
+name = "UnocoinAPITokenDetector"
+pattern = "(?i)unocoin[_\\-]?(api[_\\-]?)?(key|token)[\\s'\":=]+[\"']?([a-zA-Z0-9]{20,})[\"']?"
+finding_type = "Unocoin API Token"
+severity = "MEDIUM"
+keywords = ["unocoin_api", "unocoin-api", "unocoin_key", "unocoin-key"]

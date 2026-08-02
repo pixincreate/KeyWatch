@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **CRITICAL severity support** — findings can now be scored as Critical, High, Medium, or Low
+- **Baseline suppression** — `scan --baseline <path>` suppresses known findings from previous scans; `--update-baseline` writes current findings to the baseline file
+- **Inline suppression** — add `# keywatch:ignore` or `// keywatch:ignore` on a line to suppress findings
+- **Per-detector allowlist** — each detector in `detectors.toml` can define `allowlist` regex patterns to suppress false positives
+- **Keyword prefilter** — each detector can define `keywords` for fast prefiltering before regex runs
+- **Entropy threshold filtering** — each detector can define `entropy` threshold to reject low-entropy false positives
+- **Parallel scanning** — file scanning parallelized with rayon for multi-core speedup
+- **Stdin scanning** — `scan --stdin` reads content from stdin instead of files
+- **Git history scanning** — `scan --git-history` scans `git log -p` output for committed secrets
+- Cloud/monitoring/AI service detectors: Vercel, Netlify, Supabase, Datadog, New Relic, Sentry, PagerDuty, Anthropic, HuggingFace, Groq, Replicate, LangSmith
+
 ### Changed
 
 - Simplified distribution to a single shipped binary: `key-watch`
@@ -11,18 +24,24 @@ All notable changes to this project will be documented in this file.
 - Installation guidance is now cargo-first, with manual GitHub Releases setup documented step by step
 - CLI moved from flat top-level flags to subcommands: `scan`, `hook install|uninstall`, `init`, and `verify-integrity`
 - Local hook installation now resolves Git's hooks directory directly, improving worktree and submodule compatibility
+- `exit-mode critical` now fails on both HIGH and CRITICAL findings
+- Detector descriptions and comments cleaned up for minimal noise
 
-### Added
+### Fixed
 
-- Hook uninstall support for local and global Git hooks
-- `init bash|zsh|fish|posix` to print shell aliases for `keywatch` and `kw`
-- README now documents uninstall steps for both `cargo install` and manual GitHub Releases installs
-- Regression coverage for overlapping scan roots with root-relative exclude patterns
+- CRITICAL severity was silently downgraded to LOW at runtime
+- All clippy warnings resolved (`Default` impl, redundant closures, identity maps)
+- Public API unit tests moved to `tests/` directory (only private API tests remain in `src/`)
+- Baseline hash domain separator renamed from `SALT` to `DOMAIN_SEPARATOR` for clarity
+- `Severity::from_string()` now trims whitespace from input before parsing
+- `scan_stream()` chunk overlap fixed for accurate multiline detection on split chunks
+- Graceful error handling when `git` is not installed on the system
 
 ### Removed
 
 - Duplicate Cargo binary wrappers for `keywatch` and `watch`
 - `scripts/install.sh` in favor of documented `cargo install` and manual release-binary setup
+- ~1650 lines of redundant context-based detectors; kept only prefix-based detectors plus GenericKeyValueDetector
 
 ## [1.1.0] - 2026-05-05
 
