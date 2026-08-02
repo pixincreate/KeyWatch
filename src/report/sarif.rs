@@ -82,8 +82,8 @@ pub fn create_sarif_report(
         start_line: usize,
     }
 
-    fn severity_to_sarif_level(s: Severity) -> &'static str {
-        match s {
+    fn severity_to_sarif_level(severity: Severity) -> &'static str {
+        match severity {
             Severity::Critical | Severity::High => "error",
             Severity::Medium => "warning",
             Severity::Low => "note",
@@ -92,13 +92,13 @@ pub fn create_sarif_report(
 
     let results: Vec<SarifResult> = findings
         .into_iter()
-        .map(|f| {
-            let rule_id = f.finding_type;
-            let level = severity_to_sarif_level(f.severity);
+        .map(|finding| {
+            let rule_id = finding.finding_type;
+            let level = severity_to_sarif_level(finding.severity);
             let rule_id_clone = rule_id.clone();
-            let severity_str = f.severity.as_str();
-            let uri = f.file_path;
-            let start_line = f.line_number;
+            let severity_str = finding.severity.as_str();
+            let uri = finding.file_path;
+            let start_line = finding.line_number;
 
             let mut properties = HashMap::new();
             properties.insert(
@@ -143,9 +143,10 @@ pub fn create_sarif_report(
             tool: SarifTool {
                 driver: SarifDriver {
                     name: "KeyWatch",
-                    version: option_env!("CARGO_PKG_VERSION").map(|v| v.to_string()),
+                    version: option_env!("CARGO_PKG_VERSION").map(|version| version.to_string()),
                     information_uri: "https://github.com/pixincreate/KeyWatch",
-                    semantic_version: option_env!("CARGO_PKG_VERSION").map(|v| v.to_string()),
+                    semantic_version: option_env!("CARGO_PKG_VERSION")
+                        .map(|version| version.to_string()),
                 },
             },
             results,
