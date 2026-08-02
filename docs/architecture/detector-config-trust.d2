@@ -1,0 +1,53 @@
+direction: right
+
+classes: {
+  boundary: {
+    style: {
+      fill: "#FBFBFA"
+      stroke: "#C8C6C1"
+      stroke-width: 2
+      border-radius: 10
+    }
+  }
+  trusted: {
+    style: {
+      fill: "#EDF3EC"
+      stroke: "#5C805F"
+      border-radius: 8
+    }
+  }
+  repository: {
+    style: {
+      fill: "#FBF3DB"
+      stroke: "#A9873E"
+      border-radius: 8
+    }
+  }
+  embedded: {
+    style: {
+      fill: "#E1F3FE"
+      stroke: "#4A84A8"
+      border-radius: 8
+    }
+  }
+  warning: {
+    style: {
+      fill: "#FDEBEC"
+      stroke: "#A64B48"
+      border-radius: 8
+    }
+  }
+}
+
+mode: "SCAN MODE\nnormal or trusted¹\n¹ --no-config-discovery" {class: warning}
+
+detectors: "DETECTOR SOURCE\nKEYWATCH_CONFIG_PATH → repository¹\n→ user → executable → embedded" {class: embedded}
+
+policy: "POLICY SOURCE\nexplicit --config, or repository¹\n.keywatch.toml → keywatch.toml → .kw.toml" {class: repository}
+
+merge: "VALIDATE + MERGE\ncustom rules · overrides · excludes" {class: trusted}
+result: "FINAL RULES\ndetectors + exclusion policy" {class: trusted}
+
+mode -> detectors -> merge
+mode -> policy -> merge
+merge -> result
