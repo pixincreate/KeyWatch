@@ -4,10 +4,12 @@ pub mod config;
 pub mod detector;
 pub mod hooks;
 pub mod report;
+mod run_error;
 pub mod scanner;
 pub mod utils;
 
 pub use hooks::{generate_pre_commit_hook, generate_pre_push_hook};
+pub use run_error::RunCliError;
 
 use clap::Parser;
 use cli::{CliOptions, Command, ExitMode, HookAction, OutputFormat, ScanArgs, Shell};
@@ -19,15 +21,19 @@ use crate::report::Severity;
 
 pub const EXIT_CODE_RUNTIME_ERROR: i32 = 2;
 
-pub fn run_cli() -> Result<(), String> {
+pub fn run_cli() -> Result<(), RunCliError> {
     let options = CliOptions::parse();
     options.validate()?;
 
     match options.command {
         Command::Scan(args) => run_scan_command(&args),
         Command::Hook(args) => match args.action {
-            HookAction::Install(install_args) => hooks::install_hook(&install_args),
-            HookAction::Uninstall(uninstall_args) => hooks::uninstall_hook(&uninstall_args),
+            HookAction::Install(install_args) => {
+                hooks::install_hook(&install_args).map_err(Into::into)
+            }
+            HookAction::Uninstall(uninstall_args) => {
+                hooks::uninstall_hook(&uninstall_args).map_err(Into::into)
+            }
         },
         Command::Init { shell } => {
             print_shell_init(&shell);
@@ -37,7 +43,7 @@ pub fn run_cli() -> Result<(), String> {
     }
 }
 
-fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
+fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let start = Instant::now();
 
     let config = if args.config.is_some() || !args.no_config_discovery {
@@ -56,7 +62,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
         let baseline_path = args
             .baseline
             .as_ref()
-            .ok_or("--update-baseline requires --baseline <path>")?;
+            .ok_or(RunCliError::MissingBaselineForUpdate)?;
         let mut baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
         baseline.update_with_findings(&findings);
         baseline.save(std::path::Path::new(baseline_path))?;
@@ -77,7 +83,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
         OutputFormat::Json => report::create_report(findings, scan_metadata, scan_time),
         OutputFormat::Sarif => report::create_sarif_report(findings, scan_metadata, scan_time),
     }
-    .map_err(|err| format!("Failed to serialize report: {}", err))?;
+    .map_err(|source| RunCliError::ReportSerialize { source })?;
 
     if args.verbose {
         println!("{report_out}");
@@ -95,8 +101,12 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), String> {
     }
 
     if let Some(ref output_path) = args.output {
-        utils::write_to_file(output_path, &report_out)
-            .map_err(|err| format!("Failed to write report to '{}': {}", output_path, err))?;
+        utils::write_to_file(output_path, &report_out).map_err(|source| {
+            RunCliError::ReportWrite {
+                path: output_path.clone(),
+                source,
+            }
+        })?;
     }
 
     std::process::exit(exit_code);
@@ -113,12 +123,11 @@ fn print_shell_init(shell: &Shell) {
     print!("{script}");
 }
 
-fn verify_binary_integrity() -> Result<(), String> {
-    let exe_path =
-        env::current_exe().map_err(|err| format!("Failed to get executable path: {}", err))?;
+fn verify_binary_integrity() -> Result<(), RunCliError> {
+    let exe_path = env::current_exe().map_err(|source| RunCliError::ExecutablePath { source })?;
     let metadata = exe_path
         .metadata()
-        .map_err(|err| format!("Failed to get executable metadata: {}", err))?;
+        .map_err(|source| RunCliError::ExecutableMetadata { source })?;
 
     #[cfg(unix)]
     {
