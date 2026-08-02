@@ -235,3 +235,7 @@ cargo test
 cargo fmt
 cargo clippy
 ```
+
+# LICENSE - GPLv3
+
+[LICENSE](LICENSE)
