@@ -5,6 +5,10 @@
 # Rust builds
 /target
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Environment files
 .env
 .envrc

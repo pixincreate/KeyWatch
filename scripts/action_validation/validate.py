@@ -73,8 +73,12 @@ def validate_workflows() -> None:
 def main() -> int:
     text = ACTION.read_text(encoding="utf-8")
     cargo_toml = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+    gitignore = (ROOT / ".gitignore").read_text(encoding="utf-8")
     blocks = run_blocks(text)
     shell = "\n".join(blocks)
+
+    require("__pycache__/" in gitignore, "Python bytecode caches must be ignored")
+    require("*.py[cod]" in gitignore, "Python bytecode files must be ignored")
 
     cargo_version = re.search(r'^version = "([^"]+)"$', cargo_toml, re.MULTILINE)
     action_version = re.search(
