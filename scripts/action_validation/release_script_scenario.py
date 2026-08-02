@@ -92,7 +92,14 @@ def run_release_scenario(root: Path) -> None:
         cargo_calls = cargo_capture.read_text(encoding="utf-8")
         require("version = \"2.0.0\"" in cargo, "release must update Cargo.toml")
         require("version = \"2.0.0\"" in lock, "release must update Cargo.lock")
-        require("## [2.0.0] -" in changelog, "release must promote the changelog")
+        require(
+            re.search(
+                r"(?m)^## \[Unreleased\]\n\n## \[2\.0\.0\] - \d{4}-\d{2}-\d{2}$",
+                changelog,
+            )
+            is not None,
+            "release must keep Unreleased and the release heading on separate lines",
+        )
         require(
             re.search(r"(?m)^    default: '2\.0\.0'$", action) is not None,
             "release must update the Action version",
