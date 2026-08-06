@@ -24,13 +24,7 @@ fn hash_content(content: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(HASH_DOMAIN_SEPARATOR.as_bytes());
     hasher.update(content.as_bytes());
-    // Encode bytes manually: sha2 0.11 switched `finalize()` from GenericArray to
-    // hybrid_array::Array, which no longer implements LowerHex for `{:x}`.
-    hasher
-        .finalize()
-        .iter()
-        .map(|byte| format!("{:02x}", byte))
-        .collect()
+    hex::encode(hasher.finalize())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
