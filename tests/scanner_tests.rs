@@ -1706,3 +1706,49 @@ fn test_discovered_baseline_file_is_never_scanned() -> Result<(), String> {
     let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
+
+#[test]
+fn test_staged_scan_skips_the_baseline_file() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // Committing a baseline must not trip the hook: its stored hashes are
+    // added lines in the staged diff and would otherwise be flagged.
+    let repo_dir = unique_temp_dir("staged_skips_baseline");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::write(
+        repo_dir.join("secrets.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(args)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert!(run(&["scan", ".", "--update-baseline"]).status.success());
+
+    let status = Command::new("git")
+        .args(["add", "secrets.txt", ".keywatch-baseline.json"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|e| e.to_string())?;
+    assert!(status.success(), "git add should succeed");
+
+    let staged = run(&["scan", "--staged"]);
+    assert!(
+        matches!(staged.status.code(), Some(0)),
+        "staging the baseline must not fail the hook\nstdout:\n{}",
+        String::from_utf8_lossy(&staged.stdout)
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}

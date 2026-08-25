@@ -309,6 +309,9 @@ pub fn run_scan(
         .iter()
         .partition(|detector| detector.regex.as_str().contains("(?s)"));
 
+    // Resolved once: every scan mode must skip the baseline file itself.
+    let excluded_baseline = baseline_exclusion(args);
+
     if args.git_history {
         let git_root = args
             .paths
@@ -396,6 +399,7 @@ pub fn run_scan(
         let scan_result = scan_staged_diff(
             reader,
             &exclude_patterns,
+            excluded_baseline.as_ref(),
             &multiline_detectors,
             &line_detectors,
         );
@@ -460,7 +464,6 @@ pub fn run_scan(
     let unique_paths: Vec<_> = unique_paths.into_iter().collect();
 
     let exclude_patterns = compile_exclude_patterns(args, config)?;
-    let excluded_baseline = baseline_exclusion(args);
     let line_scan_context = LineScanContext::new(&line_detectors);
 
     let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
@@ -657,6 +660,7 @@ fn parse_binary_marker_path(marker: &str) -> String {
 fn scan_staged_diff<ReaderType: BufRead>(
     mut reader: ReaderType,
     exclude_patterns: &[Pattern],
+    excluded_baseline: Option<&PathBuf>,
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
@@ -747,7 +751,10 @@ fn scan_staged_diff<ReaderType: BufRead>(
 
         if let Some(target) = line.strip_prefix("+++ ") {
             current_path = match parse_diff_target_path(target) {
-                Some(path) if matches_exclude_patterns(&path, &[], exclude_patterns) => {
+                Some(path)
+                    if matches_exclude_patterns(&path, &[], exclude_patterns)
+                        || is_baseline_file(&path, excluded_baseline) =>
+                {
                     excluded_files.push(path);
                     None
                 }
@@ -966,7 +973,7 @@ mod tests {
             +@@ SECRET_THREE looks like a hunk header\n";
 
         let (findings, metadata) =
-            scan_staged_diff(Cursor::new(diff), &[], &[], &line_detectors).unwrap();
+            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -998,7 +1005,7 @@ mod tests {
             -goodbye\n";
 
         let (findings, metadata) =
-            scan_staged_diff(Cursor::new(diff), &[], &[], &line_detectors).unwrap();
+            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         assert!(findings.is_empty(), "removed lines must not be scanned");
         assert_eq!(metadata.files_scanned, 0);
@@ -1020,7 +1027,7 @@ mod tests {
             +SECRET_B\n";
 
         let (findings, metadata) =
-            scan_staged_diff(Cursor::new(diff), &[], &[], &line_detectors).unwrap();
+            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1042,7 +1049,7 @@ mod tests {
             Binary files a/img.png and b/img.png differ\n";
 
         let (findings, metadata) =
-            scan_staged_diff(Cursor::new(diff), &[], &[], &line_detectors).unwrap();
+            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         assert!(findings.is_empty());
         assert_eq!(
@@ -1064,7 +1071,8 @@ mod tests {
         diff.extend_from_slice(b"+caf\xE9 latin-1 line\n");
         diff.extend_from_slice(b"+SECRET_AFTER_BINARYISH\n");
 
-        let (findings, _) = scan_staged_diff(Cursor::new(diff), &[], &[], &line_detectors).unwrap();
+        let (findings, _) =
+            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         assert_eq!(
             findings.len(),
@@ -1087,7 +1095,7 @@ mod tests {
             +END KEY\n";
 
         let (findings, _) =
-            scan_staged_diff(Cursor::new(diff), &[], &multiline_detectors, &[]).unwrap();
+            scan_staged_diff(Cursor::new(diff), &[], None, &multiline_detectors, &[]).unwrap();
 
         assert_eq!(findings.len(), 1);
         assert_eq!(

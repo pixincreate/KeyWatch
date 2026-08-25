@@ -1,9 +1,10 @@
 # KeyWatch self-scan configuration.
 #
-# The test suite embeds fake example credentials as fixtures (the well-known
-# AWS documentation example keys, dummy tokens in generated hook scripts).
-# Exclude them so scanning this repository — including the pre-commit hook's
-# staged scan — reports only real findings.
-# detectors.toml is excluded because the detector definitions themselves are
-# secret-shaped strings (pattern regexes, allowlist examples).
-exclude = ["tests/*", "detectors.toml"]
+# target/ is build output. detectors.toml is excluded because the detector
+# definitions themselves are secret-shaped strings (pattern regexes,
+# allowlist examples) and the file changes whenever a detector is added.
+#
+# Everything else — including the fake credentials used as test fixtures — is
+# covered by .keywatch-baseline.json rather than path exclusions, so a newly
+# introduced secret in those files is still reported.
+exclude = ["target/**", "detectors.toml"]
