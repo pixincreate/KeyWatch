@@ -1483,3 +1483,47 @@ fn test_staged_scan_composes_with_baseline() -> Result<(), String> {
     Ok(())
 }
 
+#[test]
+fn test_baseline_file_itself_is_never_scanned() {
+    let dir = unique_temp_dir("baseline_self_exclusion");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create temp dir");
+    fs::write(
+        dir.join("secrets.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .expect("write secret file");
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "."])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    let update = run(&["--baseline", "baseline.json", "--update-baseline"]);
+    assert!(update.status.success(), "baseline update should succeed");
+
+    // Two consecutive baselined scans must be clean and must not grow the
+    // baseline by re-scanning the baseline file's own hash strings.
+    let first = run(&["--baseline", "baseline.json"]);
+    let size_before = fs::metadata(dir.join("baseline.json")).unwrap().len();
+    let second_update = run(&["--baseline", "baseline.json", "--update-baseline"]);
+    assert!(second_update.status.success());
+    let size_after = fs::metadata(dir.join("baseline.json")).unwrap().len();
+
+    assert!(
+        String::from_utf8_lossy(&first.stdout).contains("No secrets found."),
+        "baselined findings must be suppressed, got:\n{}",
+        String::from_utf8_lossy(&first.stdout)
+    );
+    assert_eq!(
+        size_before, size_after,
+        "re-updating the baseline must not ingest the baseline file itself"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}

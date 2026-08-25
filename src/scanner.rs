@@ -553,6 +553,15 @@ fn compile_exclude_patterns(
         }
     }
 
+    // Never scan the baseline file itself: it stores finding hashes that
+    // trigger detectors, and each --update-baseline would re-ingest them,
+    // growing the baseline on every run.
+    if let Some(baseline_path) = &args.baseline {
+        let literal = Pattern::escape(baseline_path);
+        exclude_patterns
+            .push(Pattern::new(&literal).expect("escaped literal is a valid glob pattern"));
+    }
+
     Ok(exclude_patterns)
 }
 
