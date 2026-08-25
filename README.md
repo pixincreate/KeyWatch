@@ -148,6 +148,9 @@ cat secrets.txt | key-watch scan --stdin
 # Scan git history for committed secrets
 key-watch scan --git-history
 
+# Scan only the lines staged for commit
+key-watch scan --staged
+
 # Verbose output (JSON)
 key-watch scan secrets.txt --verbose
 
@@ -182,6 +185,7 @@ key-watch verify-integrity
 - `scan --format <json|sarif>` - Choose the report format written to stdout or the output file
 - `scan --stdin` - Read content from stdin instead of files
 - `scan --git-history` - Scan git history (`git log -p`) for committed secrets
+- `scan --staged [path...]` - Scan only the added lines of the staged diff (run from inside the repository; paths narrow the diff as git pathspecs); findings keep real file paths and line numbers, so `--baseline` and `--exclude` compose. Files git renders as binary (e.g. `-diff` in `.gitattributes`) are listed in `excluded_files` rather than scanned. Note: a multi-line secret added across separate commits can span hunks the diff scan never sees together — the pre-push whole-tree scan remains the backstop for that case
 - `scan --output <path>` - Save report to file
 - `scan --verbose` - Print full JSON output
 - `scan --exclude <patterns>` - Comma-separated glob patterns to exclude
@@ -242,11 +246,14 @@ password = 'known-test-password' # keywatch:ignore
 - `hook uninstall pre-commit|pre-push` removes a KeyWatch hook from the same target
 - `hook install ... --global` installs into Git's global hooks directory
 - `hook uninstall ... --global` removes the hook from Git's global hooks directory
+- Pre-commit hooks run `key-watch scan --staged`, so only the lines a commit adds are scanned and findings on unchanged lines never block a commit
+- Pre-commit `--exclude` patterns are forwarded to `scan --staged --exclude` and matched against staged file paths
 - Local hook paths are resolved via `git rev-parse --git-path hooks`, so installs work in worktrees and submodules too
 - If `core.hooksPath` is already configured, KeyWatch installs into that directory
 - Otherwise KeyWatch creates a managed hooks directory and configures `git config --global core.hooksPath`
 - KeyWatch refuses to overwrite a non-KeyWatch global hook file
 - KeyWatch also refuses to remove a non-KeyWatch global hook file
+- A global `core.hooksPath` makes Git ignore every repository's own `.git/hooks/` scripts (husky, lefthook, plain hook files). To restore a repository's local hooks, run `git config core.hooksPath .git/hooks` inside it — the repo-local setting overrides the global one, and the KeyWatch hook then no longer runs in that repository
 
 ## Architecture
 

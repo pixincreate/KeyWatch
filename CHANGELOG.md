@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- **Staged diff scanning** — `scan --staged [path...]` scans only the added lines of `git diff --cached`, attributing findings to real file paths (which makes `--baseline` and `--exclude` compose) and post-image line numbers
+
+### Fixed
+
+- `PasswordDetector` no longer flags `$PWD:` volume mounts and similar working-directory references (uppercase `PWD:` is allowlisted; lowercase `pwd = ...` assignments are still detected)
+- `Base64Detector` entropy threshold raised from 3.0 to 4.2 so long CamelCase identifiers in ordinary source code no longer flood reports with LOW findings; real base64 payloads (entropy >= ~4.27) are still detected
+- Staged and git-history scans now force `--no-color`, literal pathspecs, and standard `a/`/`b/` diff prefixes, so user git config (`color.ui = always`, `diff.mnemonicPrefix`, `diff.noprefix`, `core.quotePath`) can no longer break diff parsing — a `color.ui = always` config previously made `scan --staged` silently report zero findings
+- Files git renders as binary (including text files marked `-diff` in `.gitattributes`) are now surfaced in the report's `excluded_files` instead of being silently treated as clean by `scan --staged`
+- Non-UTF-8 staged content is decoded lossily instead of aborting the whole staged scan with an error
+- The `--baseline` file is automatically excluded from scanning; previously its stored hashes were re-flagged as findings and every `--update-baseline` grew the file indefinitely
+
+### Performance
+
+- Detector keywords are lowercased once at construction and every line is lowercased once (not once per detector), and all keywords are matched in a single Aho-Corasick pass per line — directory scans ~2.9x faster, stdin/git-history streams ~9x faster on a 36 MB corpus, identical findings
+
+### Changed
+
+- Pre-commit hooks now run `key-watch scan --staged` instead of whole-file scans, so only the lines a commit adds are scanned and findings on unchanged lines no longer block commits
+- Pre-commit `--exclude` patterns are now matched against staged file paths (forwarded to `scan --staged --exclude`)
+- The `pre-commit` framework integration (`.pre-commit-hooks.yaml`) now runs `key-watch scan --staged`, so framework users get diff-based scanning instead of whole-file scans
+- Config discovery now walks up parent directories from the scan target, so a repository-root `.keywatch.toml` applies to nested paths; the nearest config wins and the walk stops at the repository root or home directory so config outside the scanned tree is never trusted
+- The `pre-commit` framework hooks no longer pass filenames (`scan --staged` already scans exactly the staged set, and pathspec-glob interpretation of literal filenames could skip files)
+- Hook install/uninstall messages abbreviate the home directory as `~`
+
 ## [2.0.1] - 2026-08-02
 
 ### Fixed
