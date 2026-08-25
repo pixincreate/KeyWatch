@@ -1407,6 +1407,13 @@
       "finding_type": "AWS Access Key",
       "matched_content_hash": "bc377e3c9554437ff10fd844193b505dced77a6af5a662e74232e814d284a1a2",
       "plugin_name": "AWSKeyDetector"
+    },
+    {
+      "file_path": "./src/baseline.rs",
+      "line_number": 309,
+      "finding_type": "AWS Access Key",
+      "matched_content_hash": "bc377e3c9554437ff10fd844193b505dced77a6af5a662e74232e814d284a1a2",
+      "plugin_name": "AWSKeyDetector"
     }
   ]
 }

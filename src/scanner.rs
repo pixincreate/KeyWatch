@@ -837,7 +837,11 @@ fn matches_exclude_patterns(
     scan_roots: &[Option<String>],
     patterns: &[Pattern],
 ) -> bool {
-    let path = Path::new(path);
+    // Exclude patterns are written with forward slashes, so paths are matched
+    // in that form: on Windows a scanned path is `target\\foo` and would
+    // otherwise never match `target/**`.
+    let forward_slashed = path.replace('\\', "/");
+    let path = Path::new(forward_slashed.as_str());
 
     patterns.iter().any(|pattern| {
         pattern.matches_path(path)
@@ -848,8 +852,9 @@ fn matches_exclude_patterns(
             || scan_roots.iter().any(|root_opt| {
                 root_opt
                     .as_deref()
-                    .and_then(|root| path.strip_prefix(root).ok())
-                    .is_some_and(|relative| pattern.matches_path(relative))
+                    .map(|root| root.replace('\\', "/"))
+                    .and_then(|root| path.strip_prefix(&root).ok().map(Path::to_path_buf))
+                    .is_some_and(|relative| pattern.matches_path(&relative))
             })
     })
 }
