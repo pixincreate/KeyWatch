@@ -53,6 +53,9 @@ pattern = "(?i)(password|passwd|pwd)\\s*[:=]\\s*(?-i)[\"']?([^\"'\\n]+)[\"']?"
 finding_type = "Password"
 severity = "HIGH"
 keywords = ["password", "passwd", "pwd"]
+# $PWD is the shell working-directory variable (docker --volume "$PWD:...",
+# Makefiles), never a password literal.
+allowlist = ["^\\$?PWD:"]
 
 [[detectors]]
 name = "EmailDetector"
