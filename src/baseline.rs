@@ -16,6 +16,18 @@ use crate::report::Finding;
 /// Application releases do not invalidate existing baselines.
 const BASELINE_VERSION: &str = "1.0";
 
+/// Conventional baseline filename, discovered automatically (like config)
+/// when `--baseline` is not passed explicitly.
+pub const DEFAULT_BASELINE_NAME: &str = ".keywatch-baseline.json";
+
+/// Walks up from the first scan path (or the current directory) looking for
+/// [`DEFAULT_BASELINE_NAME`], bounded at the repository root or home
+/// directory. Returns `None` when no baseline file exists in the tree.
+pub fn discover_baseline_path(scan_paths: &[String]) -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+    crate::config::find_file_upwards(scan_paths, &cwd, &[DEFAULT_BASELINE_NAME])
+}
+
 /// Domain-separation prefix for fingerprint hashes so that baseline hashes
 /// cannot collide with plain SHA-256 of the matched content.
 const HASH_DOMAIN_SEPARATOR: &str = "keywatch-baseline-v1";
@@ -35,10 +47,20 @@ struct BaselineFingerprint {
     plugin_name: String,
 }
 
+/// Fingerprint paths ignore a leading `./` so `scan .` and
+/// `scan nested/file` produce matching baseline entries.
+fn normalize_fingerprint_path(path: &str) -> String {
+    let mut path = path;
+    while let Some(stripped) = path.strip_prefix("./") {
+        path = stripped;
+    }
+    path.to_string()
+}
+
 impl BaselineFingerprint {
     fn from_finding(finding: &Finding) -> Self {
         Self {
-            file_path: finding.file_path.clone(),
+            file_path: normalize_fingerprint_path(&finding.file_path),
             finding_type: finding.finding_type.clone(),
             matched_content_hash: hash_content(&finding.matched_content),
             plugin_name: finding.plugin_name.clone(),
@@ -49,7 +71,7 @@ impl BaselineFingerprint {
 impl From<&BaselineEntry> for BaselineFingerprint {
     fn from(entry: &BaselineEntry) -> Self {
         Self {
-            file_path: entry.file_path.clone(),
+            file_path: normalize_fingerprint_path(&entry.file_path),
             finding_type: entry.finding_type.clone(),
             matched_content_hash: entry.matched_content_hash.clone(),
             plugin_name: entry.plugin_name.clone(),

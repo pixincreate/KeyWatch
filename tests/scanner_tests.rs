@@ -118,6 +118,7 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -152,6 +153,7 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -187,6 +189,7 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -223,6 +226,7 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -253,6 +257,7 @@ fn test_multiple_detections_in_line() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -295,6 +300,7 @@ fn test_directory_scan_with_exclusions() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -336,6 +342,7 @@ fn test_exclude_pattern_filtering() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -367,6 +374,7 @@ fn test_invalid_cli_exclude_pattern_returns_typed_error() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -416,6 +424,7 @@ fn test_dot_github_directory_is_scanned() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -445,6 +454,7 @@ fn test_scan_no_secrets() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -475,6 +485,7 @@ fn test_non_utf8_file_handling() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -509,6 +520,7 @@ fn test_multiple_files_scan() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -544,6 +556,7 @@ fn test_duplicate_paths_are_scanned_once() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -593,6 +606,7 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -634,6 +648,7 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -682,6 +697,7 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -728,6 +744,7 @@ fn test_recursive_symlink_path_is_skipped() -> Result<(), String> {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -767,6 +784,7 @@ fn test_detect_aadhaar() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -804,6 +822,7 @@ fn test_detect_voter_id() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -838,6 +857,7 @@ fn test_detect_pan_card() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -872,6 +892,7 @@ fn test_detect_abha() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -907,6 +928,7 @@ fn test_multiple_indian_ids() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -967,6 +989,7 @@ fn test_overlapping_scan_roots_with_exclusions() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -1012,6 +1035,7 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -1060,6 +1084,7 @@ fn test_stdin_args_validation() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -1121,6 +1146,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -1136,6 +1162,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -1154,6 +1181,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
         format: OutputFormat::Json,
@@ -1526,4 +1554,103 @@ fn test_baseline_file_itself_is_never_scanned() {
     );
 
     let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_baseline_auto_discovered_from_repo_root() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("baseline_auto_discovery");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::create_dir_all(repo_dir.join("nested")).map_err(|e| e.to_string())?;
+    fs::write(
+        repo_dir.join("nested/config.txt"),
+        "AWS Key: AKIAABCDEFGHIJKLMNOP\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    // No baseline anywhere: --update-baseline creates the conventional file.
+    let update = run(&["scan", ".", "--update-baseline"]);
+    assert!(
+        update.status.success(),
+        "default-name update should succeed"
+    );
+    assert!(
+        repo_dir.join(".keywatch-baseline.json").exists(),
+        "update should create .keywatch-baseline.json"
+    );
+
+    // A nested scan discovers the repo-root baseline and comes back clean.
+    let scan = run(&["scan", "nested/config.txt"]);
+    assert!(
+        String::from_utf8_lossy(&scan.stdout).contains("No secrets found."),
+        "discovered baseline should suppress known findings, got:\n{}",
+        String::from_utf8_lossy(&scan.stdout)
+    );
+
+    // Discovery can be turned off.
+    let no_discovery = run(&["scan", "nested/config.txt", "--no-baseline-discovery"]);
+    assert_eq!(
+        no_discovery.status.code(),
+        Some(1),
+        "--no-baseline-discovery must ignore the repo baseline"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_uses_discovered_baseline() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("staged_auto_baseline");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(&repo_dir, "config.txt", "clean line\n", "initial")?;
+    stage_file(
+        &repo_dir,
+        "config.txt",
+        "clean line\nAWS Key: AKIAABCDEFGHIJKLMNOP\n",
+    )?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    let update = run(&["scan", "--staged", "--update-baseline"]);
+    assert!(
+        update.status.success(),
+        "staged baseline update should succeed"
+    );
+
+    // The hook's exact invocation now picks the baseline up automatically.
+    let staged = run(&["scan", "--staged"]);
+    assert!(
+        matches!(staged.status.code(), Some(0)),
+        "staged scan should discover the repo baseline\nstdout:\n{}",
+        String::from_utf8_lossy(&staged.stdout)
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
 }

@@ -46,6 +46,19 @@ pub fn run_cli() -> Result<(), RunCliError> {
 fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let start = Instant::now();
 
+    // Resolve the baseline like config: an explicit --baseline wins, otherwise
+    // discover .keywatch-baseline.json in the scanned tree. --update-baseline
+    // with nothing discovered creates the conventional file in the current
+    // directory. The resolved path also gets excluded from scanning.
+    let mut args = args.clone();
+    if args.baseline.is_none() && !args.no_baseline_discovery {
+        args.baseline = baseline::discover_baseline_path(&args.paths);
+        if args.baseline.is_none() && args.update_baseline {
+            args.baseline = Some(baseline::DEFAULT_BASELINE_NAME.to_string());
+        }
+    }
+    let args = &args;
+
     let config = if args.config.is_some() || !args.no_config_discovery {
         config::KeywatchConfig::load_for_paths(args.config.as_deref(), &args.paths)?
     } else {

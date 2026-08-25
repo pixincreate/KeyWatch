@@ -219,6 +219,18 @@ fn default_severity() -> Severity {
 const CONFIG_NAMES: [&str; 3] = [".keywatch.toml", "keywatch.toml", ".kw.toml"];
 
 fn find_config_candidates(scan_paths: &[String], cwd: &Path) -> Option<String> {
+    find_file_upwards(scan_paths, cwd, &CONFIG_NAMES)
+}
+
+/// Walks up from the first scan path (or `cwd`) looking for one of `names`,
+/// nearest directory first, stopping at the repository root or the home
+/// directory so nothing outside the scanned tree's trust boundary is used.
+/// Shared by config discovery and baseline discovery.
+pub(crate) fn find_file_upwards(
+    scan_paths: &[String],
+    cwd: &Path,
+    names: &[&str],
+) -> Option<String> {
     let search_dir: PathBuf = match scan_paths.first() {
         Some(first) => {
             let scan_path = Path::new(first);
@@ -245,12 +257,8 @@ fn find_config_candidates(scan_paths: &[String], cwd: &Path) -> Option<String> {
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from);
 
-    // Walk up from the scan target so a repo-root config applies to nested
-    // paths like `proto/payment.proto`, not just files beside the config.
-    // Stop at the repository root or the home directory: config above either
-    // is outside the scanned tree's trust boundary.
     for dir in search_dir.ancestors() {
-        let found = CONFIG_NAMES
+        let found = names
             .iter()
             .map(|name| dir.join(name))
             .find(|candidate_path| candidate_path.exists())

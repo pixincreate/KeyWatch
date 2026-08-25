@@ -82,7 +82,7 @@ pub enum Command {
     VerifyIntegrity,
 }
 
-#[derive(Args, Debug)]
+#[derive(Args, Debug, Clone)]
 pub struct ScanArgs {
     /// Paths to scan (files or directories)
     pub paths: Vec<String>,
@@ -116,8 +116,13 @@ pub struct ScanArgs {
     pub exit_mode: ExitMode,
 
     /// Path to a baseline file for suppressing known findings
+    /// (defaults to a discovered .keywatch-baseline.json)
     #[arg(long)]
     pub baseline: Option<String>,
+
+    /// Disable automatic baseline discovery (an explicit --baseline still loads)
+    #[arg(long, default_value_t = false)]
+    pub no_baseline_discovery: bool,
 
     /// Update the baseline file with current findings instead of scanning
     #[arg(long)]

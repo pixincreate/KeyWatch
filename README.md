@@ -190,8 +190,9 @@ key-watch verify-integrity
 - `scan --verbose` - Print full JSON output
 - `scan --exclude <patterns>` - Comma-separated glob patterns to exclude
 - `scan --exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH/CRITICAL only), `strict` (fail on any finding, default)
-- `scan --baseline <path>` - Suppress known findings from a previous scan
-- `scan --update-baseline` - Update baseline with current findings (requires `--baseline`)
+- `scan --baseline <path>` - Suppress known findings from a previous scan. Without this flag, a `.keywatch-baseline.json` is discovered automatically by walking up from the scan target (bounded at the repository root or home directory), so hook scans pick up a committed repo baseline with no configuration
+- `scan --no-baseline-discovery` - Ignore a discovered baseline (an explicit `--baseline` still loads)
+- `scan --update-baseline` - Update the baseline with current findings; creates `.keywatch-baseline.json` when no baseline exists. The baseline stores fingerprints (path + finding type + SHA-256 of the match + detector), never secrets, and is meant to be committed. The `update-baseline` workflow can regenerate it via a reviewable pull request
 - `hook install <pre-commit|pre-push> [--global]` - Install a git hook
 - `hook uninstall <pre-commit|pre-push> [--global]` - Remove a git hook
 - `hook install pre-push --allowed-repos <urls>` - Whitelist repos for pre-push hooks

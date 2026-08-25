@@ -8,6 +8,8 @@ All notable changes to this project will be documented in this file.
 
 - **Staged diff scanning** — `scan --staged [path...]` scans only the added lines of `git diff --cached`, attributing findings to real file paths (which makes `--baseline` and `--exclude` compose) and post-image line numbers
 
+- **Baseline discovery** — without `--baseline`, a `.keywatch-baseline.json` is discovered by walking up from the scan target (bounded at the repository root or home directory), so hook scans use a committed repo baseline automatically; `--no-baseline-discovery` opts out and `--update-baseline` creates the conventional file when none exists. Baseline fingerprints ignore a leading `./` so `scan .` and `scan nested/file` entries match. A manually triggered `update-baseline` workflow regenerates the baseline via a reviewable pull request
+
 ### Fixed
 
 - `PasswordDetector` no longer flags `$PWD:` volume mounts and similar working-directory references (uppercase `PWD:` is allowlisted; lowercase `pwd = ...` assignments are still detected)
