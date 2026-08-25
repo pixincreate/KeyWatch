@@ -90,11 +90,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
         0 => println!("No secrets found."),
         count => println!(
             "WARNING: {} potential secret(s) detected (CRITICAL: {}, HIGH: {}, MEDIUM: {}, LOW: {})",
-            count,
-            severity_counts.0,
-            severity_counts.1,
-            severity_counts.2,
-            severity_counts.3
+            count, severity_counts.0, severity_counts.1, severity_counts.2, severity_counts.3
         ),
     }
 
@@ -150,9 +146,9 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
     match exit_mode {
         ExitMode::Always => 0,
         ExitMode::Critical => {
-            let has_critical_or_high = findings.iter().any(|finding| {
-                matches!(finding.severity, Severity::Critical | Severity::High)
-            });
+            let has_critical_or_high = findings
+                .iter()
+                .any(|finding| matches!(finding.severity, Severity::Critical | Severity::High));
             i32::from(has_critical_or_high)
         }
         ExitMode::Strict => 1,

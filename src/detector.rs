@@ -111,7 +111,10 @@ impl Detector {
             finding_type: finding_type.to_string(),
             severity: parsed_severity,
             allowlist: compiled_allowlist,
-            keywords: keywords.iter().map(|keyword| keyword.to_lowercase()).collect(),
+            keywords: keywords
+                .iter()
+                .map(|keyword| keyword.to_lowercase())
+                .collect(),
             entropy_threshold,
         })
     }

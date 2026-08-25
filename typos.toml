@@ -5,3 +5,7 @@ extend-ignore-identifiers-re = [
     # Fly.io token prefix pattern (fo1_)
     "fo1_",
 ]
+
+[default.extend-words]
+# "caf\xE9" (café as latin-1 bytes) in a non-UTF-8 test fixture
+caf = "caf"

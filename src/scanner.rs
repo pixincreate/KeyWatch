@@ -58,12 +58,11 @@ impl KeywordPrefilter {
                 continue;
             }
             for keyword in &detector.keywords {
-                let pattern_index =
-                    *pattern_indices.entry(keyword.as_str()).or_insert_with(|| {
-                        patterns.push(keyword.as_str());
-                        owners.push(Vec::new());
-                        patterns.len() - 1
-                    });
+                let pattern_index = *pattern_indices.entry(keyword.as_str()).or_insert_with(|| {
+                    patterns.push(keyword.as_str());
+                    owners.push(Vec::new());
+                    patterns.len() - 1
+                });
                 owners[pattern_index].push(detector_index);
             }
         }
@@ -216,7 +215,14 @@ fn scan_content(
     let mut scratch = LineScratch::default();
     for (line_idx, line) in content.lines().enumerate() {
         total_lines += 1;
-        scan_line_detectors(line, line_idx + 1, path, context, &mut scratch, &mut findings);
+        scan_line_detectors(
+            line,
+            line_idx + 1,
+            path,
+            context,
+            &mut scratch,
+            &mut findings,
+        );
     }
 
     (findings, total_lines)
@@ -245,7 +251,14 @@ fn scan_stream<ReaderType: BufRead>(
         })?;
         total_lines += 1;
 
-        scan_line_detectors(&line, total_lines, path, &context, &mut scratch, &mut findings);
+        scan_line_detectors(
+            &line,
+            total_lines,
+            path,
+            &context,
+            &mut scratch,
+            &mut findings,
+        );
 
         buffer.push(line);
 
@@ -482,8 +495,12 @@ pub fn run_scan(
                 Err(_) => return (Vec::new(), 0, 0, None),
             };
 
-            let (file_findings, file_lines) =
-                scan_content(&full_content, &path, &multiline_detectors, &line_scan_context);
+            let (file_findings, file_lines) = scan_content(
+                &full_content,
+                &path,
+                &multiline_detectors,
+                &line_scan_context,
+            );
 
             (file_findings, 1, file_lines, None)
         })
@@ -1036,8 +1053,7 @@ mod tests {
         diff.extend_from_slice(b"+caf\xE9 latin-1 line\n");
         diff.extend_from_slice(b"+SECRET_AFTER_BINARYISH\n");
 
-        let (findings, _) =
-            scan_staged_diff(Cursor::new(diff), &[], &[], &line_detectors).unwrap();
+        let (findings, _) = scan_staged_diff(Cursor::new(diff), &[], &[], &line_detectors).unwrap();
 
         assert_eq!(
             findings.len(),

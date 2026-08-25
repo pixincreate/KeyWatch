@@ -31,8 +31,9 @@ impl Display for CliValidationError {
                 formatter.write_str("Cannot specify both --staged and --git-history")
             }
             Self::StdinWithPaths => formatter.write_str("Cannot specify both --stdin and paths"),
-            Self::MissingScanInput => formatter
-                .write_str("Must specify paths, use --stdin, --staged, or --git-history"),
+            Self::MissingScanInput => {
+                formatter.write_str("Must specify paths, use --stdin, --staged, or --git-history")
+            }
             Self::PreCommitRepositoryFilters => formatter.write_str(
                 "--allowed-repos and --blocked-repos are only supported for pre-push hooks",
             ),
