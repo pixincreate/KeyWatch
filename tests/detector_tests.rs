@@ -80,7 +80,24 @@ fn test_keywords_prefilter_skips_non_matching_content() -> Result<(), DetectorEr
 
     assert!(!detector.has_keywords("some random text without the keyword"));
     assert!(detector.has_keywords("this text contains apikey in it"));
-    assert!(detector.has_keywords("APIKEY in uppercase"));
+    Ok(())
+}
+
+#[test]
+fn test_keywords_are_lowercased_at_construction() -> Result<(), DetectorError> {
+    let detector = Detector::new(
+        "TestDetector",
+        r"\bsecret_\w+\b",
+        "Test Secret",
+        "HIGH",
+        &[],
+        &["ApiKey".to_string()],
+        None,
+    )?;
+
+    // Callers lowercase content once per line; uppercase keyword definitions
+    // must still match that lowered content.
+    assert!(detector.has_keywords("this text contains apikey in it"));
     Ok(())
 }
 

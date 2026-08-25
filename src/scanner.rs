@@ -2,6 +2,7 @@ use crate::cli::ScanArgs;
 use crate::config::KeywatchConfig;
 use crate::detector::{Detector, initialize_detectors, initialize_trusted_detectors};
 use crate::report::{Finding, ScanMetadata};
+use aho_corasick::AhoCorasick;
 use glob::Pattern;
 use rayon::prelude::*;
 use std::fs;
@@ -25,33 +26,138 @@ fn is_allowlisted(matched: &str, detector: &Detector) -> bool {
         .any(|pattern| pattern.is_match(matched))
 }
 
+/// Lowercases `src` into `buf` without allocating a fresh string per line.
+fn to_lowercase_into(src: &str, buf: &mut String) {
+    buf.clear();
+    buf.extend(src.chars().flat_map(char::to_lowercase));
+}
+
+/// Folds every distinct detector keyword into one Aho-Corasick automaton so a
+/// line is checked against all keywords in a single pass instead of one
+/// substring search per keyword per detector.
+struct KeywordPrefilter {
+    automaton: Option<AhoCorasick>,
+    /// Automaton pattern index -> indices of detectors owning that keyword.
+    owners: Vec<Vec<usize>>,
+    /// Detectors without keywords always run their regex.
+    unconditional: Vec<usize>,
+    detector_count: usize,
+}
+
+impl KeywordPrefilter {
+    fn new(line_detectors: &[&Detector]) -> Self {
+        let mut patterns: Vec<&str> = Vec::new();
+        let mut pattern_indices: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        let mut owners: Vec<Vec<usize>> = Vec::new();
+        let mut unconditional = Vec::new();
+
+        for (detector_index, detector) in line_detectors.iter().enumerate() {
+            if detector.keywords.is_empty() {
+                unconditional.push(detector_index);
+                continue;
+            }
+            for keyword in &detector.keywords {
+                let pattern_index =
+                    *pattern_indices.entry(keyword.as_str()).or_insert_with(|| {
+                        patterns.push(keyword.as_str());
+                        owners.push(Vec::new());
+                        patterns.len() - 1
+                    });
+                owners[pattern_index].push(detector_index);
+            }
+        }
+
+        let automaton = if patterns.is_empty() {
+            None
+        } else {
+            // Plain literal patterns cannot hit the automaton's size limits.
+            Some(AhoCorasick::new(&patterns).expect("build keyword automaton"))
+        };
+
+        Self {
+            automaton,
+            owners,
+            unconditional,
+            detector_count: line_detectors.len(),
+        }
+    }
+
+    /// Marks the detectors whose keywords occur in `lowered_line` in
+    /// `candidates`, a scratch buffer reused across lines.
+    fn candidates_into(&self, lowered_line: &str, candidates: &mut Vec<bool>) {
+        candidates.clear();
+        candidates.resize(self.detector_count, false);
+        for &detector_index in &self.unconditional {
+            candidates[detector_index] = true;
+        }
+        if let Some(automaton) = &self.automaton {
+            // Overlapping search: leftmost-first would report only one of two
+            // keywords sharing a prefix (e.g. "key" hides "keystone").
+            for keyword_match in automaton.find_overlapping_iter(lowered_line) {
+                for &detector_index in &self.owners[keyword_match.pattern().as_usize()] {
+                    candidates[detector_index] = true;
+                }
+            }
+        }
+    }
+}
+
+struct LineScanContext<'detectors> {
+    line_detectors: &'detectors [&'detectors Detector],
+    prefilter: KeywordPrefilter,
+}
+
+impl<'detectors> LineScanContext<'detectors> {
+    fn new(line_detectors: &'detectors [&'detectors Detector]) -> Self {
+        Self {
+            line_detectors,
+            prefilter: KeywordPrefilter::new(line_detectors),
+        }
+    }
+}
+
+/// Per-line scratch buffers, reused across lines to avoid allocating in the
+/// hot loop. Each scanning loop owns one (they are not shared across threads).
+#[derive(Default)]
+struct LineScratch {
+    lowered_line: String,
+    candidates: Vec<bool>,
+}
+
 fn scan_line_detectors(
     line: &str,
     line_number: usize,
     path: &str,
-    line_detectors: &[&Detector],
-    line_is_suppressed: bool,
+    context: &LineScanContext<'_>,
+    scratch: &mut LineScratch,
     findings: &mut Vec<Finding>,
 ) {
-    if line_is_suppressed {
+    to_lowercase_into(line, &mut scratch.lowered_line);
+    if scratch.lowered_line.contains(INLINE_SUPPRESS) {
         return;
     }
 
-    for detector in line_detectors {
-        if detector.has_keywords(line) {
-            for mat in detector.regex.find_iter(line) {
-                if !is_allowlisted(mat.as_str(), detector)
-                    && detector.has_sufficient_entropy(mat.as_str())
-                {
-                    findings.push(Finding {
-                        file_path: path.to_string(),
-                        line_number,
-                        matched_content: mat.as_str().to_string(),
-                        finding_type: detector.finding_type.clone(),
-                        severity: detector.severity,
-                        plugin_name: detector.name.clone(),
-                    });
-                }
+    context
+        .prefilter
+        .candidates_into(&scratch.lowered_line, &mut scratch.candidates);
+
+    for (detector_index, detector) in context.line_detectors.iter().enumerate() {
+        if !scratch.candidates[detector_index] {
+            continue;
+        }
+        for mat in detector.regex.find_iter(line) {
+            if !is_allowlisted(mat.as_str(), detector)
+                && detector.has_sufficient_entropy(mat.as_str())
+            {
+                findings.push(Finding {
+                    file_path: path.to_string(),
+                    line_number,
+                    matched_content: mat.as_str().to_string(),
+                    finding_type: detector.finding_type.clone(),
+                    severity: detector.severity,
+                    plugin_name: detector.name.clone(),
+                });
             }
         }
     }
@@ -64,8 +170,12 @@ fn scan_multiline_chunk(
     multiline_detectors: &[&Detector],
     findings: &mut Vec<Finding>,
 ) {
+    if multiline_detectors.is_empty() {
+        return;
+    }
+    let lowered_chunk = chunk.to_lowercase();
     for detector in multiline_detectors {
-        if detector.has_keywords(chunk) {
+        if detector.has_keywords(&lowered_chunk) {
             for mat in detector.regex.find_iter(chunk) {
                 let line_in_chunk = chunk[..mat.start()].matches('\n').count() + 1;
                 let line_content = chunk
@@ -96,23 +206,17 @@ fn scan_content(
     content: &str,
     path: &str,
     multiline_detectors: &[&Detector],
-    line_detectors: &[&Detector],
+    context: &LineScanContext<'_>,
 ) -> (Vec<Finding>, usize) {
     let mut findings = Vec::new();
     let mut total_lines = 0;
 
     scan_multiline_chunk(content, 0, path, multiline_detectors, &mut findings);
 
+    let mut scratch = LineScratch::default();
     for (line_idx, line) in content.lines().enumerate() {
         total_lines += 1;
-        scan_line_detectors(
-            line,
-            line_idx + 1,
-            path,
-            line_detectors,
-            is_inline_suppressed(line),
-            &mut findings,
-        );
+        scan_line_detectors(line, line_idx + 1, path, context, &mut scratch, &mut findings);
     }
 
     (findings, total_lines)
@@ -127,10 +231,12 @@ fn scan_stream<ReaderType: BufRead>(
     const CHUNK_SIZE: usize = 1000;
     const OVERLAP_LINES: usize = 50;
 
+    let context = LineScanContext::new(line_detectors);
     let mut findings = Vec::new();
     let mut total_lines = 0;
     let mut buffer: Vec<String> = Vec::with_capacity(CHUNK_SIZE + OVERLAP_LINES);
     let mut line_offset = 0;
+    let mut scratch = LineScratch::default();
 
     for line_result in reader.lines() {
         let line = line_result.map_err(|source| ScannerError::ReadStream {
@@ -139,14 +245,7 @@ fn scan_stream<ReaderType: BufRead>(
         })?;
         total_lines += 1;
 
-        scan_line_detectors(
-            &line,
-            total_lines,
-            path,
-            line_detectors,
-            is_inline_suppressed(&line),
-            &mut findings,
-        );
+        scan_line_detectors(&line, total_lines, path, &context, &mut scratch, &mut findings);
 
         buffer.push(line);
 
@@ -348,6 +447,7 @@ pub fn run_scan(
     let unique_paths: Vec<_> = unique_paths.into_iter().collect();
 
     let exclude_patterns = compile_exclude_patterns(args, config)?;
+    let line_scan_context = LineScanContext::new(&line_detectors);
 
     let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
         .into_par_iter()
@@ -383,7 +483,7 @@ pub fn run_scan(
             };
 
             let (file_findings, file_lines) =
-                scan_content(&full_content, &path, &multiline_detectors, &line_detectors);
+                scan_content(&full_content, &path, &multiline_detectors, &line_scan_context);
 
             (file_findings, 1, file_lines, None)
         })
@@ -523,6 +623,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
+    let context = LineScanContext::new(line_detectors);
     let mut findings = Vec::new();
     let mut total_lines = 0;
     let mut scanned_files: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -532,6 +633,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
     let mut next_line_number = 0;
     let mut hunk_start = 0;
     let mut hunk_added: Vec<String> = Vec::new();
+    let mut scratch = LineScratch::default();
     let mut raw_line: Vec<u8> = Vec::new();
 
     loop {
@@ -567,8 +669,8 @@ fn scan_staged_diff<ReaderType: BufRead>(
                     content,
                     line_number,
                     path,
-                    line_detectors,
-                    is_inline_suppressed(content),
+                    &context,
+                    &mut scratch,
                     &mut findings,
                 );
                 hunk_added.push(content.to_string());

@@ -111,19 +111,21 @@ impl Detector {
             finding_type: finding_type.to_string(),
             severity: parsed_severity,
             allowlist: compiled_allowlist,
-            keywords: keywords.to_vec(),
+            keywords: keywords.iter().map(|keyword| keyword.to_lowercase()).collect(),
             entropy_threshold,
         })
     }
 
-    pub fn has_keywords(&self, content: &str) -> bool {
+    /// `lowercase_content` must already be lowercased. Keywords are stored
+    /// lowercased at construction so callers can lowercase once per line
+    /// instead of once per detector.
+    pub fn has_keywords(&self, lowercase_content: &str) -> bool {
         if self.keywords.is_empty() {
             return true;
         }
-        let lowercase_content = content.to_lowercase();
         self.keywords
             .iter()
-            .any(|keyword| lowercase_content.contains(&keyword.to_lowercase()))
+            .any(|keyword| lowercase_content.contains(keyword.as_str()))
     }
 
     pub fn has_sufficient_entropy(&self, matched: &str) -> bool {
