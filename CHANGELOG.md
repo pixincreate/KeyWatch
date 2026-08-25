@@ -18,10 +18,13 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Hooks use built-in detectors, so a `detectors.toml` committed to a scanned repository can no longer replace the detector set and disable its own scan
+- Files git renders as binary (including text marked `-diff` in `.gitattributes`) are read from the index instead of being reported clean
+- `Base64Detector` matches from 28 characters, the length where entropy can actually separate base64 from identifiers
 - `scan --staged` no longer misses findings under `color.ui = always` or custom diff prefixes
-- Binary and non-UTF-8 files no longer pass silently or abort a staged scan
+- Non-UTF-8 files no longer abort a staged scan
 - The baseline file is no longer scanned as input to itself
-- `Base64Detector` no longer flags long identifiers; `PasswordDetector` no longer flags `$PWD:`
+- `PasswordDetector` no longer flags `$PWD:`
 - Piping output to a closed reader no longer panics
 
 ### Performance

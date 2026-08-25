@@ -148,8 +148,13 @@ fn test_hook_generation_pre_commit() {
         "Should preserve comma-separated exclude patterns"
     );
     assert!(
-        hook.contains("scan --staged --exclude \"$EXCLUDE_PATTERNS\""),
+        hook.contains("scan --staged") && hook.contains("--exclude \"$EXCLUDE_PATTERNS\""),
         "Should delegate staged-diff scanning and excludes to scan --staged"
+    );
+    assert!(
+        hook.contains("--no-config-discovery"),
+        "Hook must use built-in detectors so a scanned repository cannot \
+         replace the detector set and disable its own scan"
     );
     assert!(
         hook.contains(">/dev/null 2>&1"),
@@ -247,13 +252,14 @@ fn test_pre_commit_delegates_to_staged_scan() {
     let output = run_hook(&hook, &[], git_script, &keywatch_script, &temp_dir);
 
     assert!(output.status.success(), "clean staged scan should pass");
-    assert_eq!(
-        fs::read_to_string(&marker)
-            .expect("read scanner args")
-            .trim_end(),
-        "scan --staged --exclude *.log,*.tmp",
-        "hook must delegate added-line extraction and excludes to scan --staged"
-    );
+    let recorded = fs::read_to_string(&marker).expect("read scanner args");
+    let recorded = recorded.trim_end();
+    for expected in ["scan", "--staged", "--no-config-discovery", "*.log,*.tmp"] {
+        assert!(
+            recorded.contains(expected),
+            "hook invocation {recorded:?} should contain {expected:?}"
+        );
+    }
 
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }

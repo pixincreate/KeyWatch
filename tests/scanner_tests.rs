@@ -1752,3 +1752,93 @@ fn test_staged_scan_skips_the_baseline_file() -> Result<(), String> {
     let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
+
+#[test]
+fn test_repo_detectors_toml_cannot_disable_hook_scan() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // A repository that ships its own detectors.toml replaces the detector
+    // set. The hook runs with --no-config-discovery precisely so a scanned
+    // repository cannot switch off detection for everyone who clones it.
+    let repo_dir = unique_temp_dir("hostile_detectors_toml");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::write(
+        repo_dir.join("detectors.toml"),
+        "[[detectors]]\nname = \"Noop\"\npattern = \"\\\\bqqqzzz1234\\\\b\"\n\
+         finding_type = \"Noop\"\nseverity = \"LOW\"\n",
+    )
+    .map_err(|e| e.to_string())?;
+    stage_file(
+        &repo_dir,
+        "leak.txt",
+        "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n",
+    )?;
+    let status = Command::new("git")
+        .args(["add", "detectors.toml"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|e| e.to_string())?;
+    assert!(status.success());
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "--staged", "--no-baseline-discovery"])
+            .args(extra)
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert_eq!(
+        run(&["--no-config-discovery"]).status.code(),
+        Some(1),
+        "with built-in detectors the staged secret must still be reported"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_reads_blobs_git_renders_as_binary() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // `*.env -diff` makes git emit only "Binary files ... differ", so the
+    // added lines never appear in the diff. The scan must read the staged
+    // blob instead of reporting the file as clean.
+    let repo_dir = unique_temp_dir("staged_undiffable_blob");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::write(repo_dir.join(".gitattributes"), "*.env -diff\n").map_err(|e| e.to_string())?;
+    stage_file(
+        &repo_dir,
+        "secrets.env",
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--staged", "--no-baseline-discovery", "--verbose"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .current_dir(&repo_dir)
+        .output()
+        .expect("run key-watch");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a '-diff' gitattribute must not hide a staged secret\nstdout:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"file_path\": \"secrets.env\""),
+        "the finding must be attributed to the real path\nstdout:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}

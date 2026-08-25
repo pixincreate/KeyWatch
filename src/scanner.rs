@@ -416,7 +416,7 @@ pub fn run_scan(
         ]);
         command.args(&args.paths);
 
-        return scan_git_output(
+        let staged = scan_git_output(
             command,
             ScannerError::GitDiffNonZero,
             |reader| {
@@ -429,7 +429,28 @@ pub fn run_scan(
                 )
             },
             |source| ScannerError::RunGitDiff { source },
-        );
+        )?;
+
+        let StagedScan {
+            mut findings,
+            mut metadata,
+            undiffable_files,
+        } = staged;
+
+        let (blob_findings, blob_lines, skipped) =
+            scan_undiffable_blobs(&undiffable_files, &multiline_detectors, &line_detectors)?;
+        findings.extend(blob_findings);
+        metadata.total_lines += blob_lines;
+        metadata.files_scanned += undiffable_files.len() - skipped.len();
+        metadata.excluded_files.extend(skipped);
+
+        findings.sort_by(|a, b| {
+            a.file_path
+                .cmp(&b.file_path)
+                .then(a.line_number.cmp(&b.line_number))
+        });
+
+        return Ok((findings, metadata));
     }
 
     if args.stdin {
@@ -674,12 +695,13 @@ fn scan_staged_diff<ReaderType: BufRead>(
     excluded_baseline: Option<&PathBuf>,
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
-) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
+) -> Result<StagedScan, ScannerError> {
     let context = LineScanContext::new(line_detectors);
     let mut findings = Vec::new();
     let mut total_lines = 0;
     let mut scanned_files: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut excluded_files: Vec<String> = Vec::new();
+    let mut undiffable_files: Vec<String> = Vec::new();
     let mut current_path: Option<String> = None;
     let mut in_hunk = false;
     let mut next_line_number = 0;
@@ -774,10 +796,18 @@ fn scan_staged_diff<ReaderType: BufRead>(
             continue;
         }
 
-        // A `-diff` gitattribute (or a true binary) yields no hunks; surface
-        // the skipped file instead of silently reporting it as clean.
+        // A `-diff` gitattribute (or a true binary) yields no hunks. The diff
+        // tells us nothing about the content, so record the path and read the
+        // staged blob directly rather than reporting the file as clean.
         if let Some(marker) = line.strip_prefix("Binary files ") {
-            excluded_files.push(parse_binary_marker_path(marker));
+            let path = parse_binary_marker_path(marker);
+            if matches_exclude_patterns(&path, &[], exclude_patterns)
+                || is_baseline_file(&path, excluded_baseline)
+            {
+                excluded_files.push(path);
+            } else {
+                undiffable_files.push(path);
+            }
         }
     }
 
@@ -801,7 +831,59 @@ fn scan_staged_diff<ReaderType: BufRead>(
         excluded_files,
     };
 
-    Ok((findings, metadata))
+    Ok(StagedScan {
+        findings,
+        metadata,
+        undiffable_files,
+    })
+}
+
+/// Result of parsing a staged diff. `undiffable_files` are paths git rendered
+/// as binary (a real binary, or text marked `-diff` in .gitattributes); their
+/// content never appears in the diff and must be read from the index instead.
+struct StagedScan {
+    findings: Vec<Finding>,
+    metadata: ScanMetadata,
+    undiffable_files: Vec<String>,
+}
+
+/// Scans the staged blob of each undiffable path via `git cat-file`.
+///
+/// Without this a `.gitattributes` entry like `*.env -diff` would hide a
+/// staged secret completely: git emits only "Binary files ... differ" and the
+/// scan would report the file as clean.
+fn scan_undiffable_blobs(
+    paths: &[String],
+    multiline_detectors: &[&Detector],
+    line_detectors: &[&Detector],
+) -> Result<(Vec<Finding>, usize, Vec<String>), ScannerError> {
+    let context = LineScanContext::new(line_detectors);
+    let mut findings = Vec::new();
+    let mut total_lines = 0;
+    let mut skipped = Vec::new();
+
+    for path in paths {
+        let output = std::process::Command::new("git")
+            .args(["cat-file", "blob", &format!(":{path}")])
+            .output()
+            .map_err(|source| ScannerError::RunGitDiff { source })?;
+        if !output.status.success() {
+            skipped.push(path.clone());
+            continue;
+        }
+        // Genuinely binary content (NUL bytes) is skipped, matching file mode.
+        if output.stdout.contains(&0) {
+            skipped.push(path.clone());
+            continue;
+        }
+        let content = String::from_utf8_lossy(&output.stdout);
+        let (blob_findings, blob_lines) =
+            scan_content(&content, path, multiline_detectors, &context);
+        findings.extend(blob_findings);
+        total_lines += blob_lines;
+    }
+
+    Ok((findings, total_lines, skipped))
 }
 
 fn collect_files(dir_path: &str, files: &mut Vec<(String, Option<String>)>, root: &str) {
@@ -988,8 +1070,9 @@ mod tests {
             +++SECRET_TWO starts with pluses\n\
             +@@ SECRET_THREE looks like a hunk header\n";
 
-        let (findings, metadata) =
-            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        let StagedScan {
+            findings, metadata, ..
+        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1020,8 +1103,9 @@ mod tests {
             -SECRET_GONE\n\
             -goodbye\n";
 
-        let (findings, metadata) =
-            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        let StagedScan {
+            findings, metadata, ..
+        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         assert!(findings.is_empty(), "removed lines must not be scanned");
         assert_eq!(metadata.files_scanned, 0);
@@ -1042,8 +1126,9 @@ mod tests {
             @@ -0,0 +2 @@\n\
             +SECRET_B\n";
 
-        let (findings, metadata) =
-            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        let StagedScan {
+            findings, metadata, ..
+        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1057,21 +1142,46 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_staged_diff_surfaces_binary_files_as_excluded() {
+    fn test_scan_staged_diff_queues_binary_files_for_blob_reading() {
         let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
         let line_detectors = vec![&detector];
         let diff = "diff --git a/img.png b/img.png\n\
             index aabbcc0..ddeeff1 100644\n\
             Binary files a/img.png and b/img.png differ\n";
 
-        let (findings, metadata) =
-            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        let staged = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
-        assert!(findings.is_empty());
+        assert!(staged.findings.is_empty());
+        assert!(
+            staged.metadata.excluded_files.is_empty(),
+            "an undiffable file is not 'excluded' — its blob still gets scanned"
+        );
         assert_eq!(
-            metadata.excluded_files,
+            staged.undiffable_files,
             vec!["img.png".to_string()],
-            "files git renders as binary must be surfaced, not silently clean"
+            "binary-rendered files must be queued for a direct blob read, or a \
+             '-diff' gitattribute hides a staged secret entirely"
+        );
+    }
+
+    #[test]
+    fn test_scan_staged_diff_respects_excludes_for_binary_files() {
+        let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
+        let line_detectors = vec![&detector];
+        let diff = "diff --git a/vendor/blob.bin b/vendor/blob.bin\n\
+            Binary files a/vendor/blob.bin and b/vendor/blob.bin differ\n";
+        let pattern = Pattern::new("vendor/**").unwrap();
+
+        let staged =
+            scan_staged_diff(Cursor::new(diff), &[pattern], None, &[], &line_detectors).unwrap();
+
+        assert!(
+            staged.undiffable_files.is_empty(),
+            "an excluded path must not be re-read from the index"
+        );
+        assert_eq!(
+            staged.metadata.excluded_files,
+            vec!["vendor/blob.bin".to_string()]
         );
     }
 
@@ -1087,7 +1197,7 @@ mod tests {
         diff.extend_from_slice(b"+caf\xE9 latin-1 line\n");
         diff.extend_from_slice(b"+SECRET_AFTER_BINARYISH\n");
 
-        let (findings, _) =
+        let StagedScan { findings, .. } =
             scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
 
         assert_eq!(
@@ -1110,7 +1220,7 @@ mod tests {
             +material\n\
             +END KEY\n";
 
-        let (findings, _) =
+        let StagedScan { findings, .. } =
             scan_staged_diff(Cursor::new(diff), &[], None, &multiline_detectors, &[]).unwrap();
 
         assert_eq!(findings.len(), 1);

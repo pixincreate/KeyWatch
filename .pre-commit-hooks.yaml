@@ -1,7 +1,7 @@
 - id: keywatch-scan
   name: KeyWatch scan
   description: Scan staged changes for secrets, API keys, tokens, and credentials
-  entry: key-watch scan --staged
+  entry: key-watch scan --staged --no-config-discovery
   language: rust
   files: ''
   pass_filenames: false
@@ -11,7 +11,7 @@
 - id: keywatch-scan-system
   name: KeyWatch scan (system)
   description: Scan staged changes for secrets, API keys, tokens, and credentials
-  entry: key-watch scan --staged
+  entry: key-watch scan --staged --no-config-discovery
   language: system
   files: ''
   pass_filenames: false

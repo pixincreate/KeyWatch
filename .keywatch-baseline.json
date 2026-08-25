@@ -1414,6 +1414,48 @@
       "finding_type": "AWS Access Key",
       "matched_content_hash": "bc377e3c9554437ff10fd844193b505dced77a6af5a662e74232e814d284a1a2",
       "plugin_name": "AWSKeyDetector"
+    },
+    {
+      "file_path": "./detectors.toml",
+      "line_number": 100,
+      "finding_type": "Certificate",
+      "matched_content_hash": "648ee3671e3bc408c3bce7d0ce237d9716da2c360a5c57c235a21067ac11eea9",
+      "plugin_name": "CertificateDetector"
+    },
+    {
+      "file_path": "./detectors.toml",
+      "line_number": 249,
+      "finding_type": "Private Key Content",
+      "matched_content_hash": "f59444f5756fc6dd701c599452c1752e64a97ecb0447ce41a1e19eb15293ef9a",
+      "plugin_name": "PrivateKeyContentDetector"
+    },
+    {
+      "file_path": "./detectors.toml",
+      "line_number": 249,
+      "finding_type": "SSH Private Key",
+      "matched_content_hash": "678a65e8968aabff441076ae306e13d4fc85b1d36d8036a10d2100c1dc40d251",
+      "plugin_name": "SSHPrivateKeyDetector"
+    },
+    {
+      "file_path": "./detectors.toml",
+      "line_number": 666,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "e64a42fa536515c68483f9b16cae91558748e69c9e7119bc8f32964322a67fe2",
+      "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "./detectors.toml",
+      "line_number": 666,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "613dfb068a3be178fc4a3592d7233cdfb4f7005ab1582ec9676f875e15adcbb5",
+      "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "./tests/scanner_tests.rs",
+      "line_number": 1777,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "3490ca8089f67ef5e1c7455855266a1337d5817e69935e870adb73d049810429",
+      "plugin_name": "GenericKeyValueDetector"
     }
   ]
 }

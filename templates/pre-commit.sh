@@ -13,7 +13,14 @@ fi
 # scan --staged reads only the added lines of git diff --cached, so findings
 # on unchanged lines never block a commit. A git failure inside the scanner
 # exits with code 2, which fails the hook closed.
-"$KEYWATCH_BIN" scan --staged --exclude "$EXCLUDE_PATTERNS" >/dev/null 2>&1
+#
+# --no-config-discovery makes the hook use KeyWatch's built-in detectors, as
+# the pre-push hook already does. Without it a detectors.toml committed to the
+# scanned repository REPLACES the detector set, so a repository could disable
+# secret detection for everyone who clones it. Suppress findings with a
+# committed baseline or an inline keywatch:ignore marker, both of which the
+# hook still honours.
+"$KEYWATCH_BIN" scan --staged --no-config-discovery --exclude "$EXCLUDE_PATTERNS" >/dev/null 2>&1
 EXIT_CODE=$?
 case $EXIT_CODE in
     0)
