@@ -7,7 +7,7 @@ use glob::Pattern;
 use rayon::prelude::*;
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod error;
 
@@ -460,6 +460,7 @@ pub fn run_scan(
     let unique_paths: Vec<_> = unique_paths.into_iter().collect();
 
     let exclude_patterns = compile_exclude_patterns(args, config)?;
+    let excluded_baseline = baseline_exclusion(args);
     let line_scan_context = LineScanContext::new(&line_detectors);
 
     let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
@@ -469,7 +470,9 @@ pub fn run_scan(
                 return (Vec::new(), 0, 0, Some(path));
             }
 
-            if matches_exclude_patterns(&path, &roots, &exclude_patterns) {
+            if matches_exclude_patterns(&path, &roots, &exclude_patterns)
+                || is_baseline_file(&path, excluded_baseline.as_ref())
+            {
                 return (Vec::new(), 0, 0, Some(path));
             }
 
@@ -570,16 +573,24 @@ fn compile_exclude_patterns(
         }
     }
 
-    // Never scan the baseline file itself: it stores finding hashes that
-    // trigger detectors, and each --update-baseline would re-ingest them,
-    // growing the baseline on every run.
-    if let Some(baseline_path) = &args.baseline {
-        let literal = Pattern::escape(baseline_path);
-        exclude_patterns
-            .push(Pattern::new(&literal).expect("escaped literal is a valid glob pattern"));
-    }
-
     Ok(exclude_patterns)
+}
+
+/// Canonical path of the baseline file, so scans never read it. It stores
+/// finding hashes that themselves trip detectors, and each
+/// `--update-baseline` would re-ingest them, growing the file every run.
+/// Compared canonically because a discovered baseline is absolute while the
+/// scanned path may be relative (`./.keywatch-baseline.json`).
+fn baseline_exclusion(args: &ScanArgs) -> Option<PathBuf> {
+    let baseline_path = args.baseline.as_ref()?;
+    fs::canonicalize(baseline_path).ok()
+}
+
+fn is_baseline_file(path: &str, baseline: Option<&PathBuf>) -> bool {
+    let Some(baseline) = baseline else {
+        return false;
+    };
+    fs::canonicalize(path).is_ok_and(|candidate| candidate == *baseline)
 }
 
 fn parse_hunk_new_start(header: &str) -> usize {

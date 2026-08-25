@@ -1654,3 +1654,55 @@ fn test_staged_scan_uses_discovered_baseline() -> Result<(), String> {
     let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
+
+#[test]
+fn test_discovered_baseline_file_is_never_scanned() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // A discovered baseline resolves to an absolute path while scanned files
+    // are relative, so self-exclusion must compare canonical paths.
+    let repo_dir = unique_temp_dir("discovered_baseline_self_scan");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::write(
+        repo_dir.join("secrets.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "."])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert!(run(&["--update-baseline"]).status.success());
+    let size_before = fs::metadata(repo_dir.join(".keywatch-baseline.json"))
+        .map_err(|e| e.to_string())?
+        .len();
+
+    let rescan = run(&[]);
+    assert!(
+        String::from_utf8_lossy(&rescan.stdout).contains("No secrets found."),
+        "scanning the tree must not re-flag the discovered baseline's own hashes, got:\n{}",
+        String::from_utf8_lossy(&rescan.stdout)
+    );
+
+    assert!(run(&["--update-baseline"]).status.success());
+    let size_after = fs::metadata(repo_dir.join(".keywatch-baseline.json"))
+        .map_err(|e| e.to_string())?
+        .len();
+    assert_eq!(
+        size_before, size_after,
+        "re-updating a discovered baseline must not ingest the baseline itself"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
