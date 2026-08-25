@@ -43,6 +43,22 @@ pub fn run_cli() -> Result<(), RunCliError> {
     }
 }
 
+/// Writes a line to stdout.
+///
+/// `println!` panics if stdout is closed, which happens routinely when output
+/// is piped (`key-watch scan . | head`). A closed pipe is a normal way for a
+/// reader to stop listening, so it is reported as success; anything else is a
+/// real I/O failure and is propagated.
+fn emit(line: &str) -> Result<(), RunCliError> {
+    use std::io::Write;
+
+    let mut stdout = std::io::stdout().lock();
+    match writeln!(stdout, "{line}") {
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => other.map_err(|source| RunCliError::WriteOutput { source }),
+    }
+}
+
 fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let start = Instant::now();
 
@@ -79,7 +95,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
         let mut baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
         baseline.update_with_findings(&findings);
         baseline.save(std::path::Path::new(baseline_path))?;
-        println!("Baseline updated: {}", baseline_path);
+        emit(&format!("Baseline updated: {baseline_path}"))?;
         return Ok(());
     }
 
@@ -98,14 +114,15 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     }
     .map_err(|source| RunCliError::ReportSerialize { source })?;
 
-    match findings_count {
-        _ if args.verbose => println!("{report_out}"),
-        0 => println!("No secrets found."),
-        count => println!(
+    let summary = match findings_count {
+        _ if args.verbose => report_out.clone(),
+        0 => "No secrets found.".to_string(),
+        count => format!(
             "WARNING: {} potential secret(s) detected (CRITICAL: {}, HIGH: {}, MEDIUM: {}, LOW: {})",
             count, severity_counts.0, severity_counts.1, severity_counts.2, severity_counts.3
         ),
-    }
+    };
+    emit(&summary)?;
 
     if let Some(ref output_path) = args.output {
         utils::write_to_file(output_path, &report_out).map_err(|source| {
@@ -146,9 +163,8 @@ fn verify_binary_integrity() -> Result<(), RunCliError> {
         }
     }
 
-    println!("Binary integrity verified: {:?}", exe_path);
-    println!("Size: {} bytes", metadata.len());
-    Ok(())
+    emit(&format!("Binary integrity verified: {exe_path:?}"))?;
+    emit(&format!("Size: {} bytes", metadata.len()))
 }
 
 fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {

@@ -19,6 +19,7 @@ pub enum RunCliError {
     MissingBaselineForUpdate,
     ReportSerialize { source: serde_json::Error },
     ReportWrite { path: String, source: io::Error },
+    WriteOutput { source: io::Error },
     ExecutablePath { source: io::Error },
     ExecutableMetadata { source: io::Error },
 }
@@ -36,6 +37,9 @@ impl Display for RunCliError {
             }
             Self::ReportSerialize { source } => {
                 write!(formatter, "Failed to serialize report: {source}")
+            }
+            Self::WriteOutput { source } => {
+                write!(formatter, "Failed to write output: {}", source)
             }
             Self::ReportWrite { path, source } => {
                 write!(formatter, "Failed to write report to '{path}': {source}")
@@ -60,7 +64,7 @@ impl StdError for RunCliError {
             Self::Hooks { source } => Some(source),
             Self::MissingBaselineForUpdate => None,
             Self::ReportSerialize { source } => Some(source),
-            Self::ReportWrite { source, .. } => Some(source),
+            Self::ReportWrite { source, .. } | Self::WriteOutput { source } => Some(source),
             Self::ExecutablePath { source } => Some(source),
             Self::ExecutableMetadata { source } => Some(source),
         }
