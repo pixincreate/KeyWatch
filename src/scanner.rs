@@ -67,11 +67,14 @@ impl KeywordPrefilter {
             }
         }
 
-        let automaton = if patterns.is_empty() {
-            None
-        } else {
-            // Plain literal patterns cannot hit the automaton's size limits.
-            Some(AhoCorasick::new(&patterns).expect("build keyword automaton"))
+        // If the automaton cannot be built, every keyword detector runs
+        // unconditionally: slower, but it can never miss a secret.
+        let automaton = match AhoCorasick::new(&patterns) {
+            Ok(automaton) if !patterns.is_empty() => Some(automaton),
+            _ => {
+                unconditional = (0..line_detectors.len()).collect();
+                None
+            }
         };
 
         Self {
@@ -91,8 +94,6 @@ impl KeywordPrefilter {
             candidates[detector_index] = true;
         }
         if let Some(automaton) = &self.automaton {
-            // Overlapping search: leftmost-first would report only one of two
-            // keywords sharing a prefix (e.g. "key" hides "keystone").
             for keyword_match in automaton.find_overlapping_iter(lowered_line) {
                 for &detector_index in &self.owners[keyword_match.pattern().as_usize()] {
                     candidates[detector_index] = true;
@@ -290,6 +291,37 @@ fn scan_stream<ReaderType: BufRead>(
     Ok((findings, total_lines))
 }
 
+/// Runs `command`, feeds its stdout to `scan`, and reaps the child process.
+///
+/// Both git-backed scan modes share this so the process lifetime is handled
+/// in exactly one place: on a scan error the child is killed rather than left
+/// writing into a closed pipe, and it is always waited on before the status
+/// is checked.
+fn scan_git_output<T>(
+    mut command: std::process::Command,
+    nonzero_status: ScannerError,
+    scan: impl FnOnce(BufReader<std::process::ChildStdout>) -> Result<T, ScannerError>,
+    spawn_failed: impl FnOnce(std::io::Error) -> ScannerError,
+) -> Result<T, ScannerError> {
+    let mut child = command
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(spawn_failed)?;
+
+    let stdout = child.stdout.take().ok_or(ScannerError::CaptureGitStdout)?;
+    let scanned = scan(BufReader::new(stdout));
+    if scanned.is_err() {
+        let _ = child.kill();
+    }
+
+    let status = child
+        .wait()
+        .map_err(|source| ScannerError::GitProcess { source })?;
+    let scanned = scanned?;
+
+    status.success().then_some(scanned).ok_or(nonzero_status)
+}
+
 pub fn run_scan(
     args: &ScanArgs,
     config: Option<&KeywatchConfig>,
@@ -318,39 +350,33 @@ pub fn run_scan(
             .first()
             .map(Path::new)
             .unwrap_or_else(|| Path::new("."));
-        let mut child = std::process::Command::new("git")
-            .current_dir(git_root)
-            .args([
-                "-c",
-                "diff.external=",
-                "-c",
-                "color.ui=false",
-                "log",
-                "-p",
-                "-U0",
-                "--no-ext-diff",
-                "--no-textconv",
-                "--no-color",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|source| ScannerError::RunGitLog { source })?;
+        let mut command = std::process::Command::new("git");
+        command.current_dir(git_root).args([
+            "-c",
+            "diff.external=",
+            "-c",
+            "color.ui=false",
+            "log",
+            "-p",
+            "-U0",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+        ]);
 
-        let stdout = child.stdout.take().ok_or(ScannerError::CaptureGitStdout)?;
-        let reader = BufReader::new(stdout);
-        let (findings, total_lines) = scan_stream(
-            reader,
-            "<git-history>",
-            &multiline_detectors,
-            &line_detectors,
+        let (findings, total_lines) = scan_git_output(
+            command,
+            ScannerError::GitLogNonZero,
+            |reader| {
+                scan_stream(
+                    reader,
+                    "<git-history>",
+                    &multiline_detectors,
+                    &line_detectors,
+                )
+            },
+            |source| ScannerError::RunGitLog { source },
         )?;
-
-        let status = child
-            .wait()
-            .map_err(|source| ScannerError::GitProcess { source })?;
-        if !status.success() {
-            return Err(ScannerError::GitLogNonZero);
-        }
 
         let metadata = ScanMetadata {
             files_scanned: 1,
@@ -389,33 +415,21 @@ pub fn run_scan(
             "--",
         ]);
         command.args(&args.paths);
-        let mut child = command
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|source| ScannerError::RunGitDiff { source })?;
 
-        let stdout = child.stdout.take().ok_or(ScannerError::CaptureGitStdout)?;
-        let reader = BufReader::new(stdout);
-        let scan_result = scan_staged_diff(
-            reader,
-            &exclude_patterns,
-            excluded_baseline.as_ref(),
-            &multiline_detectors,
-            &line_detectors,
+        return scan_git_output(
+            command,
+            ScannerError::GitDiffNonZero,
+            |reader| {
+                scan_staged_diff(
+                    reader,
+                    &exclude_patterns,
+                    excluded_baseline.as_ref(),
+                    &multiline_detectors,
+                    &line_detectors,
+                )
+            },
+            |source| ScannerError::RunGitDiff { source },
         );
-        if scan_result.is_err() {
-            // Reap git instead of leaving it writing into a closed pipe.
-            let _ = child.kill();
-        }
-        let wait_result = child.wait();
-
-        let (findings, metadata) = scan_result?;
-        let status = wait_result.map_err(|source| ScannerError::GitProcess { source })?;
-        if !status.success() {
-            return Err(ScannerError::GitDiffNonZero);
-        }
-
-        return Ok((findings, metadata));
     }
 
     if args.stdin {
@@ -545,25 +559,22 @@ fn compile_exclude_patterns(
     args: &ScanArgs,
     config: Option<&KeywatchConfig>,
 ) -> Result<Vec<Pattern>, ScannerError> {
-    let mut exclude_patterns: Vec<Pattern> = args
+    let mut exclude_patterns: Vec<Pattern> = Vec::new();
+
+    for pattern in args
         .exclude
-        .as_ref()
-        .map(|exclude_str| {
-            exclude_str
-                .split(',')
-                .filter(|pattern| !pattern.trim().is_empty())
-                .map(|pattern| {
-                    Pattern::new(pattern.trim()).map_err(|source| {
-                        ScannerError::InvalidExcludePattern {
-                            pattern: pattern.to_string(),
-                            source,
-                        }
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
+        .iter()
+        .flat_map(|patterns| patterns.split(','))
+        .map(str::trim)
+        .filter(|pattern| !pattern.is_empty())
+    {
+        exclude_patterns.push(Pattern::new(pattern).map_err(|source| {
+            ScannerError::InvalidExcludePattern {
+                pattern: pattern.to_string(),
+                source,
+            }
+        })?);
+    }
 
     if let Some(excludes) = config.and_then(|cfg| cfg.exclude.as_ref()) {
         for pattern_str in excludes {

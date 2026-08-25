@@ -4,6 +4,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
+use std::sync::LazyLock;
 
 mod error;
 pub use error::HookError;
@@ -19,12 +20,21 @@ fn shell_escape(input: &str) -> String {
     format!("'{}'", input.replace('\'', "'\"'\"'"))
 }
 
+/// The user's home directory, resolved once per process.
+static HOME_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+});
+
+/// `"global"` or `"local"`, for messages describing a hook's scope.
+const fn scope_label(is_global: bool) -> &'static str {
+    if is_global { "global" } else { "local" }
+}
+
 /// Renders a path for terminal output, abbreviating the home directory as `~`.
 fn display_path(path: &Path) -> String {
-    let home = env::var_os("HOME")
-        .or_else(|| env::var_os("USERPROFILE"))
-        .map(PathBuf::from);
-    match home
+    match HOME_DIR
         .as_deref()
         .and_then(|home| path.strip_prefix(home).ok())
     {
@@ -138,13 +148,9 @@ pub fn install_hook(args: &HookInstallArgs) -> Result<(), HookError> {
         );
     }
 
-    let scope = if install_target.is_global {
-        "global "
-    } else {
-        ""
-    };
     println!(
-        "Installed {scope}{hook_type_str} hook at {}",
+        "Installed {} {hook_type_str} hook at {}",
+        scope_label(install_target.is_global),
         display_path(&install_target.path)
     );
     println!(
@@ -163,11 +169,7 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
     let hook_type_str = args.hook_type.as_str();
     let install_target = resolve_hook_uninstall_target(hook_type_str, args.global)?;
 
-    let scope = if install_target.is_global {
-        "global"
-    } else {
-        "local"
-    };
+    let scope = scope_label(install_target.is_global);
     if !install_target.path.exists() {
         println!(
             "No {scope} {hook_type_str} hook found at {}",
@@ -410,7 +412,7 @@ fn ensure_hook_target_is_keywatch_managed(
         return Ok(());
     }
 
-    let scope = if is_global { "global" } else { "local" };
+    let scope = scope_label(is_global);
     Err(HookError::RefuseExistingHook {
         action,
         scope,
