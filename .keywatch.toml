@@ -1,0 +1,7 @@
+# KeyWatch self-scan configuration.
+#
+# The test suite embeds fake example credentials as fixtures (the well-known
+# AWS documentation example keys, dummy tokens in generated hook scripts).
+# Exclude them so scanning this repository — including the pre-commit hook's
+# staged scan — reports only real findings.
+exclude = ["tests/*"]
