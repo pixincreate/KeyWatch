@@ -1,19 +1,19 @@
 - id: keywatch-scan
   name: KeyWatch scan
-  description: Scan staged files for secrets, API keys, tokens, and credentials
-  entry: key-watch scan
+  description: Scan staged changes for secrets, API keys, tokens, and credentials
+  entry: key-watch scan --staged
   language: rust
   files: ''
-  pass_filenames: true
+  pass_filenames: false
   verbose: false
   args: ['--exit-mode=strict']
 
 - id: keywatch-scan-system
   name: KeyWatch scan (system)
-  description: Scan staged files for secrets, API keys, tokens, and credentials
-  entry: key-watch scan
+  description: Scan staged changes for secrets, API keys, tokens, and credentials
+  entry: key-watch scan --staged
   language: system
   files: ''
-  pass_filenames: true
+  pass_filenames: false
   verbose: false
   args: ['--exit-mode=strict']

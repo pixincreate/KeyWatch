@@ -10,27 +10,21 @@ if ! command -v "$KEYWATCH_BIN" >/dev/null 2>&1; then
     exit 1
 fi
 
-while IFS= read -r -d '' file; do
-    if [ -z "$file" ]; then
-        continue
-    fi
-    if [ -L "$file" ]; then
-        continue
-    fi
-    if [ ! -f "$file" ]; then
-        continue
-    fi
-    "$KEYWATCH_BIN" scan "$file" --exclude "$EXCLUDE_PATTERNS" >/dev/null 2>&1
-    EXIT_CODE=$?
-    if [ $EXIT_CODE -eq 0 ]; then
-        continue
-    fi
-    if [ $EXIT_CODE -eq 1 ]; then
-        echo "ERROR: Secret detected in $file"
+# scan --staged reads only the added lines of git diff --cached, so findings
+# on unchanged lines never block a commit. A git failure inside the scanner
+# exits with code 2, which fails the hook closed.
+"$KEYWATCH_BIN" scan --staged --exclude "$EXCLUDE_PATTERNS" >/dev/null 2>&1
+EXIT_CODE=$?
+case $EXIT_CODE in
+    0)
+        exit 0
+        ;;
+    1)
+        echo "ERROR: Secret detected in staged changes. Run '$KEYWATCH_BIN scan --staged' to inspect."
         exit 1
-    fi
-    echo "Error: key-watch failed on $file (exit code: $EXIT_CODE)" >&2
-    exit 1
-done < <(git diff --cached --name-only -z)
-
-exit 0
+        ;;
+    *)
+        echo "Error: $KEYWATCH_BIN scan --staged failed (exit code: $EXIT_CODE)" >&2
+        exit 1
+        ;;
+esac

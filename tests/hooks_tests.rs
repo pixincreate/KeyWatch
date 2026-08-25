@@ -143,18 +143,13 @@ fn test_hook_generation_pre_commit() {
         hook.contains("KEYWATCH_BIN='"),
         "Should shell-quote binary assignment"
     );
-    assert!(hook.contains("--exclude"), "Should pass exclude patterns");
     assert!(
         hook.contains("EXCLUDE_PATTERNS='*.log,*.tmp'"),
         "Should preserve comma-separated exclude patterns"
     );
     assert!(
-        hook.contains("scan \"$file\""),
-        "Should use scan subcommand"
-    );
-    assert!(
-        hook.contains("[ -L \"$file\" ]"),
-        "Should skip staged symlinks"
+        hook.contains("scan --staged --exclude \"$EXCLUDE_PATTERNS\""),
+        "Should delegate staged-diff scanning and excludes to scan --staged"
     );
     assert!(
         hook.contains(">/dev/null 2>&1"),
@@ -213,11 +208,8 @@ fn test_pre_commit_failure_output_does_not_print_matched_secret() {
     let temp_dir = unique_temp_dir("pre_commit_secret_output");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).expect("create temp dir");
-    fs::write(temp_dir.join("secret.txt"), "secret").expect("write staged file");
-
     let hook = generate_pre_commit_hook(&hook_install_args(HookType::PreCommit, None, None, None));
-    let git_script =
-        "#!/bin/bash\nif [ \"$1\" = \"diff\" ]; then printf 'secret.txt\\0'; exit 0; fi\nexit 1\n";
+    let git_script = "#!/bin/bash\nexit 1\n";
     let keywatch_script = "#!/bin/bash\nprintf 'MATCHED_SECRET_VALUE\\n'\nprintf 'MATCHED_SECRET_VALUE\\n' >&2\nexit 1\n";
     let output = run_hook(&hook, &[], git_script, keywatch_script, &temp_dir);
     let combined = format!(
@@ -227,7 +219,7 @@ fn test_pre_commit_failure_output_does_not_print_matched_secret() {
     );
 
     assert_eq!(output.status.code(), Some(1));
-    assert!(combined.contains("ERROR: Secret detected in secret.txt"));
+    assert!(combined.contains("ERROR: Secret detected in staged changes"));
     assert!(
         !combined.contains("MATCHED_SECRET_VALUE"),
         "Generated pre-commit hook must not print matched secrets"
@@ -238,27 +230,50 @@ fn test_pre_commit_failure_output_does_not_print_matched_secret() {
 
 #[cfg(unix)]
 #[test]
-fn test_pre_commit_skips_staged_symlinks() {
-    let temp_dir = unique_temp_dir("pre_commit_symlink_skip");
-    let marker = temp_dir.join("scanner-ran");
+fn test_pre_commit_delegates_to_staged_scan() {
+    let temp_dir = unique_temp_dir("pre_commit_staged_delegation");
+    let marker = temp_dir.join("scanner-args");
     let _ = fs::remove_dir_all(&temp_dir);
     fs::create_dir_all(&temp_dir).expect("create temp dir");
-    fs::write(temp_dir.join("target.txt"), "secret").expect("write target");
-    std::os::unix::fs::symlink("target.txt", temp_dir.join("linked.txt")).expect("create symlink");
 
-    let hook = generate_pre_commit_hook(&hook_install_args(HookType::PreCommit, None, None, None));
-    let git_script =
-        "#!/bin/bash\nif [ \"$1\" = \"diff\" ]; then printf 'linked.txt\\0'; exit 0; fi\nexit 1\n";
-    let keywatch_script = format!("#!/bin/bash\nprintf ran > '{}'\nexit 1\n", marker.display());
+    let hook = generate_pre_commit_hook(&hook_install_args(
+        HookType::PreCommit,
+        None,
+        None,
+        Some("*.log,*.tmp"),
+    ));
+    let git_script = "#!/bin/bash\nexit 1\n";
+    let keywatch_script = keywatch_script_that_records_args(&marker);
     let output = run_hook(&hook, &[], git_script, &keywatch_script, &temp_dir);
 
-    assert!(
-        output.status.success(),
-        "symlink-only pre-commit should pass"
+    assert!(output.status.success(), "clean staged scan should pass");
+    assert_eq!(
+        fs::read_to_string(&marker)
+            .expect("read scanner args")
+            .trim_end(),
+        "scan --staged --exclude *.log,*.tmp",
+        "hook must delegate added-line extraction and excludes to scan --staged"
     );
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_commit_fails_closed_when_staged_scan_errors() {
+    let temp_dir = unique_temp_dir("pre_commit_staged_scan_error");
+    let _ = fs::remove_dir_all(&temp_dir);
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+
+    let hook = generate_pre_commit_hook(&hook_install_args(HookType::PreCommit, None, None, None));
+    let git_script = "#!/bin/bash\nexit 1\n";
+    let keywatch_script = "#!/bin/bash\nexit 2\n";
+    let output = run_hook(&hook, &[], git_script, keywatch_script, &temp_dir);
+
+    assert_eq!(output.status.code(), Some(1));
     assert!(
-        !marker.exists(),
-        "scanner should not run for staged symlinks"
+        String::from_utf8_lossy(&output.stderr).contains("exit code: 2"),
+        "hook must fail closed when the staged scan cannot run"
     );
 
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
