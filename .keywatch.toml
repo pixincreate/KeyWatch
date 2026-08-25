@@ -4,4 +4,6 @@
 # AWS documentation example keys, dummy tokens in generated hook scripts).
 # Exclude them so scanning this repository — including the pre-commit hook's
 # staged scan — reports only real findings.
-exclude = ["tests/*"]
+# detectors.toml is excluded because the detector definitions themselves are
+# secret-shaped strings (pattern regexes, allowlist examples).
+exclude = ["tests/*", "detectors.toml"]

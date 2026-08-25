@@ -1069,8 +1069,10 @@ fn test_stdin_scanning_integration() -> Result<(), String> {
 
     let combined = format!("{}{}", stdout, stderr);
     assert!(
-        combined.contains("3 potential secret(s)"),
-        "Should detect 3 secrets from stdin input\nstdout:\n{}\nstderr:\n{}",
+        // AWS key + password. The Base64Detector no longer double-counts the
+        // AWS key itself: its entropy (~4.0) is below the 4.2 threshold.
+        combined.contains("2 potential secret(s)"),
+        "Should detect 2 secrets from stdin input\nstdout:\n{}\nstderr:\n{}",
         stdout,
         stderr
     );

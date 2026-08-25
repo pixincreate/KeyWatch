@@ -111,7 +111,10 @@ name = "Base64Detector"
 pattern = "\\b[A-Za-z0-9+/]{20,}[=]{0,2}\\b"
 finding_type = "Base64 Encoded String"
 severity = "LOW"
-entropy = 3.0
+# 4.2 sits between long CamelCase identifiers (measured <= ~4.13) and real
+# base64 payloads (>= ~4.27), so ordinary source code no longer floods
+# reports with LOW findings.
+entropy = 4.2
 
 [[detectors]]
 name = "HighEntropyDetector"
