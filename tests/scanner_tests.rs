@@ -58,8 +58,11 @@ fn commit_file(path: &Path, file_name: &str, contents: &str, message: &str) -> R
         return Err("git add failed".to_string());
     }
 
+    // --no-verify keeps fixture commits hermetic on machines where a global
+    // core.hooksPath installs a secret-scanning pre-commit hook; these tests
+    // exercise git-history scanning, not hooks.
     let status = Command::new("git")
-        .args(["commit", "-m", message, "--quiet"])
+        .args(["commit", "-m", message, "--quiet", "--no-verify"])
         .current_dir(path)
         .status()
         .map_err(|error| format!("git commit: {error}"))?;
@@ -108,6 +111,7 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -141,6 +145,7 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -175,6 +180,7 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -210,6 +216,7 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -239,6 +246,7 @@ fn test_multiple_detections_in_line() {
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -280,6 +288,7 @@ fn test_directory_scan_with_exclusions() {
         paths: vec![test_dir.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -320,6 +329,7 @@ fn test_exclude_pattern_filtering() {
         paths: vec![test_dir.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: Some("*.log".to_string()),
@@ -350,6 +360,7 @@ fn test_invalid_cli_exclude_pattern_returns_typed_error() {
         paths: vec![".".to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: Some("[".to_string()),
@@ -398,6 +409,7 @@ fn test_dot_github_directory_is_scanned() {
         paths: vec![test_dir.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -426,6 +438,7 @@ fn test_scan_no_secrets() {
         paths: vec![temp_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -455,6 +468,7 @@ fn test_non_utf8_file_handling() {
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -488,6 +502,7 @@ fn test_multiple_files_scan() {
         ],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -522,6 +537,7 @@ fn test_duplicate_paths_are_scanned_once() {
         ],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -570,6 +586,7 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
         ],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -610,6 +627,7 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
         paths: vec![missing_path.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -657,6 +675,7 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
         ],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -702,6 +721,7 @@ fn test_recursive_symlink_path_is_skipped() -> Result<(), String> {
         ],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -740,6 +760,7 @@ fn test_detect_aadhaar() {
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -776,6 +797,7 @@ fn test_detect_voter_id() {
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -809,6 +831,7 @@ fn test_detect_pan_card() {
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -842,6 +865,7 @@ fn test_detect_abha() {
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -876,6 +900,7 @@ fn test_multiple_indian_ids() {
         paths: vec![test_file.to_str().unwrap().to_string()],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -935,6 +960,7 @@ fn test_overlapping_scan_roots_with_exclusions() {
         ],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: Some("subdir/secret.txt".to_string()),
@@ -979,6 +1005,7 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
         paths: vec![path_str],
         stdin: false,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -1026,6 +1053,7 @@ fn test_stdin_args_validation() {
         paths: vec![],
         stdin: true,
         git_history: false,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -1086,6 +1114,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         paths: vec![],
         stdin: false,
         git_history: true,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -1100,6 +1129,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         paths: vec!["/tmp/requested-root".to_string()],
         stdin: false,
         git_history: true,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -1117,6 +1147,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         ],
         stdin: false,
         git_history: true,
+        staged: false,
         output: None,
         verbose: false,
         exclude: None,
@@ -1243,3 +1274,212 @@ fn test_git_history_does_not_execute_textconv_helpers() -> Result<(), String> {
     let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
+
+fn run_staged_scan(current_dir: &Path, extra_args: &[&str]) -> Result<Output, String> {
+    Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--staged"])
+        .args(extra_args)
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .current_dir(current_dir)
+        .output()
+        .map_err(|error| format!("run key-watch scan --staged: {error}"))
+}
+
+fn stage_file(path: &Path, file_name: &str, contents: &str) -> Result<(), String> {
+    let file_path = path.join(file_name);
+    fs::write(&file_path, contents).map_err(|error| format!("write {file_name}: {error}"))?;
+
+    let status = Command::new("git")
+        .args(["add", file_name])
+        .current_dir(path)
+        .status()
+        .map_err(|error| format!("git add: {error}"))?;
+    if !status.success() {
+        return Err("git add failed".to_string());
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_ignores_findings_on_unchanged_lines() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("staged_unchanged_lines");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(
+        &repo_dir,
+        "secrets.txt",
+        "AWS Key: AKIAABCDEFGHIJKLMNOP\n",
+        "initial",
+    )?;
+    stage_file(
+        &repo_dir,
+        "secrets.txt",
+        "AWS Key: AKIAABCDEFGHIJKLMNOP\nplain documentation line\n",
+    )?;
+
+    let output = run_staged_scan(&repo_dir, &[])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        matches!(output.status.code(), Some(0)),
+        "pre-existing secret on an unchanged line must not block\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_ignores_deletion_only_changes() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("staged_deletion_only");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(
+        &repo_dir,
+        "secrets.txt",
+        "keep this line\nAWS Key: AKIAABCDEFGHIJKLMNOP\n",
+        "initial",
+    )?;
+    stage_file(&repo_dir, "secrets.txt", "keep this line\n")?;
+
+    let output = run_staged_scan(&repo_dir, &[])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        matches!(output.status.code(), Some(0)),
+        "deletion-only staged change must not block\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_reports_added_secret_with_real_path_and_line() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("staged_added_secret");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(&repo_dir, "config.txt", "line one\nline two\n", "initial")?;
+    stage_file(
+        &repo_dir,
+        "config.txt",
+        "line one\nline two\nAWS Key: AKIAABCDEFGHIJKLMNOP\n",
+    )?;
+
+    let output = run_staged_scan(&repo_dir, &["--verbose"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        matches!(output.status.code(), Some(1)),
+        "a staged secret must block\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+    assert!(
+        stdout.contains("\"file_path\": \"config.txt\""),
+        "findings must carry the real file path, not <stdin>\nstdout:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("\"line_number\": 3"),
+        "findings must carry the post-image line number\nstdout:\n{}",
+        stdout
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_respects_exclude_patterns() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("staged_exclude");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(&repo_dir, "fixture.snap", "clean\n", "initial")?;
+    stage_file(
+        &repo_dir,
+        "fixture.snap",
+        "clean\nAWS Key: AKIAABCDEFGHIJKLMNOP\n",
+    )?;
+
+    let output = run_staged_scan(&repo_dir, &["--exclude", "*.snap"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        matches!(output.status.code(), Some(0)),
+        "excluded staged paths must not be scanned\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_composes_with_baseline() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("staged_baseline");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(&repo_dir, "config.txt", "line one\n", "initial")?;
+    stage_file(
+        &repo_dir,
+        "config.txt",
+        "line one\nAWS Key: AKIAABCDEFGHIJKLMNOP\n",
+    )?;
+
+    let update = run_staged_scan(
+        &repo_dir,
+        &["--baseline", "baseline.json", "--update-baseline"],
+    )?;
+    assert!(
+        matches!(update.status.code(), Some(0)),
+        "baseline update should succeed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&update.stdout),
+        String::from_utf8_lossy(&update.stderr)
+    );
+
+    let output = run_staged_scan(&repo_dir, &["--baseline", "baseline.json"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        matches!(output.status.code(), Some(0)),
+        "baselined staged findings must be suppressed\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+

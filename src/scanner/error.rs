@@ -19,11 +19,15 @@ pub enum ScannerError {
     RunGitLog {
         source: io::Error,
     },
+    RunGitDiff {
+        source: io::Error,
+    },
     CaptureGitStdout,
     GitProcess {
         source: io::Error,
     },
     GitLogNonZero,
+    GitDiffNonZero,
     InvalidExcludePattern {
         pattern: String,
         source: glob::PatternError,
@@ -45,11 +49,17 @@ impl fmt::Display for ScannerError {
             ScannerError::RunGitLog { source } => {
                 write!(formatter, "Failed to run git log: {}", source)
             }
+            ScannerError::RunGitDiff { source } => {
+                write!(formatter, "Failed to run git diff: {}", source)
+            }
             ScannerError::CaptureGitStdout => write!(formatter, "Failed to capture git stdout"),
             ScannerError::GitProcess { source } => {
                 write!(formatter, "git process error: {}", source)
             }
             ScannerError::GitLogNonZero => write!(formatter, "git log exited with non-zero status"),
+            ScannerError::GitDiffNonZero => {
+                write!(formatter, "git diff exited with non-zero status")
+            }
             ScannerError::InvalidExcludePattern { pattern, source } => {
                 write!(
                     formatter,
@@ -72,8 +82,12 @@ impl StdError for ScannerError {
             ScannerError::DetectorInit { source } => Some(source),
             ScannerError::Config { source } => Some(source),
             ScannerError::ReadStream { source, .. } => Some(source),
-            ScannerError::RunGitLog { source } => Some(source),
-            ScannerError::CaptureGitStdout | ScannerError::GitLogNonZero => None,
+            ScannerError::RunGitLog { source } | ScannerError::RunGitDiff { source } => {
+                Some(source)
+            }
+            ScannerError::CaptureGitStdout
+            | ScannerError::GitLogNonZero
+            | ScannerError::GitDiffNonZero => None,
             ScannerError::GitProcess { source } => Some(source),
             ScannerError::InvalidExcludePattern { source, .. }
             | ScannerError::InvalidConfigExcludePattern { source, .. } => Some(source),

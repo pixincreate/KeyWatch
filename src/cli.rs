@@ -7,6 +7,8 @@ use std::fmt::{Display, Formatter};
 pub enum CliValidationError {
     GitHistoryWithStdin,
     GitHistoryWithMultiplePaths,
+    StagedWithStdin,
+    StagedWithGitHistory,
     StdinWithPaths,
     MissingScanInput,
     PreCommitRepositoryFilters,
@@ -22,10 +24,15 @@ impl Display for CliValidationError {
             Self::GitHistoryWithMultiplePaths => {
                 formatter.write_str("Cannot specify more than one path with --git-history")
             }
-            Self::StdinWithPaths => formatter.write_str("Cannot specify both --stdin and paths"),
-            Self::MissingScanInput => {
-                formatter.write_str("Must specify paths, use --stdin, or use --git-history")
+            Self::StagedWithStdin => {
+                formatter.write_str("Cannot specify both --staged and --stdin")
             }
+            Self::StagedWithGitHistory => {
+                formatter.write_str("Cannot specify both --staged and --git-history")
+            }
+            Self::StdinWithPaths => formatter.write_str("Cannot specify both --stdin and paths"),
+            Self::MissingScanInput => formatter
+                .write_str("Must specify paths, use --stdin, --staged, or --git-history"),
             Self::PreCommitRepositoryFilters => formatter.write_str(
                 "--allowed-repos and --blocked-repos are only supported for pre-push hooks",
             ),
@@ -87,6 +94,10 @@ pub struct ScanArgs {
     #[arg(long, default_value_t = false)]
     pub git_history: bool,
 
+    /// Scan only the lines staged for commit (paths narrow the staged diff)
+    #[arg(long, default_value_t = false)]
+    pub staged: bool,
+
     /// Output the result to a file
     #[arg(short, long)]
     pub output: Option<String>,
@@ -126,22 +137,21 @@ pub struct ScanArgs {
 
 impl ScanArgs {
     pub fn validate(&self) -> Result<(), CliValidationError> {
-        if self.git_history {
-            if self.stdin {
-                return Err(CliValidationError::GitHistoryWithStdin);
+        match (self.git_history, self.staged, self.stdin) {
+            (true, true, _) => Err(CliValidationError::StagedWithGitHistory),
+            (true, _, true) => Err(CliValidationError::GitHistoryWithStdin),
+            (true, false, false) if self.paths.len() > 1 => {
+                Err(CliValidationError::GitHistoryWithMultiplePaths)
             }
-            if self.paths.len() > 1 {
-                return Err(CliValidationError::GitHistoryWithMultiplePaths);
+            (false, true, true) => Err(CliValidationError::StagedWithStdin),
+            (false, false, true) if !self.paths.is_empty() => {
+                Err(CliValidationError::StdinWithPaths)
             }
-            return Ok(());
+            (false, false, false) if self.paths.is_empty() => {
+                Err(CliValidationError::MissingScanInput)
+            }
+            _ => Ok(()),
         }
-        if self.stdin && !self.paths.is_empty() {
-            return Err(CliValidationError::StdinWithPaths);
-        }
-        if !self.stdin && self.paths.is_empty() {
-            return Err(CliValidationError::MissingScanInput);
-        }
-        Ok(())
     }
 }
 
