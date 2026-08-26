@@ -122,7 +122,10 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
         emit(&format!(
             "Suppressed {} finding(s) via {}",
             suppressed,
-            args.baseline.as_deref().unwrap_or("baseline")
+            args.baseline
+                .as_deref()
+                .map(|path| utils::display_path(std::path::Path::new(path)))
+                .unwrap_or_else(|| "baseline".to_string())
         ))?;
     }
 
