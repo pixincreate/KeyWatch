@@ -1085,6 +1085,44 @@ mod tests {
     }
 
     #[test]
+    fn test_prefilter_selects_detectors_with_overlapping_keywords() {
+        // detectors.toml has genuinely overlapping keywords ("sk_" for Adyen,
+        // "sk_test_" for Stripe). A non-overlapping search reports only the
+        // shorter one and the longer detector silently never runs.
+        let short = Detector::new(
+            "Short",
+            r"sk_\w+",
+            "Short",
+            "HIGH",
+            &[],
+            &["sk_".to_string()],
+            None,
+        )
+        .unwrap();
+        let long = Detector::new(
+            "Long",
+            r"sk_test_\w+",
+            "Long",
+            "HIGH",
+            &[],
+            &["sk_test_".to_string()],
+            None,
+        )
+        .unwrap();
+        let detectors = vec![&short, &long];
+        let prefilter = KeywordPrefilter::new(&detectors);
+
+        let mut candidates = Vec::new();
+        prefilter.candidates_into("sk_test_51abcdef", &mut candidates);
+
+        assert_eq!(
+            candidates,
+            vec![true, true],
+            "both the shorter and longer keyword owners must be selected"
+        );
+    }
+
+    #[test]
     fn test_scan_staged_diff_preserves_plus_prefixed_added_content() {
         let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
         let line_detectors = vec![&detector];

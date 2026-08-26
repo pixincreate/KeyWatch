@@ -15,8 +15,16 @@ fn unique_temp_dir(name: &str) -> PathBuf {
     temp_dir().join(format!("keywatch_{name}_{stamp}_{}", std::process::id()))
 }
 
+/// Git backs the --staged and --git-history modes, so its absence is a
+/// broken environment rather than a reason to pass silently. Twelve tests
+/// used to return Ok(()) here, reporting green while covering nothing.
 fn git_available() -> bool {
-    Command::new("git").arg("--version").output().is_ok()
+    let output = Command::new("git")
+        .arg("--version")
+        .output()
+        .expect("git is required to test KeyWatch's git-backed scan modes");
+    assert!(output.status.success(), "`git --version` failed");
+    true
 }
 
 fn init_git_repo(path: &Path) -> Result<(), String> {
@@ -2086,5 +2094,128 @@ fn test_prune_baseline_drops_stale_entries() -> Result<(), String> {
     );
 
     let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_survives_hostile_git_config() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // Every override in the staged git invocation exists because one of these
+    // settings breaks parsing. Without this test, deleting any of them is
+    // invisible: the scan reports clean or attributes findings to a mangled
+    // path, and no other test notices.
+    let repo_dir = unique_temp_dir("hostile_git_config");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    for (key, value) in [
+        ("color.ui", "always"),
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.noprefix", "true"),
+        ("core.quotePath", "true"),
+        ("diff.relative", "true"),
+    ] {
+        let status = Command::new("git")
+            .args(["config", key, value])
+            .current_dir(&repo_dir)
+            .status()
+            .map_err(|e| e.to_string())?;
+        assert!(status.success(), "git config {key} failed");
+    }
+    commit_file(&repo_dir, "config.txt", "one\ntwo\n", "init")?;
+    stage_file(
+        &repo_dir,
+        "config.txt",
+        "one\ntwo\naws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--staged", "--verbose", "--no-baseline-discovery"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .current_dir(&repo_dir)
+        .output()
+        .expect("run key-watch");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert_eq!(output.status.code(), Some(1), "stdout:\n{stdout}");
+    assert!(
+        stdout.contains("\"file_path\": \"config.txt\""),
+        "path attribution must survive prefix settings, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"line_number\": 3"),
+        "line attribution must survive, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_outside_a_repository_fails_closed() {
+    // templates/pre-commit.sh documents that any exit above 1 blocks the
+    // commit; nothing pinned that the scanner actually produces it.
+    let dir = unique_temp_dir("staged_outside_repo");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--staged", "--no-baseline-discovery"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .env("GIT_CEILING_DIRECTORIES", &dir)
+        .current_dir(&dir)
+        .output()
+        .expect("run key-watch");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "a git failure must exit 2 so the hook fails closed, stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_staged_scan_paths_narrow_the_diff() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    let repo_dir = unique_temp_dir("staged_path_narrowing");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(&repo_dir, "clean.txt", "nothing\n", "init")?;
+    stage_file(&repo_dir, "clean.txt", "nothing\nstill nothing\n")?;
+    stage_file(
+        &repo_dir,
+        "secret.txt",
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )?;
+
+    let run = |path: &str| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "--staged", "--no-baseline-discovery", "--", path])
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert_eq!(
+        run("clean.txt").status.code(),
+        Some(0),
+        "narrowing to a clean path must not report the other file"
+    );
+    assert_eq!(
+        run("secret.txt").status.code(),
+        Some(1),
+        "narrowing to the secret path must still report it"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
