@@ -16,6 +16,10 @@ All notable changes to this project will be documented in this file.
 - Config discovery searches parent directories up to the repository root
 - Hook messages abbreviate the home directory as `~`
 
+### Added
+
+- `--prune-baseline` rewrites the baseline from current findings, dropping entries for deleted files and rotated credentials
+
 ### Changed
 
 - Reports redact matched text by default; `--show-secrets` opts into raw values
@@ -42,7 +46,7 @@ All notable changes to this project will be documented in this file.
 - The baseline file is no longer scanned as input to itself
 - `GenericKeyValueDetector` and `RandomString` no longer flag code identifiers (`let payment_method_token = card_token`, snake_case serde attributes)
 - `PasswordDetector` no longer flags `$PWD:`
-- Piping output to a closed reader no longer panics
+- Piping output to a closed reader no longer panics, including `hook install` and `init`
 
 ### Performance
 

@@ -8,6 +8,21 @@ static HOME_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
         .map(PathBuf::from)
 });
 
+/// Writes a line to stdout.
+///
+/// `println!` panics if stdout is closed, which happens routinely when output
+/// is piped (`key-watch hook install | head`). A closed pipe is a normal way
+/// for a reader to stop listening, so it is reported as success.
+pub fn emit_line(line: &str) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let mut stdout = std::io::stdout().lock();
+    match writeln!(stdout, "{line}") {
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => other,
+    }
+}
+
 /// Renders a path for terminal output, abbreviating the home directory as `~`.
 pub fn display_path(path: &Path) -> String {
     match HOME_DIR

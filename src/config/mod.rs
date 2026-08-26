@@ -131,15 +131,6 @@ impl KeywatchConfig {
         Ok(())
     }
 
-    /// Load from an explicit path. When `path` is `None`, discovery starts in
-    /// the current working directory.
-    /// Returns `None` when no config file is found (config is optional).
-    pub fn load(path: Option<&str>) -> Result<Option<Self>, ConfigError> {
-        let cwd =
-            std::env::current_dir().map_err(|source| ConfigError::CurrentDirectory { source })?;
-        Self::load_for_paths_at_cwd(path, &[], &cwd)
-    }
-
     /// Load config with scan-path-aware discovery.
     ///
     /// Resolution order:

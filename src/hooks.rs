@@ -122,21 +122,21 @@ pub fn install_hook(args: &HookInstallArgs) -> Result<(), HookError> {
     })?;
 
     if install_target.configured_global_path {
-        println!(
+        let _ = utils::emit_line(&format!(
             "Configured git --global core.hooksPath to {}",
             utils::display_path(&install_target.hooks_dir)
-        );
+        ));
     }
 
-    println!(
+    let _ = utils::emit_line(&format!(
         "Installed {} {hook_type_str} hook at {}",
         scope_label(install_target.is_global),
         utils::display_path(&install_target.path)
-    );
-    println!(
+    ));
+    let _ = utils::emit_line(&format!(
         "The hook will run automatically during git {}.",
         hook_type_str.replace('-', " ")
-    );
+    ));
 
     Ok(())
 }
@@ -151,10 +151,10 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
 
     let scope = scope_label(install_target.is_global);
     if !install_target.path.exists() {
-        println!(
+        let _ = utils::emit_line(&format!(
             "No {scope} {hook_type_str} hook found at {}",
             utils::display_path(&install_target.path)
-        );
+        ));
         return Ok(());
     }
 
@@ -169,10 +169,10 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
         source,
     })?;
 
-    println!(
+    let _ = utils::emit_line(&format!(
         "Removed {scope} {hook_type_str} hook at {}",
         utils::display_path(&install_target.path)
-    );
+    ));
 
     Ok(())
 }
