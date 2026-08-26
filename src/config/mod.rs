@@ -252,6 +252,12 @@ pub(crate) fn find_file_upwards(
     } else {
         cwd.join(search_dir)
     };
+    // Drop "." components so discovered paths read as "/repo/.keywatch.toml"
+    // rather than "/repo/./.keywatch.toml" when reported to the user.
+    let search_dir: PathBuf = search_dir
+        .components()
+        .filter(|component| !matches!(component, std::path::Component::CurDir))
+        .collect();
 
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
