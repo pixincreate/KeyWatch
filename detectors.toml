@@ -94,6 +94,12 @@ finding_type = "Generic Key/Secret"
 severity = "HIGH"
 keywords = ["api_key", "secret", "password", "token", "access_key", "credential"]
 entropy = 2.5
+# An unquoted, all-lowercase snake_case value is a variable reference, not a
+# credential: `let payment_method_token = card_token;` reads identically to
+# `token = <10 random chars>` to the pattern above. Requiring no quotes, no
+# digits and no capitals keeps real values flagged — quoted literals end in a
+# quote, and generated secrets carry digits or mixed case.
+allowlist = ["[:=]\\s*[a-z]+(?:_[a-z]+)+$"]
 
 [[detectors]]
 name = "CertificateDetector"
@@ -157,6 +163,10 @@ pattern = "\"[a-zA-Z0-9\\-_=]{35,}\""
 finding_type = "Random String"
 severity = "LOW"
 entropy = 3.5
+# Long all-lowercase snake_case string literals are identifiers — serde
+# attributes, config keys, enum names — not random values. A generated secret
+# of this length carries digits or capitals.
+allowlist = ["^\"[a-z]+(?:_[a-z]+)+\"$"]
 
 
 [[detectors]]

@@ -1456,6 +1456,41 @@
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "3490ca8089f67ef5e1c7455855266a1337d5817e69935e870adb73d049810429",
       "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 259,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "78eb69b065478e9702683ad7731074c1b46c2ab9c59ef29e9a38754005970888",
+      "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 270,
+      "finding_type": "Stripe API Key",
+      "matched_content_hash": "f5e0f4b16462b5c0a472bc8650167795b846f2b7f825a6a3d9804a8aca2e7864",
+      "plugin_name": "StripeAPIKeyDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 271,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "64ac92e0d5a31bef34682076a022571a87ebbaa61a1c74d7a43bbfa354087548",
+      "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 272,
+      "finding_type": "Password",
+      "matched_content_hash": "4018438f1eaf55ea32baee0422d118935b7a6a4d0a9cb3ce86e41a5ec5827e4b",
+      "plugin_name": "PasswordDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 273,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "650dfe7ddce0129182c60029ba66733efa412ba0824523dd6b096482c4eb8ac9",
+      "plugin_name": "GenericKeyValueDetector"
     }
   ]
 }

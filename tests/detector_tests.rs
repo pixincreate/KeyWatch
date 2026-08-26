@@ -236,3 +236,42 @@ fn test_detector_init_error_duplicate_name_display() {
 
     assert_eq!(error.to_string(), "duplicate detector name 'Dup'");
 }
+
+#[test]
+fn test_generic_key_value_ignores_unquoted_identifier_assignments() {
+    let detectors = key_watch::detector::initialize_detectors().expect("load detectors");
+    let generic = detectors
+        .iter()
+        .find(|d| d.name == "GenericKeyValueDetector")
+        .expect("GenericKeyValueDetector should exist");
+
+    let is_reported = |line: &str| {
+        generic.regex.find_iter(line).any(|m| {
+            !generic.allowlist.iter().any(|a| a.is_match(m.as_str()))
+                && generic.has_sufficient_entropy(m.as_str())
+        })
+    };
+
+    // Rust/Python/Go variable bindings are not credentials.
+    for code in [
+        "        let payment_method_token = card_token.clone();",
+        "let secret = client_secret;",
+        "token = payment_method_token",
+    ] {
+        assert!(
+            !is_reported(code),
+            "should not flag identifier assignment: {code}"
+        );
+    }
+
+    // Quoted literals, and unquoted values carrying digits or capitals, must
+    // still be reported.
+    for secret in [
+        "api_key = \"sk_live_51abcdefghij\"",
+        "API_KEY=abc123def456789",
+        "password = \"hunter2hunter2\"",
+        "token = api_key_2024",
+    ] {
+        assert!(is_reported(secret), "should flag credential: {secret}");
+    }
+}
