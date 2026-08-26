@@ -20,7 +20,6 @@ pub fn display_path(path: &Path) -> String {
     }
 }
 
-use std::fs::File;
 use std::io::{Result, Write};
 
 /// Writes a report file readable only by its owner.
