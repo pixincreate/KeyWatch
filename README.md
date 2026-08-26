@@ -187,7 +187,8 @@ key-watch verify-integrity
 - `scan --git-history` - Scan git history (`git log -p`) for committed secrets
 - `scan --staged [path...]` - Scan only the added lines of the staged diff (run from inside the repository; paths narrow the diff as git pathspecs); findings keep real file paths and line numbers, so `--baseline` and `--exclude` compose. Files git renders as binary (e.g. `-diff` in `.gitattributes`) are listed in `excluded_files` rather than scanned. Note: a multi-line secret added across separate commits can span hunks the diff scan never sees together — the pre-push whole-tree scan remains the backstop for that case
 - `scan --output <path>` - Save report to file
-- `scan --verbose` - Print full JSON output
+- `scan --verbose` - Print full JSON output (matched text is redacted; see `--show-secrets`)
+- `scan --show-secrets` - Include raw matched text in reports. Off by default: reports are routinely written to files or uploaded as CI artifacts, and `--output` files are created with owner-only permissions
 - `scan --exclude <patterns>` - Comma-separated glob patterns to exclude
 - `scan --exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH/CRITICAL only), `strict` (fail on any finding, default)
 - `scan --baseline <path>` - Suppress known findings from a previous scan. Without this flag, a `.keywatch-baseline.json` is discovered automatically by walking up from the scan target (bounded at the repository root or home directory), so hook scans pick up a committed repo baseline with no configuration

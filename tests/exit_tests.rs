@@ -295,8 +295,12 @@ fn test_scan_verbose_output() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        stdout.contains("AKIAIOSFODNN7EXAMPLE"),
-        "Verbose output should contain secret info"
+        !stdout.contains("AKIAIOSFODNN7EXAMPLE"),
+        "reports must redact matched text by default, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("redacted") && stdout.contains("AWS Access Key"),
+        "the finding must still be identifiable, got:\n{stdout}"
     );
     assert!(
         stdout.contains("\"status\": \"FAIL\""),
@@ -343,4 +347,26 @@ fn test_init_command() {
         stdout.contains("alias kw='key-watch'"),
         "Should contain kw alias"
     );
+}
+
+#[test]
+fn test_show_secrets_opts_into_raw_matched_content() {
+    let dir = setup_scan_dir("show_secrets", true);
+    let file = dir.join("leak.txt");
+    fs::write(&file, "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n").expect("write");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan"])
+        .arg(&file)
+        .args(["--verbose", "--show-secrets"])
+        .output()
+        .expect("run key-watch");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        stdout.contains("AKIAIOSFODNN7EXAMPLE"),
+        "--show-secrets must include raw matched text, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
 }

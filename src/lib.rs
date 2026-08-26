@@ -61,6 +61,7 @@ fn emit(line: &str) -> Result<(), RunCliError> {
 
 fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let start = Instant::now();
+    report::set_show_secrets(args.show_secrets);
 
     // Resolve the baseline like config: an explicit --baseline wins, otherwise
     // discover .keywatch-baseline.json in the scanned tree. --update-baseline

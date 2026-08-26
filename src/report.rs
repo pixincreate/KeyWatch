@@ -1,5 +1,33 @@
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// Whether reports may contain raw matched text. Off unless the operator asks
+/// for it: a report is routinely written to a file or uploaded as a CI
+/// artifact, which would turn the scanner into an exfiltration channel.
+static SHOW_SECRETS: AtomicBool = AtomicBool::new(false);
+
+pub fn set_show_secrets(show: bool) {
+    SHOW_SECRETS.store(show, Ordering::Relaxed);
+}
+
+/// Keeps enough to identify a finding without reproducing the credential:
+/// the first four characters and the length.
+pub fn redact(matched: &str) -> String {
+    let visible: String = matched.chars().take(4).collect();
+    format!("{visible}... ({} chars, redacted)", matched.chars().count())
+}
+
+fn serialize_matched_content<S>(matched: &str, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    if SHOW_SECRETS.load(Ordering::Relaxed) {
+        serializer.serialize_str(matched)
+    } else {
+        serializer.serialize_str(&redact(matched))
+    }
+}
 use std::{fmt, str::FromStr};
 mod sarif;
 
@@ -105,6 +133,7 @@ pub struct Finding {
     pub line_number: usize,
     pub finding_type: String,
     pub severity: Severity,
+    #[serde(serialize_with = "serialize_matched_content")]
     pub matched_content: String,
     pub plugin_name: String,
 }
@@ -117,13 +146,34 @@ pub struct ScanMetadata {
     pub suppressed_by_baseline: usize,
 }
 
+/// How many paths an exclusion removed, and a bounded sample of them.
+///
+/// The full list is not reported: excluding `target/**` in a Rust repository
+/// produced 46,310 entries and a 4.6 MB report for 61 scanned files.
+#[derive(Serialize, Clone, Default)]
+pub struct ExcludedSummary {
+    pub count: usize,
+    pub sample: Vec<String>,
+}
+
+impl ExcludedSummary {
+    const SAMPLE_LIMIT: usize = 20;
+
+    pub fn from_paths(paths: &[String]) -> Self {
+        Self {
+            count: paths.len(),
+            sample: paths.iter().take(Self::SAMPLE_LIMIT).cloned().collect(),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct Report {
     pub status: ScanStatus,
     pub findings: Vec<Finding>,
     pub files_scanned: usize,
     pub total_lines: usize,
-    pub excluded_files: Vec<String>,
+    pub excluded: ExcludedSummary,
     pub suppressed_by_baseline: usize,
     pub scan_time: String,
 }
@@ -143,7 +193,7 @@ pub fn create_report(
         findings,
         files_scanned: metadata.files_scanned,
         total_lines: metadata.total_lines,
-        excluded_files: metadata.excluded_files,
+        excluded: ExcludedSummary::from_paths(&metadata.excluded_files),
         suppressed_by_baseline: metadata.suppressed_by_baseline,
         scan_time,
     };

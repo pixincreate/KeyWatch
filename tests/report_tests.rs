@@ -24,7 +24,7 @@ fn test_create_report() {
     assert_eq!(json["status"], "PASS");
     assert_eq!(json["files_scanned"], 5);
     assert_eq!(json["total_lines"], 100);
-    assert_eq!(json["excluded_files"], serde_json::json!([]));
+    assert_eq!(json["excluded"]["count"], 0);
     assert_eq!(json["scan_time"], "0.5s");
 }
 
@@ -51,7 +51,11 @@ fn test_report_with_findings() {
 
     assert_eq!(json["status"], "FAIL");
     assert_eq!(json["findings"][0]["finding_type"], "AWS Key");
-    assert_eq!(json["findings"][0]["matched_content"], "AKIATESTKEY");
+    // Matched text is redacted unless --show-secrets is passed.
+    assert_eq!(
+        json["findings"][0]["matched_content"],
+        "AKIA... (11 chars, redacted)"
+    );
 }
 
 #[test]
@@ -76,11 +80,14 @@ fn test_create_report_includes_excluded_files_and_plugin_metadata() {
     let json = parse_json(&report);
 
     assert_eq!(
-        json["excluded_files"],
+        json["excluded"]["sample"],
         serde_json::json!(["ignored.log", "vendor/secrets.txt"])
     );
     assert_eq!(json["findings"][0]["plugin_name"], "TokenDetector");
-    assert_eq!(json["findings"][0]["matched_content"], "tok_test_123");
+    assert_eq!(
+        json["findings"][0]["matched_content"],
+        "tok_... (12 chars, redacted)"
+    );
     assert_eq!(json["total_lines"], 80);
 }
 
