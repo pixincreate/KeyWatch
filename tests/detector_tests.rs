@@ -275,3 +275,92 @@ fn test_generic_key_value_ignores_unquoted_identifier_assignments() {
         assert!(is_reported(secret), "should flag credential: {secret}");
     }
 }
+
+/// Helper: does any built-in detector report this line?
+fn reported_by(line: &str) -> Vec<String> {
+    let detectors = key_watch::detector::initialize_detectors().expect("load detectors");
+    let lowered = line.to_lowercase();
+    detectors
+        .iter()
+        .filter(|d| d.has_keywords(&lowered))
+        .filter(|d| {
+            d.regex.find_iter(line).any(|m| {
+                !d.allowlist.iter().any(|a| a.is_match(m.as_str()))
+                    && d.has_sufficient_entropy(m.as_str())
+                    && d.passes_validation(m.as_str())
+            })
+        })
+        .map(|d| d.name.clone())
+        .collect()
+}
+
+#[test]
+fn test_credit_card_requires_issuer_prefix_and_luhn() {
+    for card in [
+        "4111111111111111",    // Visa
+        "5500 0000 0000 0004", // Mastercard, space separated
+        "4111-1111-1111-1111", // dash separated
+        "378282246310005",     // Amex
+    ] {
+        assert!(
+            reported_by(card).contains(&"CreditCardDetector".to_string()),
+            "should detect card: {card}"
+        );
+    }
+
+    for not_a_card in [
+        "4111111111111112",              // Visa prefix, fails Luhn
+        "1234567890123456",              // no issuer prefix
+        "index aabbcc0..1111111 100644", // spans two unrelated numbers
+        "timestamp = 1700000000123",
+    ] {
+        assert!(
+            !reported_by(not_a_card).contains(&"CreditCardDetector".to_string()),
+            "should not detect card in: {not_a_card}"
+        );
+    }
+}
+
+#[test]
+fn test_phone_number_requires_separator_or_country_code() {
+    for phone in ["call 555-123-4567", "(555) 123-4567", "+1 555 123 4567"] {
+        assert!(
+            reported_by(phone).contains(&"PhoneNumberDetector".to_string()),
+            "should detect phone: {phone}"
+        );
+    }
+    assert!(
+        !reported_by("ts 1700000000").contains(&"PhoneNumberDetector".to_string()),
+        "a bare 10-digit run is a timestamp, not a phone number"
+    );
+}
+
+#[test]
+fn test_pkcs8_private_key_headers_are_detected() {
+    // openssl genpkey and GCP/Azure service-account JSON emit these; before
+    // the pattern required an algorithm word and matched neither.
+    for header in [
+        "-----BEGIN PRIVATE KEY-----",
+        "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+        "-----BEGIN RSA PRIVATE KEY-----",
+    ] {
+        assert!(
+            !reported_by(header).is_empty(),
+            "should detect private key header: {header}"
+        );
+    }
+}
+
+#[test]
+fn test_high_entropy_hex_needs_credential_context() {
+    let hex = "8b0e7153bf7c3706d85c524e440066559a6656c90bd5482a90a29b9fa5ff5180";
+    assert!(
+        reported_by(&format!("api_token = {hex}")).contains(&"HighEntropyDetector".to_string()),
+        "hex assigned to a credential-named field should be reported"
+    );
+    assert!(
+        !reported_by(&format!("let digest = compute({hex});"))
+            .contains(&"HighEntropyDetector".to_string()),
+        "a bare hex digest is indistinguishable from a hash and must not fire"
+    );
+}

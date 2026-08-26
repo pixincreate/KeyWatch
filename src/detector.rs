@@ -23,6 +23,10 @@ pub enum DetectorError {
         detector: String,
         source: ParseSeverityError,
     },
+    InvalidValidator {
+        detector: String,
+        source: ParseValidatorError,
+    },
 }
 
 impl fmt::Display for DetectorError {
@@ -49,6 +53,13 @@ impl fmt::Display for DetectorError {
                     detector, source
                 )
             }
+            DetectorError::InvalidValidator { detector, source } => {
+                write!(
+                    formatter,
+                    "invalid validator in detector '{}': {}",
+                    detector, source
+                )
+            }
         }
     }
 }
@@ -60,8 +71,64 @@ impl std::error::Error for DetectorError {
                 Some(source)
             }
             Self::InvalidSeverity { source, .. } => Some(source),
+            Self::InvalidValidator { source, .. } => Some(source),
         }
     }
+}
+
+/// Extra structural check a detector can require of its matches, for
+/// patterns whose shape alone is too permissive.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContentValidator {
+    /// Payment card numbers carry a Luhn check digit. Without it, a 13-16
+    /// digit pattern matches every commit hash fragment, timestamp and
+    /// numeric id in a codebase.
+    Luhn,
+}
+
+impl FromStr for ContentValidator {
+    type Err = ParseValidatorError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.trim().to_lowercase().as_str() {
+            "luhn" => Ok(Self::Luhn),
+            other => Err(ParseValidatorError {
+                value: other.to_string(),
+            }),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseValidatorError {
+    value: String,
+}
+
+impl fmt::Display for ParseValidatorError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "unknown validator '{}'", self.value)
+    }
+}
+
+impl std::error::Error for ParseValidatorError {}
+
+/// Luhn checksum, ignoring embedded separators.
+fn passes_luhn(matched: &str) -> bool {
+    let digits: Vec<u32> = matched.chars().filter_map(|c| c.to_digit(10)).collect();
+    if !(13..=19).contains(&digits.len()) {
+        return false;
+    }
+    let sum: u32 = digits
+        .iter()
+        .rev()
+        .enumerate()
+        .map(|(index, digit)| match index % 2 {
+            1 if *digit > 4 => digit * 2 - 9,
+            1 => digit * 2,
+            _ => *digit,
+        })
+        .sum();
+    sum % 10 == 0
 }
 
 pub struct Detector {
@@ -72,6 +139,7 @@ pub struct Detector {
     pub allowlist: Vec<Regex>,
     pub keywords: Vec<String>,
     pub entropy_threshold: Option<f64>,
+    pub validator: Option<ContentValidator>,
 }
 
 impl Detector {
@@ -116,7 +184,23 @@ impl Detector {
                 .map(|keyword| keyword.to_lowercase())
                 .collect(),
             entropy_threshold,
+            validator: None,
         })
+    }
+
+    /// Attaches a structural validator. Kept separate from `new` so adding a
+    /// check does not touch every construction site.
+    pub fn with_validator(mut self, validator: Option<ContentValidator>) -> Self {
+        self.validator = validator;
+        self
+    }
+
+    /// Whether a match satisfies the detector's structural validator.
+    pub fn passes_validation(&self, matched: &str) -> bool {
+        match self.validator {
+            Some(ContentValidator::Luhn) => passes_luhn(matched),
+            None => true,
+        }
     }
 
     /// `lowercase_content` must already be lowercased. Keywords are stored
@@ -168,6 +252,7 @@ struct DetectorConfig {
     allowlist: Option<Vec<String>>,
     keywords: Option<Vec<String>>,
     entropy: Option<f64>,
+    validate: Option<String>,
 }
 
 fn find_detectors_config(include_repository_config: bool) -> Option<std::path::PathBuf> {
@@ -239,6 +324,15 @@ fn initialize_detectors_from_config(
         .map(|detector_config| {
             let allowlist = detector_config.allowlist.as_deref().unwrap_or_default();
             let keywords = detector_config.keywords.as_deref().unwrap_or_default();
+            let validator = detector_config
+                .validate
+                .as_deref()
+                .map(ContentValidator::from_str)
+                .transpose()
+                .map_err(|source| DetectorError::InvalidValidator {
+                    detector: detector_config.name.clone(),
+                    source,
+                })?;
             Detector::new(
                 &detector_config.name,
                 &detector_config.pattern,
@@ -248,6 +342,7 @@ fn initialize_detectors_from_config(
                 keywords,
                 detector_config.entropy,
             )
+            .map(|detector| detector.with_validator(validator))
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| DetectorInitError::InvalidDetector { source })

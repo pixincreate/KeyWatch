@@ -18,6 +18,11 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `CreditCardDetector` requires an issuer prefix and a valid Luhn checksum, instead of matching any 13-16 digit run
+- `HighEntropyDetector` could never fire (its 4.0 threshold is the ceiling for hex) and now runs, restricted to lines naming a credential
+- PKCS#8 private key headers (`BEGIN PRIVATE KEY`, `BEGIN ENCRYPTED PRIVATE KEY`) are detected
+- `PhoneNumberDetector` needs punctuation or a country code, so unix timestamps are not phone numbers
+- Detectors can require a structural check via `validate = "luhn"`
 - Hooks use built-in detectors, so a `detectors.toml` committed to a scanned repository can no longer replace the detector set and disable its own scan
 - Files git renders as binary (including text marked `-diff` in `.gitattributes`) are read from the index instead of being reported clean
 - `Base64Detector` matches from 28 characters, the length where entropy can actually separate base64 from identifiers

@@ -1491,6 +1491,125 @@
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "650dfe7ddce0129182c60029ba66733efa412ba0824523dd6b096482c4eb8ac9",
       "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./detectors.toml",
+      "line_number": 275,
+      "finding_type": "Private Key Content",
+      "matched_content_hash": "f59444f5756fc6dd701c599452c1752e64a97ecb0447ce41a1e19eb15293ef9a",
+      "plugin_name": "PrivateKeyDetector"
+    },
+    {
+      "file_path": "./src/scanner.rs",
+      "line_number": 1014,
+      "finding_type": "Private Key Content",
+      "matched_content_hash": "f91082d1cbd2032b5ea19f2bbf6b3f88e02c12ae320fc9e08e6dc0f73d82bdd1",
+      "plugin_name": "PrivateKeyDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 300,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "4541206d542811878a9374508fe296fa321a8b56c2902736a02f388836f6e108",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 301,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "e2e5b50c7d336fb0ed238a9c1dd7520b847fe55b990c8f90ecb810a398854d52",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 301,
+      "finding_type": "Aadhaar Card Number",
+      "matched_content_hash": "14270b9138e72cd99e52cab8f9df9ab6cfcec3d2d8d743ca83774ae0d6f1faed",
+      "plugin_name": "AadhaarCardDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 302,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "13ae894eedbfba2dbd06400ba5b215ffd661885646ab86e050fb1a0d192c1c5b",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 302,
+      "finding_type": "Aadhaar Card Number",
+      "matched_content_hash": "f326bb251646469912e5296e014c0c226ff0e95d866381c1b0d060e7a8bf30ab",
+      "plugin_name": "AadhaarCardDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 303,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "7eafa99f1c4d8c35d2a84d390f9e1a9806fb518aaad3bd0c6dde7c9669e1ab97",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 326,
+      "finding_type": "Phone Number",
+      "matched_content_hash": "33360227b18134e6e594a3df05104457bac9713999bb6374dc9bd74fd54c49ee",
+      "plugin_name": "PhoneNumberDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 326,
+      "finding_type": "Phone Number",
+      "matched_content_hash": "cc8546d7c697eb4e2aecde0bfa6ece05bcd1323722b22e34f7dba70c97c706fd",
+      "plugin_name": "PhoneNumberDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 326,
+      "finding_type": "Phone Number",
+      "matched_content_hash": "c7730d0abc47a6b7fddd39f1c461ca7e582e5b27b3e38ee4b2dfdec1558d4023",
+      "plugin_name": "PhoneNumberDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 343,
+      "finding_type": "SSH Private Key",
+      "matched_content_hash": "1b01887f477e98dd56ec542c12433dee8c323176bd532c05163823079263ba31",
+      "plugin_name": "SSHPrivateKeyDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 344,
+      "finding_type": "SSH Private Key",
+      "matched_content_hash": "32006da0b4e4851aa7946ffa4f040f364cac7c317f312b5d742ca5833dd8760f",
+      "plugin_name": "SSHPrivateKeyDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 345,
+      "finding_type": "SSH Private Key",
+      "matched_content_hash": "678a65e8968aabff441076ae306e13d4fc85b1d36d8036a10d2100c1dc40d251",
+      "plugin_name": "SSHPrivateKeyDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 356,
+      "finding_type": "Random String",
+      "matched_content_hash": "e51298df0e431de2bfdf6180e3a7b9f3f092c3e9a912facd350e8c7179936e75",
+      "plugin_name": "RandomString"
+    },
+    {
+      "file_path": "./tests/scanner_tests.rs",
+      "line_number": 210,
+      "finding_type": "Private Key Content",
+      "matched_content_hash": "b94c156724c086556087773aad998c0791dc79172caa4b3184a7330cfa7c1d76",
+      "plugin_name": "PrivateKeyDetector"
+    },
+    {
+      "file_path": "./tests/scanner_tests.rs",
+      "line_number": 212,
+      "finding_type": "Private Key Content",
+      "matched_content_hash": "43531827dd6142886cfeb10207f046021a4eb6c575828583ad2cb20d9430c72f",
+      "plugin_name": "PrivateKeyDetector"
     }
   ]
 }

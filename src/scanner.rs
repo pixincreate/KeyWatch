@@ -149,6 +149,7 @@ fn scan_line_detectors(
         for mat in detector.regex.find_iter(line) {
             if !is_allowlisted(mat.as_str(), detector)
                 && detector.has_sufficient_entropy(mat.as_str())
+                && detector.passes_validation(mat.as_str())
             {
                 findings.push(Finding {
                     file_path: path.to_string(),
@@ -187,6 +188,7 @@ fn scan_multiline_chunk(
                 if !line_is_suppressed
                     && !is_allowlisted(mat.as_str(), detector)
                     && detector.has_sufficient_entropy(mat.as_str())
+                    && detector.passes_validation(mat.as_str())
                 {
                     findings.push(Finding {
                         file_path: path.to_string(),
