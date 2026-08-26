@@ -184,7 +184,7 @@ key-watch verify-integrity
 - `scan --no-config-discovery` - Ignore discovered repository config unless `--config` is explicit
 - `scan --format <json|sarif>` - Choose the report format written to stdout or the output file
 - `scan --stdin` - Read content from stdin instead of files
-- `scan --git-history` - Scan git history (`git log -p`) for committed secrets
+- `scan --git-history` - Scan git history (`git log -p`) for committed secrets; findings carry real file paths, and `--exclude` and baselines apply
 - `scan --staged [path...]` - Scan only the added lines of the staged diff (run from inside the repository; paths narrow the diff as git pathspecs); findings keep real file paths and line numbers, so `--baseline` and `--exclude` compose. Files git renders as binary (e.g. `-diff` in `.gitattributes`) are listed in `excluded_files` rather than scanned. Note: a multi-line secret added across separate commits can span hunks the diff scan never sees together — the pre-push whole-tree scan remains the backstop for that case
 - `scan --output <path>` - Save report to file
 - `scan --verbose` - Print full JSON output (matched text is redacted; see `--show-secrets`)

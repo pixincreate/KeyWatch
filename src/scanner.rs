@@ -354,10 +354,19 @@ pub fn run_scan(
             .unwrap_or_else(|| Path::new("."));
         let mut command = std::process::Command::new("git");
         command.current_dir(git_root).args([
+            "--literal-pathspecs",
             "-c",
             "diff.external=",
             "-c",
             "color.ui=false",
+            "-c",
+            "diff.mnemonicPrefix=false",
+            "-c",
+            "diff.noprefix=false",
+            "-c",
+            "core.quotePath=false",
+            "-c",
+            "diff.relative=false",
             "log",
             "-p",
             "-U0",
@@ -366,13 +375,20 @@ pub fn run_scan(
             "--no-color",
         ]);
 
-        let (findings, total_lines) = scan_git_output(
+        // `git log -p` emits the same diff framing as `git diff --cached`, so
+        // history reuses the staged parser. That gives it real file paths
+        // instead of a synthetic "<git-history>" key — which no baseline
+        // entry could ever match — plus --exclude and baseline-file
+        // exclusion, none of which this mode previously applied.
+        let exclude_patterns = compile_exclude_patterns(args, config)?;
+        let history = scan_git_output(
             command,
             ScannerError::GitLogNonZero,
             |reader| {
-                scan_stream(
+                scan_staged_diff(
                     reader,
-                    "<git-history>",
+                    &exclude_patterns,
+                    excluded_baseline.as_ref(),
                     &multiline_detectors,
                     &line_detectors,
                 )
@@ -380,14 +396,11 @@ pub fn run_scan(
             |source| ScannerError::RunGitLog { source },
         )?;
 
-        let metadata = ScanMetadata {
-            files_scanned: 1,
-            total_lines,
-            excluded_files: Vec::new(),
-            suppressed_by_baseline: 0,
-        };
+        let mut metadata = history.metadata;
+        // Blobs are only re-readable from the index, not from history.
+        metadata.excluded_files.extend(history.undiffable_files);
 
-        return Ok((findings, metadata));
+        return Ok((history.findings, metadata));
     }
 
     if args.staged {
@@ -409,6 +422,8 @@ pub fn run_scan(
             "diff.noprefix=false",
             "-c",
             "core.quotePath=false",
+            "-c",
+            "diff.relative=false",
             "diff",
             "--cached",
             "-U0",
