@@ -264,6 +264,12 @@ pub(crate) fn find_file_upwards(
             .find(|candidate_path| candidate_path.exists())
             .and_then(|candidate_path| candidate_path.to_str().map(str::to_string));
         if found.is_some() {
+            // A world-writable directory is not a trust boundary: on a shared
+            // host any user could drop a config into /tmp and weaken every
+            // scan beneath it.
+            if is_world_writable(dir) {
+                return None;
+            }
             return found;
         }
         if dir.join(".git").exists() || home.as_deref() == Some(dir) {
@@ -271,4 +277,17 @@ pub(crate) fn find_file_upwards(
         }
     }
     None
+}
+
+#[cfg(unix)]
+fn is_world_writable(dir: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    fs::metadata(dir)
+        .map(|metadata| metadata.permissions().mode() & 0o002 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_world_writable(_dir: &Path) -> bool {
+    false
 }
