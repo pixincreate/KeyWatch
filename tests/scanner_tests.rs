@@ -1,4 +1,4 @@
-use key_watch::cli::{ExitMode, OutputFormat, ScanArgs};
+use key_watch::cli::ScanArgs;
 use key_watch::scanner::{ScannerError, run_scan};
 use std::env::temp_dir;
 use std::fs;
@@ -15,16 +15,15 @@ fn unique_temp_dir(name: &str) -> PathBuf {
     temp_dir().join(format!("keywatch_{name}_{stamp}_{}", std::process::id()))
 }
 
-/// Git backs the --staged and --git-history modes, so its absence is a
-/// broken environment rather than a reason to pass silently. Twelve tests
-/// used to return Ok(()) here, reporting green while covering nothing.
-fn git_available() -> bool {
+/// Git backs the --staged, --git-history and baseline modes, so its absence
+/// is a broken environment rather than a reason to pass silently. Twenty
+/// tests used to return Ok(()) here, reporting green while covering nothing.
+fn require_git() {
     let output = Command::new("git")
         .arg("--version")
         .output()
         .expect("git is required to test KeyWatch's git-backed scan modes");
     assert!(output.status.success(), "`git --version` failed");
-    true
 }
 
 fn init_git_repo(path: &Path) -> Result<(), String> {
@@ -899,9 +898,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
 
 #[test]
 fn test_git_history_defaults_to_current_directory_when_no_path_is_provided() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("git_history_default_cwd");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -933,9 +930,7 @@ fn test_git_history_defaults_to_current_directory_when_no_path_is_provided() -> 
 #[test]
 fn test_git_history_scans_requested_root_from_a_different_current_directory() -> Result<(), String>
 {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let parent_dir = unique_temp_dir("git_history_requested_root_parent");
     let requested_root = parent_dir.join("requested-repo");
@@ -967,9 +962,7 @@ fn test_git_history_scans_requested_root_from_a_different_current_directory() ->
 
 #[test]
 fn test_git_history_does_not_execute_textconv_helpers() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("git_history_no_textconv");
     let marker_path = repo_dir.join("textconv-helper-ran");
@@ -1036,9 +1029,7 @@ fn stage_file(path: &Path, file_name: &str, contents: &str) -> Result<(), String
 
 #[test]
 fn test_staged_scan_ignores_findings_on_unchanged_lines() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_unchanged_lines");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1072,9 +1063,7 @@ fn test_staged_scan_ignores_findings_on_unchanged_lines() -> Result<(), String> 
 
 #[test]
 fn test_staged_scan_ignores_deletion_only_changes() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_deletion_only");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1104,9 +1093,7 @@ fn test_staged_scan_ignores_deletion_only_changes() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_reports_added_secret_with_real_path_and_line() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_added_secret");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1145,9 +1132,7 @@ fn test_staged_scan_reports_added_secret_with_real_path_and_line() -> Result<(),
 
 #[test]
 fn test_staged_scan_respects_exclude_patterns() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_exclude");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1176,9 +1161,7 @@ fn test_staged_scan_respects_exclude_patterns() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_composes_with_baseline() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_baseline");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1263,9 +1246,7 @@ fn test_baseline_file_itself_is_never_scanned() {
 
 #[test]
 fn test_baseline_auto_discovered_from_repo_root() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("baseline_auto_discovery");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1319,9 +1300,7 @@ fn test_baseline_auto_discovered_from_repo_root() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_uses_discovered_baseline() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_auto_baseline");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1362,9 +1341,7 @@ fn test_staged_scan_uses_discovered_baseline() -> Result<(), String> {
 
 #[test]
 fn test_discovered_baseline_file_is_never_scanned() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // A discovered baseline resolves to an absolute path while scanned files
     // are relative, so self-exclusion must compare canonical paths.
@@ -1414,9 +1391,7 @@ fn test_discovered_baseline_file_is_never_scanned() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_skips_the_baseline_file() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // Committing a baseline must not trip the hook: its stored hashes are
     // added lines in the staged diff and would otherwise be flagged.
@@ -1460,9 +1435,7 @@ fn test_staged_scan_skips_the_baseline_file() -> Result<(), String> {
 
 #[test]
 fn test_repo_detectors_toml_cannot_disable_hook_scan() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // A repository that ships its own detectors.toml replaces the detector
     // set. The hook runs with --no-config-discovery precisely so a scanned
@@ -1509,9 +1482,7 @@ fn test_repo_detectors_toml_cannot_disable_hook_scan() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_reads_blobs_git_renders_as_binary() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // `*.env -diff` makes git emit only "Binary files ... differ", so the
     // added lines never appear in the diff. The scan must read the staged
@@ -1550,9 +1521,7 @@ fn test_staged_scan_reads_blobs_git_renders_as_binary() -> Result<(), String> {
 
 #[test]
 fn test_baseline_suppression_is_reported() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // A committed baseline is repo-controlled data that silently removes
     // findings; the count must be visible so suppression cannot hide.
@@ -1590,9 +1559,7 @@ fn test_baseline_suppression_is_reported() -> Result<(), String> {
 
 #[test]
 fn test_git_history_attributes_real_paths_and_honours_excludes() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // History findings used to be keyed under a synthetic "<git-history>"
     // path, which no baseline entry could match, and this mode ignored
@@ -1634,9 +1601,7 @@ fn test_git_history_attributes_real_paths_and_honours_excludes() -> Result<(), S
 
 #[test]
 fn test_staged_scan_survives_diff_relative_from_subdirectory() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // diff.relative makes git emit cwd-relative paths and drop changes
     // outside the cwd, which silently hid staged secrets.
@@ -1677,9 +1642,7 @@ fn test_staged_scan_survives_diff_relative_from_subdirectory() -> Result<(), Str
 
 #[test]
 fn test_prune_baseline_drops_stale_entries() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // --update-baseline only ever appends, so entries for deleted files and
     // rotated credentials kept suppressing forever.
@@ -1742,9 +1705,7 @@ fn test_prune_baseline_drops_stale_entries() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_survives_hostile_git_config() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // Every override in the staged git invocation exists because one of these
     // settings breaks parsing. Without this test, deleting any of them is
@@ -1824,9 +1785,7 @@ fn test_staged_scan_outside_a_repository_fails_closed() {
 
 #[test]
 fn test_staged_scan_paths_narrow_the_diff() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_path_narrowing");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1918,9 +1877,7 @@ fn test_trusted_mode_ignores_env_config_inside_the_scan_target() -> Result<(), S
 
 #[test]
 fn test_staged_scan_from_subdirectory_still_skips_the_baseline_file() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // Staged diffs emit repository-root-relative paths regardless of the
     // process's directory, so self-exclusion must resolve them against the
@@ -2069,9 +2026,7 @@ fn test_prune_baseline_warns_when_paths_narrow_the_scan() -> Result<(), String> 
 
 #[test]
 fn test_git_history_reports_unscannable_blobs_separately() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // A git-rendered binary was never seen by the scanner; listing it under
     // "excluded" would read like an operator decision instead of a gap.
@@ -2103,9 +2058,7 @@ fn test_git_history_reports_unscannable_blobs_separately() -> Result<(), String>
 
 #[test]
 fn test_lockfiles_are_excluded_by_default_in_every_mode() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // Lockfile checksums flood reports and baselines with "Random String"
     // findings; they hold checksums and URLs, never credentials.

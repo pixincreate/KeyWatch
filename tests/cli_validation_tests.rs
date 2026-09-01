@@ -1,5 +1,5 @@
 use key_watch::RunCliError;
-use key_watch::cli::{CliValidationError, ExitMode, OutputFormat, ScanArgs};
+use key_watch::cli::{CliValidationError, ScanArgs};
 
 #[test]
 fn test_stdin_with_path_validation_returns_typed_error() {
