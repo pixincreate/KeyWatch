@@ -154,6 +154,29 @@ pub struct ScanArgs {
     pub format: OutputFormat,
 }
 
+impl Default for ScanArgs {
+    fn default() -> Self {
+        Self {
+            paths: Vec::new(),
+            stdin: false,
+            git_history: false,
+            staged: false,
+            output: None,
+            verbose: false,
+            show_secrets: false,
+            exclude: None,
+            exit_mode: ExitMode::Strict,
+            baseline: None,
+            no_baseline_discovery: false,
+            update_baseline: false,
+            prune_baseline: false,
+            config: None,
+            no_config_discovery: false,
+            format: OutputFormat::Json,
+        }
+    }
+}
+
 impl ScanArgs {
     pub fn validate(&self) -> Result<(), CliValidationError> {
         match (self.git_history, self.staged, self.stdin) {

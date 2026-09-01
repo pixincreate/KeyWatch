@@ -1,6 +1,8 @@
 use crate::cli::ScanArgs;
 use crate::config::KeywatchConfig;
-use crate::detector::{Detector, initialize_detectors, initialize_trusted_detectors, untrusted_root};
+use crate::detector::{
+    Detector, initialize_detectors, initialize_trusted_detectors, untrusted_root,
+};
 use crate::report::{Finding, ScanMetadata};
 use aho_corasick::AhoCorasick;
 use glob::Pattern;
@@ -845,10 +847,7 @@ fn parse_binary_marker_path(marker: &str) -> String {
     match target {
         Some(target) => {
             let unquoted = c_unquote(&target);
-            unquoted
-                .strip_prefix("b/")
-                .unwrap_or(&unquoted)
-                .to_string()
+            unquoted.strip_prefix("b/").unwrap_or(&unquoted).to_string()
         }
         None => marker.to_string(),
     }
@@ -1278,7 +1277,15 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
+        } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1311,7 +1318,15 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
+        } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         assert!(findings.is_empty(), "removed lines must not be scanned");
         assert_eq!(metadata.files_scanned, 0);
@@ -1334,7 +1349,15 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
+        } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1355,7 +1378,15 @@ mod tests {
             index aabbcc0..ddeeff1 100644\n\
             Binary files a/img.png and b/img.png differ\n";
 
-        let staged = scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
+        let staged = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         assert!(staged.findings.is_empty());
         assert!(
@@ -1378,8 +1409,15 @@ mod tests {
             Binary files a/vendor/blob.bin and b/vendor/blob.bin differ\n";
         let pattern = Pattern::new("vendor/**").unwrap();
 
-        let staged =
-            scan_staged_diff(Cursor::new(diff), &[pattern], None, Path::new("."), &[], &line_detectors).unwrap();
+        let staged = scan_staged_diff(
+            Cursor::new(diff),
+            &[pattern],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         assert!(
             staged.undiffable_files.is_empty(),
@@ -1403,8 +1441,15 @@ mod tests {
         diff.extend_from_slice(b"+caf\xE9 latin-1 line\n");
         diff.extend_from_slice(b"+SECRET_AFTER_BINARYISH\n");
 
-        let StagedScan { findings, .. } =
-            scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
+        let StagedScan { findings, .. } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         assert_eq!(
             findings.len(),
@@ -1426,8 +1471,15 @@ mod tests {
             +material\n\
             +END KEY\n";
 
-        let StagedScan { findings, .. } =
-            scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &multiline_detectors, &[]).unwrap();
+        let StagedScan { findings, .. } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &multiline_detectors,
+            &[],
+        )
+        .unwrap();
 
         assert_eq!(findings.len(), 1);
         assert_eq!(

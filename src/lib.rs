@@ -109,7 +109,9 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
                 ))?;
             }
             if !scan_covers_paths(&args.paths) {
-                emit("WARNING: --prune-baseline rebuilt the baseline from the scanned paths only; findings outside them are no longer baselined")?;
+                emit(
+                    "WARNING: --prune-baseline rebuilt the baseline from the scanned paths only; findings outside them are no longer baselined",
+                )?;
             }
         } else {
             baseline.update_with_findings(&findings);

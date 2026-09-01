@@ -48,7 +48,10 @@ fn test_write_to_file_tightens_existing_permissions() {
 
     write_to_file(path_str, "new content").expect("rewrite file");
 
-    let mode = fs::metadata(path_str).expect("stat file").permissions().mode();
+    let mode = fs::metadata(path_str)
+        .expect("stat file")
+        .permissions()
+        .mode();
     assert_eq!(
         mode & 0o777,
         0o600,

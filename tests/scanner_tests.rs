@@ -117,21 +117,8 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -154,21 +141,8 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -192,21 +166,8 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -231,21 +192,8 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -264,21 +212,8 @@ fn test_multiple_detections_in_line() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -309,21 +244,8 @@ fn test_directory_scan_with_exclusions() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -353,21 +275,9 @@ fn test_exclude_pattern_filtering() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
         exclude: Some("*.log".to_string()),
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (_findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -387,21 +297,9 @@ fn test_exclude_pattern_filtering() {
 fn test_invalid_cli_exclude_pattern_returns_typed_error() {
     let options = ScanArgs {
         paths: vec![".".to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
         exclude: Some("[".to_string()),
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let error = match run_scan(&options, None) {
@@ -439,21 +337,8 @@ fn test_dot_github_directory_is_scanned() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -471,21 +356,8 @@ fn test_scan_no_secrets() {
 
     let options = ScanArgs {
         paths: vec![temp_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -504,21 +376,8 @@ fn test_non_utf8_file_handling() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -541,21 +400,8 @@ fn test_multiple_files_scan() {
             test_file1.to_str().unwrap().to_string(),
             test_file2.to_str().unwrap().to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -579,21 +425,8 @@ fn test_duplicate_paths_are_scanned_once() {
             temp_file.to_str().unwrap().to_string(),
             temp_file.to_str().unwrap().to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -631,21 +464,8 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
             direct_file.to_str().unwrap().to_string(),
             test_dir.to_str().unwrap().to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -675,21 +495,8 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
 
     let options = ScanArgs {
         paths: vec![missing_path.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -726,21 +533,8 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
                 .ok_or("link path should be utf-8")?
                 .to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -775,21 +569,8 @@ fn test_recursive_symlink_path_is_skipped() -> Result<(), String> {
                 .ok_or("scan root should be utf-8")?
                 .to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -817,21 +598,8 @@ fn test_detect_aadhaar() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -857,21 +625,8 @@ fn test_detect_voter_id() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -894,21 +649,8 @@ fn test_detect_pan_card() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -931,21 +673,8 @@ fn test_detect_abha() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -969,21 +698,8 @@ fn test_multiple_indian_ids() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -1032,21 +748,9 @@ fn test_overlapping_scan_roots_with_exclusions() {
             root2.to_str().unwrap().to_string(), // Root 2 comes first to try to mess up order
             root1.to_str().unwrap().to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
         exclude: Some("subdir/secret.txt".to_string()),
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -1080,21 +784,8 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
 
     let options = ScanArgs {
         paths: vec![path_str],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -1130,22 +821,9 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
 #[test]
 fn test_stdin_args_validation() {
     let options = ScanArgs {
-        paths: vec![],
         stdin: true,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     assert!(options.validate().is_ok());
@@ -1194,61 +872,24 @@ fn test_stdin_scanning_integration() -> Result<(), String> {
 #[test]
 fn test_git_history_args_validation_allows_zero_or_one_path() {
     let zero_paths = ScanArgs {
-        paths: vec![],
-        stdin: false,
         git_history: true,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
     let one_path = ScanArgs {
         paths: vec!["/tmp/requested-root".to_string()],
-        stdin: false,
         git_history: true,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
     let two_paths = ScanArgs {
         paths: vec![
             "/tmp/requested-root".to_string(),
             "/tmp/other-root".to_string(),
         ],
-        stdin: false,
         git_history: true,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     assert!(zero_paths.validate().is_ok());
@@ -2258,7 +1899,9 @@ fn test_trusted_mode_ignores_env_config_inside_the_scan_target() -> Result<(), S
     };
 
     assert_eq!(
-        run(&["--no-config-discovery", "--no-baseline-discovery"]).status.code(),
+        run(&["--no-config-discovery", "--no-baseline-discovery"])
+            .status
+            .code(),
         Some(1),
         "in trusted mode a config inside the scanned tree must not replace the detector set"
     );
@@ -2435,7 +2078,12 @@ fn test_git_history_reports_unscannable_blobs_separately() -> Result<(), String>
     let repo_dir = unique_temp_dir("history_unscannable");
     let _ = fs::remove_dir_all(&repo_dir);
     init_git_repo(&repo_dir)?;
-    commit_file(&repo_dir, "blob.bin", "bin\u{0}ary\u{0}content", "add binary")?;
+    commit_file(
+        &repo_dir,
+        "blob.bin",
+        "bin\u{0}ary\u{0}content",
+        "add binary",
+    )?;
 
     let output = run_git_history_scan(&repo_dir, &["--verbose", "--no-baseline-discovery"])?;
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -2491,8 +2139,7 @@ fn test_lockfiles_are_excluded_by_default_in_every_mode() -> Result<(), String> 
         String::from_utf8_lossy(&whole.stdout)
     );
     assert!(
-        String::from_utf8_lossy(&whole.stdout)
-            .contains("\"excluded\": {\n    \"count\": 1"),
+        String::from_utf8_lossy(&whole.stdout).contains("\"excluded\": {\n    \"count\": 1"),
         "the lockfile must show up as excluded, got:\n{}",
         String::from_utf8_lossy(&whole.stdout)
     );

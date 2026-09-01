@@ -6,20 +6,8 @@ fn test_stdin_with_path_validation_returns_typed_error() {
     let options = ScanArgs {
         paths: vec!["secret.txt".to_string()],
         stdin: true,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let error = options
@@ -40,22 +28,10 @@ fn test_run_cli_error_wraps_cli_validation_display() {
 #[test]
 fn test_staged_with_stdin_validation_returns_typed_error() {
     let options = ScanArgs {
-        paths: vec![],
         stdin: true,
-        git_history: false,
         staged: true,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let error = options
@@ -72,22 +48,10 @@ fn test_staged_with_stdin_validation_returns_typed_error() {
 #[test]
 fn test_staged_with_git_history_validation_returns_typed_error() {
     let options = ScanArgs {
-        paths: vec![],
-        stdin: false,
         git_history: true,
         staged: true,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let error = options
@@ -105,21 +69,9 @@ fn test_staged_with_git_history_validation_returns_typed_error() {
 fn test_staged_allows_zero_or_many_paths() {
     let options = ScanArgs {
         paths: vec!["a.txt".to_string(), "b.txt".to_string()],
-        stdin: false,
-        git_history: false,
         staged: true,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     assert!(options.validate().is_ok(), "staged paths narrow the diff");
