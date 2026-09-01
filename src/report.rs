@@ -1,32 +1,17 @@
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
-
-/// Whether reports may contain raw matched text. Off unless the operator asks
-/// for it: a report is routinely written to a file or uploaded as a CI
-/// artifact, which would turn the scanner into an exfiltration channel.
-static SHOW_SECRETS: AtomicBool = AtomicBool::new(false);
-
-pub fn set_show_secrets(show: bool) {
-    SHOW_SECRETS.store(show, Ordering::Relaxed);
-}
 
 /// Keeps enough to identify a finding without reproducing the credential:
-/// the first four characters and the length.
+/// the first four characters and the length. Short matches show the length
+/// only — below eight characters a four-character prefix would reveal most
+/// or all of the secret.
 pub fn redact(matched: &str) -> String {
-    let visible: String = matched.chars().take(4).collect();
-    format!("{visible}... ({} chars, redacted)", matched.chars().count())
-}
-
-fn serialize_matched_content<S>(matched: &str, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    if SHOW_SECRETS.load(Ordering::Relaxed) {
-        serializer.serialize_str(matched)
-    } else {
-        serializer.serialize_str(&redact(matched))
+    let length = matched.chars().count();
+    if length < 8 {
+        return format!("({length} chars, redacted)");
     }
+    let visible: String = matched.chars().take(4).collect();
+    format!("{visible}... ({length} chars, redacted)")
 }
 use std::{fmt, str::FromStr};
 mod sarif;
@@ -133,7 +118,6 @@ pub struct Finding {
     pub line_number: usize,
     pub finding_type: String,
     pub severity: Severity,
-    #[serde(serialize_with = "serialize_matched_content")]
     pub matched_content: String,
     pub plugin_name: String,
 }
@@ -178,15 +162,31 @@ pub struct Report {
     pub scan_time: String,
 }
 
+/// Builds the JSON report. Matched text is redacted unless the operator
+/// passed `--show-secrets`: reports are routinely written to files or
+/// uploaded as CI artifacts, which would otherwise turn the scanner into an
+/// exfiltration channel.
 pub fn create_report(
     findings: Vec<Finding>,
     metadata: ScanMetadata,
     scan_time: String,
+    show_secrets: bool,
 ) -> Result<String, serde_json::Error> {
     let status = if findings.is_empty() {
         ScanStatus::Pass
     } else {
         ScanStatus::Fail
+    };
+    let findings = if show_secrets {
+        findings
+    } else {
+        findings
+            .into_iter()
+            .map(|finding| Finding {
+                matched_content: redact(&finding.matched_content),
+                ..finding
+            })
+            .collect()
     };
     let report = Report {
         status,

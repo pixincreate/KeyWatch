@@ -17,7 +17,7 @@ fn test_create_report() {
         suppressed_by_baseline: 0,
     };
 
-    let report = create_report(findings, metadata, "0.5s".to_string())
+    let report = create_report(findings, metadata, "0.5s".to_string(), false)
         .expect("create_report should succeed");
     let json = parse_json(&report);
 
@@ -45,7 +45,7 @@ fn test_report_with_findings() {
         suppressed_by_baseline: 0,
     };
 
-    let report = create_report(findings, metadata, "0.1s".to_string())
+    let report = create_report(findings, metadata, "0.1s".to_string(), false)
         .expect("create_report should succeed");
     let json = parse_json(&report);
 
@@ -75,7 +75,7 @@ fn test_create_report_includes_excluded_files_and_plugin_metadata() {
         suppressed_by_baseline: 0,
     };
 
-    let report = create_report(findings, metadata, "1.2s".to_string())
+    let report = create_report(findings, metadata, "1.2s".to_string(), false)
         .expect("create_report should succeed");
     let json = parse_json(&report);
 
@@ -274,4 +274,16 @@ fn test_get_severity_counts_groups_high_medium_low() {
     let counts = get_severity_counts(&findings);
 
     assert_eq!(counts, (0, 2, 1, 1));
+}
+
+#[test]
+fn test_redact_shows_no_prefix_for_short_matches() {
+    // Below eight characters a four-character prefix would reveal most or
+    // all of the secret, so short matches are described by length only.
+    assert_eq!(key_watch::report::redact("abc12"), "(5 chars, redacted)");
+    assert_eq!(key_watch::report::redact("abc1234"), "(7 chars, redacted)");
+    assert_eq!(
+        key_watch::report::redact("AKIAIOSFODNN7EXAMPLE"),
+        "AKIA... (20 chars, redacted)"
+    );
 }

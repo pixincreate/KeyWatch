@@ -52,7 +52,6 @@ fn emit(line: &str) -> Result<(), RunCliError> {
 
 fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let start = Instant::now();
-    report::set_show_secrets(args.show_secrets);
 
     // Resolve the baseline like config: an explicit --baseline wins, otherwise
     // discover .keywatch-baseline.json in the scanned tree. --update-baseline
@@ -131,7 +130,9 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let exit_code = calculate_exit_code(&findings, &args.exit_mode);
     let findings_count = findings.len();
     let report_out = match args.format {
-        OutputFormat::Json => report::create_report(findings, scan_metadata, scan_time),
+        OutputFormat::Json => {
+            report::create_report(findings, scan_metadata, scan_time, args.show_secrets)
+        }
         OutputFormat::Sarif => report::create_sarif_report(findings, scan_metadata, scan_time),
     }
     .map_err(|source| RunCliError::ReportSerialize { source })?;
