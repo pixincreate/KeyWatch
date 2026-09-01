@@ -2423,3 +2423,32 @@ fn test_prune_baseline_warns_when_paths_narrow_the_scan() -> Result<(), String> 
     let _ = fs::remove_dir_all(&dir);
     Ok(())
 }
+
+#[test]
+fn test_git_history_reports_unscannable_blobs_separately() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // A git-rendered binary was never seen by the scanner; listing it under
+    // "excluded" would read like an operator decision instead of a gap.
+    let repo_dir = unique_temp_dir("history_unscannable");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(&repo_dir, "blob.bin", "bin\u{0}ary\u{0}content", "add binary")?;
+
+    let output = run_git_history_scan(&repo_dir, &["--verbose", "--no-baseline-discovery"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        stdout.contains("\"unscannable\": {\n    \"count\": 1"),
+        "the binary blob must be reported as unscannable, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"excluded\": {\n    \"count\": 0"),
+        "unscannable files must not be counted as excluded, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}

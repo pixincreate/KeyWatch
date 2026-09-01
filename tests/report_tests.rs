@@ -14,6 +14,7 @@ fn test_create_report() {
         files_scanned: 5,
         total_lines: 100,
         excluded_files: vec![],
+        unscannable_files: vec![],
         suppressed_by_baseline: 0,
     };
 
@@ -42,6 +43,7 @@ fn test_report_with_findings() {
         files_scanned: 1,
         total_lines: 50,
         excluded_files: vec![],
+        unscannable_files: vec![],
         suppressed_by_baseline: 0,
     };
 
@@ -72,6 +74,7 @@ fn test_create_report_includes_excluded_files_and_plugin_metadata() {
         files_scanned: 2,
         total_lines: 80,
         excluded_files: vec!["ignored.log".to_string(), "vendor/secrets.txt".to_string()],
+        unscannable_files: vec![],
         suppressed_by_baseline: 0,
     };
 
@@ -106,6 +109,7 @@ fn test_create_sarif_report_uses_camel_case_fields_and_hides_matched_content() {
         files_scanned: 1,
         total_lines: 12,
         excluded_files: vec![],
+        unscannable_files: vec![],
         suppressed_by_baseline: 0,
     };
 
@@ -199,6 +203,7 @@ fn test_create_sarif_report_maps_all_severities_to_expected_levels() {
         files_scanned: 4,
         total_lines: 4,
         excluded_files: vec![],
+        unscannable_files: vec![],
         suppressed_by_baseline: 0,
     };
 

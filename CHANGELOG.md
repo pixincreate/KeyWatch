@@ -24,7 +24,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Reports redact matched text by default; `--show-secrets` opts into raw values, and matches shorter than 8 characters are always described by length only
-- Reports summarise exclusions as a count plus a sample instead of listing every path
+- Reports summarise exclusions as a count plus a sample instead of listing every path, and report git-rendered binary files as `unscannable` rather than `excluded`
 
 ### Fixed
 

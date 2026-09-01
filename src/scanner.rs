@@ -402,8 +402,9 @@ pub fn run_scan(
         )?;
 
         let mut metadata = history.metadata;
-        // Blobs are only re-readable from the index, not from history.
-        metadata.excluded_files.extend(history.undiffable_files);
+        // Blobs are only re-readable from the index, not from history, so a
+        // git-rendered binary in history is unscannable rather than excluded.
+        metadata.unscannable_files = history.undiffable_files;
 
         return Ok((history.findings, metadata));
     }
@@ -468,7 +469,7 @@ pub fn run_scan(
         findings.extend(blob_findings);
         metadata.total_lines += blob_lines;
         metadata.files_scanned += undiffable_files.len() - skipped.len();
-        metadata.excluded_files.extend(skipped);
+        metadata.unscannable_files.extend(skipped);
 
         findings.sort_by(|a, b| {
             a.file_path
@@ -489,6 +490,7 @@ pub fn run_scan(
             files_scanned: 1,
             total_lines,
             excluded_files: Vec::new(),
+            unscannable_files: Vec::new(),
             suppressed_by_baseline: 0,
         };
 
@@ -599,6 +601,7 @@ pub fn run_scan(
         files_scanned,
         total_lines,
         excluded_files,
+        unscannable_files: Vec::new(),
         suppressed_by_baseline: 0,
     };
 
@@ -917,6 +920,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
         files_scanned: scanned_files.len(),
         total_lines,
         excluded_files,
+        unscannable_files: Vec::new(),
         suppressed_by_baseline: 0,
     };
 

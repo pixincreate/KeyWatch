@@ -127,6 +127,10 @@ pub struct ScanMetadata {
     pub files_scanned: usize,
     pub total_lines: usize,
     pub excluded_files: Vec<String>,
+    /// Paths whose content could not be read (git-rendered binary). Unlike
+    /// exclusions these were never seen by the scanner, so they are reported
+    /// separately instead of masquerading as operator-requested skips.
+    pub unscannable_files: Vec<String>,
     pub suppressed_by_baseline: usize,
 }
 
@@ -158,6 +162,7 @@ pub struct Report {
     pub files_scanned: usize,
     pub total_lines: usize,
     pub excluded: ExcludedSummary,
+    pub unscannable: ExcludedSummary,
     pub suppressed_by_baseline: usize,
     pub scan_time: String,
 }
@@ -194,6 +199,7 @@ pub fn create_report(
         files_scanned: metadata.files_scanned,
         total_lines: metadata.total_lines,
         excluded: ExcludedSummary::from_paths(&metadata.excluded_files),
+        unscannable: ExcludedSummary::from_paths(&metadata.unscannable_files),
         suppressed_by_baseline: metadata.suppressed_by_baseline,
         scan_time,
     };
