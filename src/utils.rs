@@ -20,11 +20,21 @@ pub fn display_path(path: &Path) -> String {
     }
 }
 
-use std::fs::File;
 use std::io::{Result, Write};
 
+/// Writes a report file readable only by its owner.
+///
+/// `File::create` uses 0666 & ~umask, i.e. world-readable by default, and a
+/// report can carry matched text when `--show-secrets` is set.
 pub fn write_to_file(path: &str, content: &str) -> Result<()> {
-    let mut file = File::create(path)?;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path)?;
     file.write_all(content.as_bytes())?;
     Ok(())
 }

@@ -107,6 +107,10 @@ pub struct ScanArgs {
     #[arg(short, long, default_value_t = false)]
     pub verbose: bool,
 
+    /// Include raw matched text in reports (default: redacted)
+    #[arg(long, default_value_t = false)]
+    pub show_secrets: bool,
+
     /// Paths to exclude from scanning (comma-separated, supports glob patterns)
     #[arg(long)]
     pub exclude: Option<String>,

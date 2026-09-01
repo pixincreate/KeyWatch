@@ -16,8 +16,14 @@ All notable changes to this project will be documented in this file.
 - Config discovery searches parent directories up to the repository root
 - Hook messages abbreviate the home directory as `~`
 
+### Changed
+
+- Reports redact matched text by default; `--show-secrets` opts into raw values
+- Reports summarise exclusions as a count plus a sample instead of listing every path
+
 ### Fixed
 
+- `--output` files are created readable only by their owner
 - Config is not trusted from a world-writable directory, so a `.keywatch.toml` dropped in `/tmp` cannot weaken scans beneath it
 - `KEYWATCH_CONFIG_PATH` is ignored in trusted mode when it points inside the tree being scanned
 - Baseline suppression reports how many findings it hid, instead of applying silently
