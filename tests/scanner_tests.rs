@@ -2083,14 +2083,16 @@ fn test_prune_baseline_drops_stale_entries() -> Result<(), String> {
         "a plain update must not drop the stale entry"
     );
 
-    assert!(
-        run(&["--update-baseline", "--prune-baseline"])
-            .status
-            .success()
-    );
+    let pruned = run(&["--update-baseline", "--prune-baseline"]);
+    assert!(pruned.status.success());
     assert!(
         entries() < with_both,
         "--prune-baseline must drop entries the scan no longer finds"
+    );
+    assert!(
+        String::from_utf8_lossy(&pruned.stdout).contains("Pruned 1 baseline entry"),
+        "the dropped count must be visible, got:\n{}",
+        String::from_utf8_lossy(&pruned.stdout)
     );
 
     let _ = fs::remove_dir_all(&dir);
@@ -2339,5 +2341,85 @@ fn test_staged_scan_from_subdirectory_still_skips_the_baseline_file() -> Result<
     );
 
     let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_prune_baseline_rejects_partial_and_standalone_use() {
+    // Pruning rebuilds the baseline from what the scan found, so partial
+    // scans must refuse it, and a bare --prune-baseline must error instead
+    // of being silently ignored.
+    let dir = unique_temp_dir("prune_rejects");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(args)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    let staged = run(&["scan", "--staged", "--update-baseline", "--prune-baseline"]);
+    assert_eq!(staged.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&staged.stderr).contains("cannot be used with"),
+        "staged scans must refuse --prune-baseline"
+    );
+
+    let bare = run(&["scan", ".", "--prune-baseline"]);
+    assert_eq!(bare.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&bare.stderr).contains("--update-baseline"),
+        "a bare --prune-baseline must error instead of being ignored"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_prune_baseline_warns_when_paths_narrow_the_scan() -> Result<(), String> {
+    // A path-narrowed scan rebuilds the baseline from that subtree only;
+    // silently dropping everything else would hide the data loss.
+    let dir = unique_temp_dir("prune_narrow_warning");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("a.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("b.txt"),
+        "aws_access_key_id = AKIAJJJJJJJJJJJJJJJJ\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "--baseline", "bl.json"])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert!(run(&[".", "--update-baseline"]).status.success());
+    let narrowed = run(&["a.txt", "--update-baseline", "--prune-baseline"]);
+    assert!(narrowed.status.success());
+    let stdout = String::from_utf8_lossy(&narrowed.stdout);
+    assert!(
+        stdout.contains("scanned paths only"),
+        "a narrowed prune must warn, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Pruned 1 baseline entry"),
+        "the dropped count must be visible, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
     Ok(())
 }

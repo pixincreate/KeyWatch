@@ -19,7 +19,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - CI scans this repository with KeyWatch and fails if the committed baseline has drifted
-- `--prune-baseline` rewrites the baseline from current findings, dropping entries for deleted files and rotated credentials
+- `--prune-baseline` rewrites the baseline from current findings, dropping entries for deleted files and rotated credentials; requires `--update-baseline` and a whole-tree scan, and prints what it dropped
 
 ### Changed
 

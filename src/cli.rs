@@ -133,7 +133,12 @@ pub struct ScanArgs {
     pub update_baseline: bool,
 
     /// Rewrite the baseline from the current findings, dropping stale entries
-    #[arg(long, default_value_t = false)]
+    /// (requires --update-baseline; whole-tree scans only)
+    #[arg(
+        long,
+        requires = "update_baseline",
+        conflicts_with_all = ["staged", "stdin", "git_history"]
+    )]
     pub prune_baseline: bool,
 
     /// Path to .keywatch.toml config file
