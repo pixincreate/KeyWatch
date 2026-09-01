@@ -40,7 +40,9 @@ use std::io::{Result, Write};
 /// Writes a report file readable only by its owner.
 ///
 /// `File::create` uses 0666 & ~umask, i.e. world-readable by default, and a
-/// report can carry matched text when `--show-secrets` is set.
+/// report can carry matched text when `--show-secrets` is set. The mode is
+/// also forced on an existing file, whose old (possibly world-readable)
+/// permissions would otherwise survive the rewrite.
 pub fn write_to_file(path: &str, content: &str) -> Result<()> {
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -50,6 +52,11 @@ pub fn write_to_file(path: &str, content: &str) -> Result<()> {
         options.mode(0o600);
     }
     let mut file = options.open(path)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    }
     file.write_all(content.as_bytes())?;
     Ok(())
 }
