@@ -2,11 +2,12 @@ use crate::cli::ScanArgs;
 use crate::config::KeywatchConfig;
 use crate::detector::{Detector, initialize_detectors, initialize_trusted_detectors};
 use crate::report::{Finding, ScanMetadata};
+use aho_corasick::AhoCorasick;
 use glob::Pattern;
 use rayon::prelude::*;
 use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 mod error;
 
@@ -25,33 +26,138 @@ fn is_allowlisted(matched: &str, detector: &Detector) -> bool {
         .any(|pattern| pattern.is_match(matched))
 }
 
+/// Lowercases `src` into `buf` without allocating a fresh string per line.
+fn to_lowercase_into(src: &str, buf: &mut String) {
+    buf.clear();
+    buf.extend(src.chars().flat_map(char::to_lowercase));
+}
+
+/// Folds every distinct detector keyword into one Aho-Corasick automaton so a
+/// line is checked against all keywords in a single pass instead of one
+/// substring search per keyword per detector.
+struct KeywordPrefilter {
+    automaton: Option<AhoCorasick>,
+    /// Automaton pattern index -> indices of detectors owning that keyword.
+    owners: Vec<Vec<usize>>,
+    /// Detectors without keywords always run their regex.
+    unconditional: Vec<usize>,
+    detector_count: usize,
+}
+
+impl KeywordPrefilter {
+    fn new(line_detectors: &[&Detector]) -> Self {
+        let mut patterns: Vec<&str> = Vec::new();
+        let mut pattern_indices: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        let mut owners: Vec<Vec<usize>> = Vec::new();
+        let mut unconditional = Vec::new();
+
+        for (detector_index, detector) in line_detectors.iter().enumerate() {
+            if detector.keywords.is_empty() {
+                unconditional.push(detector_index);
+                continue;
+            }
+            for keyword in &detector.keywords {
+                let pattern_index = *pattern_indices.entry(keyword.as_str()).or_insert_with(|| {
+                    patterns.push(keyword.as_str());
+                    owners.push(Vec::new());
+                    patterns.len() - 1
+                });
+                owners[pattern_index].push(detector_index);
+            }
+        }
+
+        // If the automaton cannot be built, every keyword detector runs
+        // unconditionally: slower, but it can never miss a secret.
+        let automaton = match AhoCorasick::new(&patterns) {
+            Ok(automaton) if !patterns.is_empty() => Some(automaton),
+            _ => {
+                unconditional = (0..line_detectors.len()).collect();
+                None
+            }
+        };
+
+        Self {
+            automaton,
+            owners,
+            unconditional,
+            detector_count: line_detectors.len(),
+        }
+    }
+
+    /// Marks the detectors whose keywords occur in `lowered_line` in
+    /// `candidates`, a scratch buffer reused across lines.
+    fn candidates_into(&self, lowered_line: &str, candidates: &mut Vec<bool>) {
+        candidates.clear();
+        candidates.resize(self.detector_count, false);
+        for &detector_index in &self.unconditional {
+            candidates[detector_index] = true;
+        }
+        if let Some(automaton) = &self.automaton {
+            for keyword_match in automaton.find_overlapping_iter(lowered_line) {
+                for &detector_index in &self.owners[keyword_match.pattern().as_usize()] {
+                    candidates[detector_index] = true;
+                }
+            }
+        }
+    }
+}
+
+struct LineScanContext<'detectors> {
+    line_detectors: &'detectors [&'detectors Detector],
+    prefilter: KeywordPrefilter,
+}
+
+impl<'detectors> LineScanContext<'detectors> {
+    fn new(line_detectors: &'detectors [&'detectors Detector]) -> Self {
+        Self {
+            line_detectors,
+            prefilter: KeywordPrefilter::new(line_detectors),
+        }
+    }
+}
+
+/// Per-line scratch buffers, reused across lines to avoid allocating in the
+/// hot loop. Each scanning loop owns one (they are not shared across threads).
+#[derive(Default)]
+struct LineScratch {
+    lowered_line: String,
+    candidates: Vec<bool>,
+}
+
 fn scan_line_detectors(
     line: &str,
     line_number: usize,
     path: &str,
-    line_detectors: &[&Detector],
-    line_is_suppressed: bool,
+    context: &LineScanContext<'_>,
+    scratch: &mut LineScratch,
     findings: &mut Vec<Finding>,
 ) {
-    if line_is_suppressed {
+    to_lowercase_into(line, &mut scratch.lowered_line);
+    if scratch.lowered_line.contains(INLINE_SUPPRESS) {
         return;
     }
 
-    for detector in line_detectors {
-        if detector.has_keywords(line) {
-            for mat in detector.regex.find_iter(line) {
-                if !is_allowlisted(mat.as_str(), detector)
-                    && detector.has_sufficient_entropy(mat.as_str())
-                {
-                    findings.push(Finding {
-                        file_path: path.to_string(),
-                        line_number,
-                        matched_content: mat.as_str().to_string(),
-                        finding_type: detector.finding_type.clone(),
-                        severity: detector.severity,
-                        plugin_name: detector.name.clone(),
-                    });
-                }
+    context
+        .prefilter
+        .candidates_into(&scratch.lowered_line, &mut scratch.candidates);
+
+    for (detector_index, detector) in context.line_detectors.iter().enumerate() {
+        if !scratch.candidates[detector_index] {
+            continue;
+        }
+        for mat in detector.regex.find_iter(line) {
+            if !is_allowlisted(mat.as_str(), detector)
+                && detector.has_sufficient_entropy(mat.as_str())
+            {
+                findings.push(Finding {
+                    file_path: path.to_string(),
+                    line_number,
+                    matched_content: mat.as_str().to_string(),
+                    finding_type: detector.finding_type.clone(),
+                    severity: detector.severity,
+                    plugin_name: detector.name.clone(),
+                });
             }
         }
     }
@@ -64,8 +170,12 @@ fn scan_multiline_chunk(
     multiline_detectors: &[&Detector],
     findings: &mut Vec<Finding>,
 ) {
+    if multiline_detectors.is_empty() {
+        return;
+    }
+    let lowered_chunk = chunk.to_lowercase();
     for detector in multiline_detectors {
-        if detector.has_keywords(chunk) {
+        if detector.has_keywords(&lowered_chunk) {
             for mat in detector.regex.find_iter(chunk) {
                 let line_in_chunk = chunk[..mat.start()].matches('\n').count() + 1;
                 let line_content = chunk
@@ -96,21 +206,22 @@ fn scan_content(
     content: &str,
     path: &str,
     multiline_detectors: &[&Detector],
-    line_detectors: &[&Detector],
+    context: &LineScanContext<'_>,
 ) -> (Vec<Finding>, usize) {
     let mut findings = Vec::new();
     let mut total_lines = 0;
 
     scan_multiline_chunk(content, 0, path, multiline_detectors, &mut findings);
 
+    let mut scratch = LineScratch::default();
     for (line_idx, line) in content.lines().enumerate() {
         total_lines += 1;
         scan_line_detectors(
             line,
             line_idx + 1,
             path,
-            line_detectors,
-            is_inline_suppressed(line),
+            context,
+            &mut scratch,
             &mut findings,
         );
     }
@@ -127,10 +238,12 @@ fn scan_stream<ReaderType: BufRead>(
     const CHUNK_SIZE: usize = 1000;
     const OVERLAP_LINES: usize = 50;
 
+    let context = LineScanContext::new(line_detectors);
     let mut findings = Vec::new();
     let mut total_lines = 0;
     let mut buffer: Vec<String> = Vec::with_capacity(CHUNK_SIZE + OVERLAP_LINES);
     let mut line_offset = 0;
+    let mut scratch = LineScratch::default();
 
     for line_result in reader.lines() {
         let line = line_result.map_err(|source| ScannerError::ReadStream {
@@ -143,8 +256,8 @@ fn scan_stream<ReaderType: BufRead>(
             &line,
             total_lines,
             path,
-            line_detectors,
-            is_inline_suppressed(&line),
+            &context,
+            &mut scratch,
             &mut findings,
         );
 
@@ -178,6 +291,37 @@ fn scan_stream<ReaderType: BufRead>(
     Ok((findings, total_lines))
 }
 
+/// Runs `command`, feeds its stdout to `scan`, and reaps the child process.
+///
+/// Both git-backed scan modes share this so the process lifetime is handled
+/// in exactly one place: on a scan error the child is killed rather than left
+/// writing into a closed pipe, and it is always waited on before the status
+/// is checked.
+fn scan_git_output<T>(
+    mut command: std::process::Command,
+    nonzero_status: ScannerError,
+    scan: impl FnOnce(BufReader<std::process::ChildStdout>) -> Result<T, ScannerError>,
+    spawn_failed: impl FnOnce(std::io::Error) -> ScannerError,
+) -> Result<T, ScannerError> {
+    let mut child = command
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .map_err(spawn_failed)?;
+
+    let stdout = child.stdout.take().ok_or(ScannerError::CaptureGitStdout)?;
+    let scanned = scan(BufReader::new(stdout));
+    if scanned.is_err() {
+        let _ = child.kill();
+    }
+
+    let status = child
+        .wait()
+        .map_err(|source| ScannerError::GitProcess { source })?;
+    let scanned = scanned?;
+
+    status.success().then_some(scanned).ok_or(nonzero_status)
+}
+
 pub fn run_scan(
     args: &ScanArgs,
     config: Option<&KeywatchConfig>,
@@ -197,48 +341,114 @@ pub fn run_scan(
         .iter()
         .partition(|detector| detector.regex.as_str().contains("(?s)"));
 
+    // Resolved once: every scan mode must skip the baseline file itself.
+    let excluded_baseline = baseline_exclusion(args);
+
     if args.git_history {
         let git_root = args
             .paths
             .first()
             .map(Path::new)
             .unwrap_or_else(|| Path::new("."));
-        let mut child = std::process::Command::new("git")
-            .current_dir(git_root)
-            .args([
-                "-c",
-                "diff.external=",
-                "log",
-                "-p",
-                "-U0",
-                "--no-ext-diff",
-                "--no-textconv",
-            ])
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .map_err(|source| ScannerError::RunGitLog { source })?;
+        let mut command = std::process::Command::new("git");
+        command.current_dir(git_root).args([
+            "-c",
+            "diff.external=",
+            "-c",
+            "color.ui=false",
+            "log",
+            "-p",
+            "-U0",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+        ]);
 
-        let stdout = child.stdout.take().ok_or(ScannerError::CaptureGitStdout)?;
-        let reader = BufReader::new(stdout);
-        let (findings, total_lines) = scan_stream(
-            reader,
-            "<git-history>",
-            &multiline_detectors,
-            &line_detectors,
+        let (findings, total_lines) = scan_git_output(
+            command,
+            ScannerError::GitLogNonZero,
+            |reader| {
+                scan_stream(
+                    reader,
+                    "<git-history>",
+                    &multiline_detectors,
+                    &line_detectors,
+                )
+            },
+            |source| ScannerError::RunGitLog { source },
         )?;
-
-        let status = child
-            .wait()
-            .map_err(|source| ScannerError::GitProcess { source })?;
-        if !status.success() {
-            return Err(ScannerError::GitLogNonZero);
-        }
 
         let metadata = ScanMetadata {
             files_scanned: 1,
             total_lines,
             excluded_files: Vec::new(),
         };
+
+        return Ok((findings, metadata));
+    }
+
+    if args.staged {
+        let exclude_patterns = compile_exclude_patterns(args, config)?;
+        let mut command = std::process::Command::new("git");
+        // The parser depends on undecorated `diff --git`/`@@`/`+` framing and
+        // literal `a/`/`b/` path prefixes, so user git config that colors,
+        // re-prefixes, quotes, or glob-expands must be overridden here — a
+        // stray `color.ui = always` would otherwise hide every added line.
+        command.args([
+            "--literal-pathspecs",
+            "-c",
+            "diff.external=",
+            "-c",
+            "color.ui=false",
+            "-c",
+            "diff.mnemonicPrefix=false",
+            "-c",
+            "diff.noprefix=false",
+            "-c",
+            "core.quotePath=false",
+            "diff",
+            "--cached",
+            "-U0",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--no-color",
+            "--",
+        ]);
+        command.args(&args.paths);
+
+        let staged = scan_git_output(
+            command,
+            ScannerError::GitDiffNonZero,
+            |reader| {
+                scan_staged_diff(
+                    reader,
+                    &exclude_patterns,
+                    excluded_baseline.as_ref(),
+                    &multiline_detectors,
+                    &line_detectors,
+                )
+            },
+            |source| ScannerError::RunGitDiff { source },
+        )?;
+
+        let StagedScan {
+            mut findings,
+            mut metadata,
+            undiffable_files,
+        } = staged;
+
+        let (blob_findings, blob_lines, skipped) =
+            scan_undiffable_blobs(&undiffable_files, &multiline_detectors, &line_detectors)?;
+        findings.extend(blob_findings);
+        metadata.total_lines += blob_lines;
+        metadata.files_scanned += undiffable_files.len() - skipped.len();
+        metadata.excluded_files.extend(skipped);
+
+        findings.sort_by(|a, b| {
+            a.file_path
+                .cmp(&b.file_path)
+                .then(a.line_number.cmp(&b.line_number))
+        });
 
         return Ok((findings, metadata));
     }
@@ -288,36 +498,8 @@ pub fn run_scan(
     }
     let unique_paths: Vec<_> = unique_paths.into_iter().collect();
 
-    let mut exclude_patterns: Vec<Pattern> = args
-        .exclude
-        .as_ref()
-        .map(|exclude_str| {
-            exclude_str
-                .split(',')
-                .filter(|pattern| !pattern.trim().is_empty())
-                .map(|pattern| {
-                    Pattern::new(pattern.trim()).map_err(|source| {
-                        ScannerError::InvalidExcludePattern {
-                            pattern: pattern.to_string(),
-                            source,
-                        }
-                    })
-                })
-                .collect::<Result<Vec<_>, _>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
-
-    if let Some(excludes) = config.and_then(|cfg| cfg.exclude.as_ref()) {
-        for pattern_str in excludes {
-            exclude_patterns.push(Pattern::new(pattern_str).map_err(|source| {
-                ScannerError::InvalidConfigExcludePattern {
-                    pattern: pattern_str.to_string(),
-                    source,
-                }
-            })?);
-        }
-    }
+    let exclude_patterns = compile_exclude_patterns(args, config)?;
+    let line_scan_context = LineScanContext::new(&line_detectors);
 
     let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
         .into_par_iter()
@@ -326,7 +508,9 @@ pub fn run_scan(
                 return (Vec::new(), 0, 0, Some(path));
             }
 
-            if matches_exclude_patterns(&path, &roots, &exclude_patterns) {
+            if matches_exclude_patterns(&path, &roots, &exclude_patterns)
+                || is_baseline_file(&path, excluded_baseline.as_ref())
+            {
                 return (Vec::new(), 0, 0, Some(path));
             }
 
@@ -352,8 +536,12 @@ pub fn run_scan(
                 Err(_) => return (Vec::new(), 0, 0, None),
             };
 
-            let (file_findings, file_lines) =
-                scan_content(&full_content, &path, &multiline_detectors, &line_detectors);
+            let (file_findings, file_lines) = scan_content(
+                &full_content,
+                &path,
+                &multiline_detectors,
+                &line_scan_context,
+            );
 
             (file_findings, 1, file_lines, None)
         })
@@ -386,6 +574,316 @@ pub fn run_scan(
     };
 
     Ok((findings, metadata))
+}
+
+fn compile_exclude_patterns(
+    args: &ScanArgs,
+    config: Option<&KeywatchConfig>,
+) -> Result<Vec<Pattern>, ScannerError> {
+    let mut exclude_patterns: Vec<Pattern> = Vec::new();
+
+    for pattern in args
+        .exclude
+        .iter()
+        .flat_map(|patterns| patterns.split(','))
+        .map(str::trim)
+        .filter(|pattern| !pattern.is_empty())
+    {
+        exclude_patterns.push(Pattern::new(pattern).map_err(|source| {
+            ScannerError::InvalidExcludePattern {
+                pattern: pattern.to_string(),
+                source,
+            }
+        })?);
+    }
+
+    if let Some(excludes) = config.and_then(|cfg| cfg.exclude.as_ref()) {
+        for pattern_str in excludes {
+            exclude_patterns.push(Pattern::new(pattern_str).map_err(|source| {
+                ScannerError::InvalidConfigExcludePattern {
+                    pattern: pattern_str.to_string(),
+                    source,
+                }
+            })?);
+        }
+    }
+
+    Ok(exclude_patterns)
+}
+
+/// Canonical path of the baseline file, so scans never read it. It stores
+/// finding hashes that themselves trip detectors, and each
+/// `--update-baseline` would re-ingest them, growing the file every run.
+/// Compared canonically because a discovered baseline is absolute while the
+/// scanned path may be relative (`./.keywatch-baseline.json`).
+fn baseline_exclusion(args: &ScanArgs) -> Option<PathBuf> {
+    let baseline_path = args.baseline.as_ref()?;
+    fs::canonicalize(baseline_path).ok()
+}
+
+fn is_baseline_file(path: &str, baseline: Option<&PathBuf>) -> bool {
+    let Some(baseline) = baseline else {
+        return false;
+    };
+    fs::canonicalize(path).is_ok_and(|candidate| candidate == *baseline)
+}
+
+fn parse_hunk_new_start(header: &str) -> usize {
+    header
+        .split_whitespace()
+        .find(|token| token.starts_with('+'))
+        .and_then(|token| {
+            token[1..]
+                .split(',')
+                .next()
+                .and_then(|start| start.parse().ok())
+        })
+        .unwrap_or(0)
+}
+
+fn parse_diff_target_path(target: &str) -> Option<String> {
+    let target = target.trim_end();
+    if target == "/dev/null" {
+        return None;
+    }
+    let target = target.trim_matches('"');
+    let target = target.strip_prefix("b/").unwrap_or(target);
+    Some(target.to_string())
+}
+
+fn flush_staged_hunk(
+    path: Option<&str>,
+    hunk_start: usize,
+    hunk_added: &mut Vec<String>,
+    multiline_detectors: &[&Detector],
+    findings: &mut Vec<Finding>,
+) {
+    if hunk_added.is_empty() {
+        return;
+    }
+    if let Some(path) = path {
+        let chunk = hunk_added.join("\n");
+        scan_multiline_chunk(
+            &chunk,
+            hunk_start.saturating_sub(1),
+            path,
+            multiline_detectors,
+            findings,
+        );
+    }
+    hunk_added.clear();
+}
+
+/// Best-effort path from a `Binary files a/x and b/x differ` marker: the
+/// post-image side, for surfacing skipped files in `excluded_files`.
+fn parse_binary_marker_path(marker: &str) -> String {
+    marker
+        .strip_suffix(" differ")
+        .and_then(|paths| paths.rsplit(" and ").next())
+        .map(|target| target.strip_prefix("b/").unwrap_or(target))
+        .unwrap_or(marker)
+        .to_string()
+}
+
+/// Scans only the added lines of the staged diff, attributing findings to the
+/// real file path and post-image line number so `--baseline` entries match.
+/// Hunk state is tracked because added content may itself start with "+".
+/// Lines are decoded lossily so one non-UTF-8 file cannot abort the scan.
+fn scan_staged_diff<ReaderType: BufRead>(
+    mut reader: ReaderType,
+    exclude_patterns: &[Pattern],
+    excluded_baseline: Option<&PathBuf>,
+    multiline_detectors: &[&Detector],
+    line_detectors: &[&Detector],
+) -> Result<StagedScan, ScannerError> {
+    let context = LineScanContext::new(line_detectors);
+    let mut findings = Vec::new();
+    let mut total_lines = 0;
+    let mut scanned_files: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut excluded_files: Vec<String> = Vec::new();
+    let mut undiffable_files: Vec<String> = Vec::new();
+    let mut current_path: Option<String> = None;
+    let mut in_hunk = false;
+    let mut next_line_number = 0;
+    let mut hunk_start = 0;
+    let mut hunk_added: Vec<String> = Vec::new();
+    let mut scratch = LineScratch::default();
+    let mut raw_line: Vec<u8> = Vec::new();
+
+    loop {
+        raw_line.clear();
+        let bytes_read =
+            reader
+                .read_until(b'\n', &mut raw_line)
+                .map_err(|source| ScannerError::ReadStream {
+                    path: "<staged>".to_string(),
+                    source,
+                })?;
+        if bytes_read == 0 {
+            break;
+        }
+        if raw_line.last() == Some(&b'\n') {
+            raw_line.pop();
+        }
+        if raw_line.last() == Some(&b'\r') {
+            raw_line.pop();
+        }
+        let line = String::from_utf8_lossy(&raw_line);
+
+        if in_hunk {
+            if let Some(content) = line.strip_prefix('+') {
+                let line_number = next_line_number;
+                next_line_number += 1;
+                let Some(path) = current_path.as_deref() else {
+                    continue;
+                };
+                total_lines += 1;
+                scanned_files.insert(path.to_string());
+                scan_line_detectors(
+                    content,
+                    line_number,
+                    path,
+                    &context,
+                    &mut scratch,
+                    &mut findings,
+                );
+                hunk_added.push(content.to_string());
+                continue;
+            }
+            if line.starts_with('-') || line.starts_with('\\') {
+                continue;
+            }
+        }
+
+        if line.starts_with("@@") {
+            flush_staged_hunk(
+                current_path.as_deref(),
+                hunk_start,
+                &mut hunk_added,
+                multiline_detectors,
+                &mut findings,
+            );
+            hunk_start = parse_hunk_new_start(&line);
+            next_line_number = hunk_start;
+            in_hunk = true;
+            continue;
+        }
+
+        if line.starts_with("diff ") {
+            flush_staged_hunk(
+                current_path.as_deref(),
+                hunk_start,
+                &mut hunk_added,
+                multiline_detectors,
+                &mut findings,
+            );
+            in_hunk = false;
+            current_path = None;
+            continue;
+        }
+
+        if let Some(target) = line.strip_prefix("+++ ") {
+            current_path = match parse_diff_target_path(target) {
+                Some(path)
+                    if matches_exclude_patterns(&path, &[], exclude_patterns)
+                        || is_baseline_file(&path, excluded_baseline) =>
+                {
+                    excluded_files.push(path);
+                    None
+                }
+                other => other,
+            };
+            continue;
+        }
+
+        // A `-diff` gitattribute (or a true binary) yields no hunks. The diff
+        // tells us nothing about the content, so record the path and read the
+        // staged blob directly rather than reporting the file as clean.
+        if let Some(marker) = line.strip_prefix("Binary files ") {
+            let path = parse_binary_marker_path(marker);
+            if matches_exclude_patterns(&path, &[], exclude_patterns)
+                || is_baseline_file(&path, excluded_baseline)
+            {
+                excluded_files.push(path);
+            } else {
+                undiffable_files.push(path);
+            }
+        }
+    }
+
+    flush_staged_hunk(
+        current_path.as_deref(),
+        hunk_start,
+        &mut hunk_added,
+        multiline_detectors,
+        &mut findings,
+    );
+
+    findings.sort_by(|a, b| {
+        a.file_path
+            .cmp(&b.file_path)
+            .then(a.line_number.cmp(&b.line_number))
+    });
+
+    let metadata = ScanMetadata {
+        files_scanned: scanned_files.len(),
+        total_lines,
+        excluded_files,
+    };
+
+    Ok(StagedScan {
+        findings,
+        metadata,
+        undiffable_files,
+    })
+}
+
+/// Result of parsing a staged diff. `undiffable_files` are paths git rendered
+/// as binary (a real binary, or text marked `-diff` in .gitattributes); their
+/// content never appears in the diff and must be read from the index instead.
+struct StagedScan {
+    findings: Vec<Finding>,
+    metadata: ScanMetadata,
+    undiffable_files: Vec<String>,
+}
+
+/// Scans the staged blob of each undiffable path via `git cat-file`.
+///
+/// Without this a `.gitattributes` entry like `*.env -diff` would hide a
+/// staged secret completely: git emits only "Binary files ... differ" and the
+/// scan would report the file as clean.
+fn scan_undiffable_blobs(
+    paths: &[String],
+    multiline_detectors: &[&Detector],
+    line_detectors: &[&Detector],
+) -> Result<(Vec<Finding>, usize, Vec<String>), ScannerError> {
+    let context = LineScanContext::new(line_detectors);
+    let mut findings = Vec::new();
+    let mut total_lines = 0;
+    let mut skipped = Vec::new();
+
+    for path in paths {
+        let output = std::process::Command::new("git")
+            .args(["cat-file", "blob", &format!(":{path}")])
+            .output()
+            .map_err(|source| ScannerError::RunGitDiff { source })?;
+        if !output.status.success() {
+            skipped.push(path.clone());
+            continue;
+        }
+        // Genuinely binary content (NUL bytes) is skipped, matching file mode.
+        if output.stdout.contains(&0) {
+            skipped.push(path.clone());
+            continue;
+        }
+        let content = String::from_utf8_lossy(&output.stdout);
+        let (blob_findings, blob_lines) =
+            scan_content(&content, path, multiline_detectors, &context);
+        findings.extend(blob_findings);
+        total_lines += blob_lines;
+    }
+
+    Ok((findings, total_lines, skipped))
 }
 
 fn collect_files(dir_path: &str, files: &mut Vec<(String, Option<String>)>, root: &str) {
@@ -421,7 +919,11 @@ fn matches_exclude_patterns(
     scan_roots: &[Option<String>],
     patterns: &[Pattern],
 ) -> bool {
-    let path = Path::new(path);
+    // Exclude patterns are written with forward slashes, so paths are matched
+    // in that form: on Windows a scanned path is `target\\foo` and would
+    // otherwise never match `target/**`.
+    let forward_slashed = path.replace('\\', "/");
+    let path = Path::new(forward_slashed.as_str());
 
     patterns.iter().any(|pattern| {
         pattern.matches_path(path)
@@ -432,8 +934,9 @@ fn matches_exclude_patterns(
             || scan_roots.iter().any(|root_opt| {
                 root_opt
                     .as_deref()
-                    .and_then(|root| path.strip_prefix(root).ok())
-                    .is_some_and(|relative| pattern.matches_path(relative))
+                    .map(|root| root.replace('\\', "/"))
+                    .and_then(|root| path.strip_prefix(&root).ok().map(Path::to_path_buf))
+                    .is_some_and(|relative| pattern.matches_path(&relative))
             })
     })
 }
@@ -552,5 +1055,179 @@ mod tests {
             2500,
             "Should find all 2500 secrets across chunks"
         );
+    }
+
+    #[test]
+    fn test_scan_staged_diff_preserves_plus_prefixed_added_content() {
+        let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
+        let line_detectors = vec![&detector];
+        let diff = "diff --git a/notes.txt b/notes.txt\n\
+            index aabbcc0..ddeeff1 100644\n\
+            --- /dev/null\n\
+            +++ b/notes.txt\n\
+            @@ -0,0 +1,3 @@\n\
+            +SECRET_ONE plain\n\
+            +++SECRET_TWO starts with pluses\n\
+            +@@ SECRET_THREE looks like a hunk header\n";
+
+        let StagedScan {
+            findings, metadata, ..
+        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+
+        let summary: Vec<(String, usize)> = findings
+            .iter()
+            .map(|finding| (finding.matched_content.clone(), finding.line_number))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![
+                ("SECRET_ONE".to_string(), 1),
+                ("SECRET_TWO".to_string(), 2),
+                ("SECRET_THREE".to_string(), 3),
+            ],
+            "added lines starting with '+', '@@' must be scanned as content"
+        );
+        assert!(findings.iter().all(|f| f.file_path == "notes.txt"));
+        assert_eq!(metadata.files_scanned, 1);
+    }
+
+    #[test]
+    fn test_scan_staged_diff_ignores_deleted_files_and_removed_lines() {
+        let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
+        let line_detectors = vec![&detector];
+        let diff = "diff --git a/gone.txt b/gone.txt\n\
+            deleted file mode 100644\n\
+            --- a/gone.txt\n\
+            +++ /dev/null\n\
+            @@ -1,2 +0,0 @@\n\
+            -SECRET_GONE\n\
+            -goodbye\n";
+
+        let StagedScan {
+            findings, metadata, ..
+        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+
+        assert!(findings.is_empty(), "removed lines must not be scanned");
+        assert_eq!(metadata.files_scanned, 0);
+    }
+
+    #[test]
+    fn test_scan_staged_diff_attributes_multiple_files() {
+        let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
+        let line_detectors = vec![&detector];
+        let diff = "diff --git a/first.txt b/first.txt\n\
+            --- a/first.txt\n\
+            +++ b/first.txt\n\
+            @@ -0,0 +7 @@\n\
+            +SECRET_A\n\
+            diff --git a/second.txt b/second.txt\n\
+            --- a/second.txt\n\
+            +++ b/second.txt\n\
+            @@ -0,0 +2 @@\n\
+            +SECRET_B\n";
+
+        let StagedScan {
+            findings, metadata, ..
+        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+
+        let summary: Vec<(String, usize)> = findings
+            .iter()
+            .map(|finding| (finding.file_path.clone(), finding.line_number))
+            .collect();
+        assert_eq!(
+            summary,
+            vec![("first.txt".to_string(), 7), ("second.txt".to_string(), 2)]
+        );
+        assert_eq!(metadata.files_scanned, 2);
+    }
+
+    #[test]
+    fn test_scan_staged_diff_queues_binary_files_for_blob_reading() {
+        let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
+        let line_detectors = vec![&detector];
+        let diff = "diff --git a/img.png b/img.png\n\
+            index aabbcc0..ddeeff1 100644\n\
+            Binary files a/img.png and b/img.png differ\n";
+
+        let staged = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+
+        assert!(staged.findings.is_empty());
+        assert!(
+            staged.metadata.excluded_files.is_empty(),
+            "an undiffable file is not 'excluded' — its blob still gets scanned"
+        );
+        assert_eq!(
+            staged.undiffable_files,
+            vec!["img.png".to_string()],
+            "binary-rendered files must be queued for a direct blob read, or a \
+             '-diff' gitattribute hides a staged secret entirely"
+        );
+    }
+
+    #[test]
+    fn test_scan_staged_diff_respects_excludes_for_binary_files() {
+        let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
+        let line_detectors = vec![&detector];
+        let diff = "diff --git a/vendor/blob.bin b/vendor/blob.bin\n\
+            Binary files a/vendor/blob.bin and b/vendor/blob.bin differ\n";
+        let pattern = Pattern::new("vendor/**").unwrap();
+
+        let staged =
+            scan_staged_diff(Cursor::new(diff), &[pattern], None, &[], &line_detectors).unwrap();
+
+        assert!(
+            staged.undiffable_files.is_empty(),
+            "an excluded path must not be re-read from the index"
+        );
+        assert_eq!(
+            staged.metadata.excluded_files,
+            vec!["vendor/blob.bin".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_scan_staged_diff_survives_non_utf8_content() {
+        let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
+        let line_detectors = vec![&detector];
+        let mut diff: Vec<u8> = Vec::new();
+        diff.extend_from_slice(b"diff --git a/legacy.csv b/legacy.csv\n");
+        diff.extend_from_slice(b"--- a/legacy.csv\n");
+        diff.extend_from_slice(b"+++ b/legacy.csv\n");
+        diff.extend_from_slice(b"@@ -0,0 +1,2 @@\n");
+        diff.extend_from_slice(b"+caf\xE9 latin-1 line\n");
+        diff.extend_from_slice(b"+SECRET_AFTER_BINARYISH\n");
+
+        let StagedScan { findings, .. } =
+            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+
+        assert_eq!(
+            findings.len(),
+            1,
+            "non-UTF-8 content must not abort the scan"
+        );
+        assert_eq!(findings[0].line_number, 2);
+    }
+
+    #[test]
+    fn test_scan_staged_diff_multiline_detector_uses_hunk_start_offset() {
+        let detector = make_detector("Block", r"(?s)BEGIN KEY.*END KEY", "Test", "HIGH");
+        let multiline_detectors = vec![&detector];
+        let diff = "diff --git a/key.pem b/key.pem\n\
+            --- a/key.pem\n\
+            +++ b/key.pem\n\
+            @@ -0,0 +5,3 @@\n\
+            +BEGIN KEY\n\
+            +material\n\
+            +END KEY\n";
+
+        let StagedScan { findings, .. } =
+            scan_staged_diff(Cursor::new(diff), &[], None, &multiline_detectors, &[]).unwrap();
+
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            findings[0].line_number, 5,
+            "multiline findings must use the hunk's post-image start line"
+        );
+        assert_eq!(findings[0].file_path, "key.pem");
     }
 }

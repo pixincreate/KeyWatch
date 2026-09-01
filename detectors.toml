@@ -53,6 +53,9 @@ pattern = "(?i)(password|passwd|pwd)\\s*[:=]\\s*(?-i)[\"']?([^\"'\\n]+)[\"']?"
 finding_type = "Password"
 severity = "HIGH"
 keywords = ["password", "passwd", "pwd"]
+# $PWD is the shell working-directory variable (docker --volume "$PWD:...",
+# Makefiles), never a password literal.
+allowlist = ["^\\$?PWD:"]
 
 [[detectors]]
 name = "EmailDetector"
@@ -91,6 +94,12 @@ finding_type = "Generic Key/Secret"
 severity = "HIGH"
 keywords = ["api_key", "secret", "password", "token", "access_key", "credential"]
 entropy = 2.5
+# An unquoted, all-lowercase snake_case value is a variable reference, not a
+# credential: `let payment_method_token = card_token;` reads identically to
+# `token = <10 random chars>` to the pattern above. Requiring no quotes, no
+# digits and no capitals keeps real values flagged — quoted literals end in a
+# quote, and generated secrets carry digits or mixed case.
+allowlist = ["[:=]\\s*[a-z]+(?:_[a-z]+)+$"]
 
 [[detectors]]
 name = "CertificateDetector"
@@ -108,10 +117,17 @@ keywords = ["mysql://", "postgres://", "mongodb://", "redis://"]
 
 [[detectors]]
 name = "Base64Detector"
-pattern = "\\b[A-Za-z0-9+/]{20,}[=]{0,2}\\b"
+# 28 chars, not 20: below that, entropy cannot separate base64 from ordinary
+# CamelCase identifiers (a random 20-char base64 string averages 4.04 bits,
+# a 20-char identifier 3.68 — the distributions overlap), so a threshold low
+# enough to catch short base64 floods reports with identifiers, and one high
+# enough to reject identifiers drops 4 out of 5 short base64 strings. At 28+
+# the two separate cleanly. Known short credential formats are covered by
+# their own detectors, which have no entropy gate.
+pattern = "\\b[A-Za-z0-9+/]{28,}[=]{0,2}\\b"
 finding_type = "Base64 Encoded String"
 severity = "LOW"
-entropy = 3.0
+entropy = 4.2
 
 [[detectors]]
 name = "HighEntropyDetector"
@@ -147,6 +163,10 @@ pattern = "\"[a-zA-Z0-9\\-_=]{35,}\""
 finding_type = "Random String"
 severity = "LOW"
 entropy = 3.5
+# Long all-lowercase snake_case string literals are identifiers — serde
+# attributes, config keys, enum names — not random values. A generated secret
+# of this length carries digits or capitals.
+allowlist = ["^\"[a-z]+(?:_[a-z]+)+\"$"]
 
 
 [[detectors]]

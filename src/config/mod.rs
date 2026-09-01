@@ -13,10 +13,11 @@ mod tests;
 
 /// User-facing configuration that extends and overrides the built-in detectors.
 ///
-/// Loaded from `--config <path>` or discovered from the first CLI scan path
-/// (directory itself, or parent directory for a file path). Merges with
-/// `detectors.toml`: custom rules are appended, overrides are applied by
-/// detector name.
+/// Loaded from `--config <path>` or discovered by walking up from the first
+/// CLI scan path (the directory itself, or a file's parent) through its
+/// ancestors, stopping at the enclosing repository root or the home
+/// directory. Merges with `detectors.toml`: custom rules are appended,
+/// overrides are applied by detector name.
 #[derive(Deserialize, Default)]
 pub struct KeywatchConfig {
     pub rules: Option<Vec<CustomRule>>,
@@ -143,9 +144,14 @@ impl KeywatchConfig {
     ///
     /// Resolution order:
     /// 1. `explicit_path` — used as-is; returns `Err` if the file is absent.
-    /// 2. First CLI scan path that is a directory — search that directory.
-    /// 3. First CLI scan path that is a file — search its parent directory.
-    /// 4. Current working directory — only when `scan_paths` is empty.
+    /// 2. First CLI scan path — the directory itself for a directory, or the
+    ///    parent for a file — then each ancestor directory, nearest first.
+    /// 3. Current working directory (and its ancestors) — only when
+    ///    `scan_paths` is empty.
+    ///
+    /// The ancestor walk stops at the first directory containing `.git` (the
+    /// repository root) or at the home directory, so configuration is never
+    /// read from outside the tree being scanned.
     ///
     /// Candidate filenames tried in order: `.keywatch.toml`, `keywatch.toml`,
     /// `.kw.toml`.
@@ -163,20 +169,18 @@ impl KeywatchConfig {
         scan_paths: &[String],
         cwd: &Path,
     ) -> Result<Option<Self>, ConfigError> {
-        let config_path: Option<String> = if let Some(path) = explicit_path {
-            if !Path::new(path).exists() {
+        let config_path = match explicit_path {
+            Some(path) if !Path::new(path).exists() => {
                 return Err(ConfigError::NotFound {
                     path: path.to_string(),
                 });
             }
-            Some(path.to_string())
-        } else {
-            find_config_candidates(scan_paths, cwd)
+            Some(path) => Some(path.to_string()),
+            None => find_config_candidates(scan_paths, cwd),
         };
 
-        let config_path = match config_path {
-            Some(path) => path,
-            None => return Ok(None),
+        let Some(config_path) = config_path else {
+            return Ok(None);
         };
 
         let contents = fs::read_to_string(&config_path).map_err(|source| ConfigError::Read {
@@ -215,6 +219,18 @@ fn default_severity() -> Severity {
 const CONFIG_NAMES: [&str; 3] = [".keywatch.toml", "keywatch.toml", ".kw.toml"];
 
 fn find_config_candidates(scan_paths: &[String], cwd: &Path) -> Option<String> {
+    find_file_upwards(scan_paths, cwd, &CONFIG_NAMES)
+}
+
+/// Walks up from the first scan path (or `cwd`) looking for one of `names`,
+/// nearest directory first, stopping at the repository root or the home
+/// directory so nothing outside the scanned tree's trust boundary is used.
+/// Shared by config discovery and baseline discovery.
+pub(crate) fn find_file_upwards(
+    scan_paths: &[String],
+    cwd: &Path,
+    names: &[&str],
+) -> Option<String> {
     let search_dir: PathBuf = match scan_paths.first() {
         Some(first) => {
             let scan_path = Path::new(first);
@@ -231,9 +247,28 @@ fn find_config_candidates(scan_paths: &[String], cwd: &Path) -> Option<String> {
         None => cwd.to_path_buf(),
     };
 
-    CONFIG_NAMES
-        .iter()
-        .map(|name| search_dir.join(name))
-        .find(|candidate_path| candidate_path.exists())
-        .and_then(|candidate_path| candidate_path.to_str().map(str::to_string))
+    let search_dir = if search_dir.is_absolute() {
+        search_dir
+    } else {
+        cwd.join(search_dir)
+    };
+
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+
+    for dir in search_dir.ancestors() {
+        let found = names
+            .iter()
+            .map(|name| dir.join(name))
+            .find(|candidate_path| candidate_path.exists())
+            .and_then(|candidate_path| candidate_path.to_str().map(str::to_string));
+        if found.is_some() {
+            return found;
+        }
+        if dir.join(".git").exists() || home.as_deref() == Some(dir) {
+            return None;
+        }
+    }
+    None
 }

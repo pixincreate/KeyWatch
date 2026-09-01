@@ -1,0 +1,10 @@
+# KeyWatch self-scan configuration.
+#
+# Only build output is excluded by path. Everything else — including the fake
+# credentials used as test fixtures and the secret-shaped pattern strings in
+# detectors.toml — is suppressed by .keywatch-baseline.json instead, so a newly
+# introduced secret in those files is still reported.
+#
+# Note this file is not consulted by the pre-commit hook, which runs with
+# --no-config-discovery so that a repository cannot weaken its own scan.
+exclude = ["target/**"]

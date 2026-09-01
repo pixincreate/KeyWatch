@@ -4,6 +4,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
+use std::sync::LazyLock;
 
 mod error;
 pub use error::HookError;
@@ -17,6 +18,30 @@ const KEYWATCH_MARKER: &str = "# Installed by KeyWatch";
 
 fn shell_escape(input: &str) -> String {
     format!("'{}'", input.replace('\'', "'\"'\"'"))
+}
+
+/// The user's home directory, resolved once per process.
+static HOME_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
+    env::var_os("HOME")
+        .or_else(|| env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+});
+
+/// `"global"` or `"local"`, for messages describing a hook's scope.
+const fn scope_label(is_global: bool) -> &'static str {
+    if is_global { "global" } else { "local" }
+}
+
+/// Renders a path for terminal output, abbreviating the home directory as `~`.
+fn display_path(path: &Path) -> String {
+    match HOME_DIR
+        .as_deref()
+        .and_then(|home| path.strip_prefix(home).ok())
+    {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
 }
 
 fn build_repo_section(allowed: Option<&str>, blocked: Option<&str>) -> String {
@@ -119,15 +144,15 @@ pub fn install_hook(args: &HookInstallArgs) -> Result<(), HookError> {
     if install_target.configured_global_path {
         println!(
             "Configured git --global core.hooksPath to {}",
-            install_target.hooks_dir.display()
+            display_path(&install_target.hooks_dir)
         );
     }
 
-    if install_target.is_global {
-        println!("Installed global {hook_type_str} hook at {hook_path}");
-    } else {
-        println!("Installed {hook_type_str} hook at {hook_path}");
-    }
+    println!(
+        "Installed {} {hook_type_str} hook at {}",
+        scope_label(install_target.is_global),
+        display_path(&install_target.path)
+    );
     println!(
         "The hook will run automatically during git {}.",
         hook_type_str.replace('-', " ")
@@ -144,15 +169,11 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
     let hook_type_str = args.hook_type.as_str();
     let install_target = resolve_hook_uninstall_target(hook_type_str, args.global)?;
 
+    let scope = scope_label(install_target.is_global);
     if !install_target.path.exists() {
-        let scope = if install_target.is_global {
-            "global"
-        } else {
-            "local"
-        };
         println!(
             "No {scope} {hook_type_str} hook found at {}",
-            install_target.path.display()
+            display_path(&install_target.path)
         );
         return Ok(());
     }
@@ -168,17 +189,10 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
         source,
     })?;
 
-    if install_target.is_global {
-        println!(
-            "Removed global {hook_type_str} hook at {}",
-            install_target.path.display()
-        );
-    } else {
-        println!(
-            "Removed {hook_type_str} hook at {}",
-            install_target.path.display()
-        );
-    }
+    println!(
+        "Removed {scope} {hook_type_str} hook at {}",
+        display_path(&install_target.path)
+    );
 
     Ok(())
 }
@@ -306,22 +320,18 @@ fn read_global_hooks_path() -> Result<Option<PathBuf>, HookError> {
         .output()
         .map_err(|source| HookError::ReadGlobalHooksPath { source })?;
 
-    if output.status.success() {
-        let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return Ok(if value.is_empty() {
-            None
-        } else {
-            Some(PathBuf::from(value))
-        });
-    }
-
-    if output.status.code() == Some(1) {
+    match output.status.code() {
+        _ if output.status.success() => {
+            let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            Ok((!value.is_empty()).then(|| PathBuf::from(value)))
+        }
         // Exit code 1 means the key is not set.
-        return Ok(None);
+        Some(1) => Ok(None),
+        _ => {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(HookError::ReadGlobalHooksPathFromGit { stderr })
+        }
     }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    Err(HookError::ReadGlobalHooksPathFromGit { stderr })
 }
 
 fn managed_global_hooks_dir(
@@ -330,25 +340,26 @@ fn managed_global_hooks_dir(
     appdata: Option<std::ffi::OsString>,
     userprofile: Option<std::ffi::OsString>,
 ) -> Result<PathBuf, HookError> {
-    if let Some(xdg) = xdg_config_home {
-        return Ok(PathBuf::from(xdg).join("key-watch").join("hooks"));
-    }
-    if let Some(home) = home {
-        return Ok(PathBuf::from(home)
-            .join(".config")
-            .join("key-watch")
-            .join("hooks"));
-    }
-    if let Some(appdata) = appdata {
-        return Ok(PathBuf::from(appdata).join("key-watch").join("hooks"));
-    }
-    if let Some(userprofile) = userprofile {
-        return Ok(PathBuf::from(userprofile)
-            .join(".config")
-            .join("key-watch")
-            .join("hooks"));
-    }
-    Err(HookError::MissingGlobalHooksBaseDir)
+    xdg_config_home
+        .map(|xdg| PathBuf::from(xdg).join("key-watch").join("hooks"))
+        .or_else(|| {
+            home.map(|home| {
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("key-watch")
+                    .join("hooks")
+            })
+        })
+        .or_else(|| Some(PathBuf::from(appdata?).join("key-watch").join("hooks")))
+        .or_else(|| {
+            userprofile.map(|profile| {
+                PathBuf::from(profile)
+                    .join(".config")
+                    .join("key-watch")
+                    .join("hooks")
+            })
+        })
+        .ok_or(HookError::MissingGlobalHooksBaseDir)
 }
 
 fn configure_global_hooks_path(hooks_dir: &Path) -> Result<(), HookError> {
@@ -401,7 +412,7 @@ fn ensure_hook_target_is_keywatch_managed(
         return Ok(());
     }
 
-    let scope = if is_global { "global" } else { "local" };
+    let scope = scope_label(is_global);
     Err(HookError::RefuseExistingHook {
         action,
         scope,
@@ -436,6 +447,14 @@ mod tests {
             .status()
             .expect("run git init");
         assert!(status.success(), "git init should succeed");
+        // Pin the local hooks path so a machine-wide core.hooksPath does not
+        // redirect hook resolution away from this repository.
+        let status = Command::new("git")
+            .args(["config", "core.hooksPath", ".git/hooks"])
+            .current_dir(path)
+            .status()
+            .expect("run git config");
+        assert!(status.success(), "git config should succeed");
     }
 
     #[test]

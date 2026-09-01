@@ -48,6 +48,88 @@ fn test_config_discovery_file_parent() {
 }
 
 #[test]
+fn test_config_discovery_walks_up_to_ancestor_directories() {
+    let dir = TempDir::new().unwrap();
+    write_file(
+        &dir,
+        ".keywatch.toml",
+        &minimal_rule_toml("RootRule", r"\\bROOT\\b", "HIGH"),
+    );
+    let nested = dir.path().join("proto").join("payments");
+    std::fs::create_dir_all(&nested).unwrap();
+    let scan_file = nested.join("payment.proto");
+    std::fs::write(&scan_file, "message Payment {}").unwrap();
+
+    let paths = vec![scan_file.to_str().unwrap().to_string()];
+    let config = KeywatchConfig::load_for_paths(None, &paths)
+        .unwrap()
+        .expect("root config should apply to nested scan paths");
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
+    assert!(names.contains(&"RootRule".to_string()));
+}
+
+#[test]
+fn test_config_discovery_stops_at_repository_root() {
+    let dir = TempDir::new().unwrap();
+    write_file(
+        &dir,
+        ".keywatch.toml",
+        &minimal_rule_toml("OutsideRule", r"\\bOUT\\b", "HIGH"),
+    );
+    let repo_root = dir.path().join("repo");
+    std::fs::create_dir_all(repo_root.join(".git")).unwrap();
+    let scan_file = repo_root.join("secrets.txt");
+    std::fs::write(&scan_file, "some content").unwrap();
+
+    let paths = vec![scan_file.to_str().unwrap().to_string()];
+    let config = KeywatchConfig::load_for_paths(None, &paths).unwrap();
+    assert!(
+        config.is_none(),
+        "config above the repository root must not be trusted"
+    );
+}
+
+#[test]
+fn test_config_discovery_nearest_config_wins_over_ancestor() {
+    let dir = TempDir::new().unwrap();
+    write_file(
+        &dir,
+        ".keywatch.toml",
+        &minimal_rule_toml("RootRule", r"\\bROOT\\b", "HIGH"),
+    );
+    let nested = dir.path().join("nested");
+    std::fs::create_dir_all(&nested).unwrap();
+    std::fs::write(
+        nested.join(".keywatch.toml"),
+        minimal_rule_toml("NearRule", r"\\bNEAR\\b", "LOW"),
+    )
+    .unwrap();
+    let scan_file = nested.join("secrets.txt");
+    std::fs::write(&scan_file, "some content").unwrap();
+
+    let paths = vec![scan_file.to_str().unwrap().to_string()];
+    let config = KeywatchConfig::load_for_paths(None, &paths)
+        .unwrap()
+        .expect("nearest config should be found");
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
+    assert!(names.contains(&"NearRule".to_string()), "nearest wins");
+    assert!(
+        !names.contains(&"RootRule".to_string()),
+        "ancestor config must not shadow the nearest one"
+    );
+}
+
+#[test]
 fn test_explicit_config_takes_precedence() {
     let dir = TempDir::new().unwrap();
     write_file(&dir, ".keywatch.toml", "# empty");

@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `scan --staged` scans only the lines a commit adds
+- Baselines are auto-discovered from `.keywatch-baseline.json`; `--no-baseline-discovery` opts out
+- `update-baseline` workflow regenerates the baseline via a pull request
+
+### Changed
+
+- Pre-commit hooks scan the staged diff instead of whole files
+- Config discovery searches parent directories up to the repository root
+- Hook messages abbreviate the home directory as `~`
+
+### Fixed
+
+- Hooks use built-in detectors, so a `detectors.toml` committed to a scanned repository can no longer replace the detector set and disable its own scan
+- Files git renders as binary (including text marked `-diff` in `.gitattributes`) are read from the index instead of being reported clean
+- `Base64Detector` matches from 28 characters, the length where entropy can actually separate base64 from identifiers
+- `scan --staged` no longer misses findings under `color.ui = always` or custom diff prefixes
+- Non-UTF-8 files no longer abort a staged scan
+- The baseline file is no longer scanned as input to itself
+- `GenericKeyValueDetector` and `RandomString` no longer flag code identifiers (`let payment_method_token = card_token`, snake_case serde attributes)
+- `PasswordDetector` no longer flags `$PWD:`
+- Piping output to a closed reader no longer panics
+
+### Performance
+
+- Keyword matching uses a single Aho-Corasick pass per line: ~3x faster file scans, ~9x faster streams
+
 ## [2.0.1] - 2026-08-02
 
 ### Fixed

@@ -43,8 +43,37 @@ pub fn run_cli() -> Result<(), RunCliError> {
     }
 }
 
+/// Writes a line to stdout.
+///
+/// `println!` panics if stdout is closed, which happens routinely when output
+/// is piped (`key-watch scan . | head`). A closed pipe is a normal way for a
+/// reader to stop listening, so it is reported as success; anything else is a
+/// real I/O failure and is propagated.
+fn emit(line: &str) -> Result<(), RunCliError> {
+    use std::io::Write;
+
+    let mut stdout = std::io::stdout().lock();
+    match writeln!(stdout, "{line}") {
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        other => other.map_err(|source| RunCliError::WriteOutput { source }),
+    }
+}
+
 fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let start = Instant::now();
+
+    // Resolve the baseline like config: an explicit --baseline wins, otherwise
+    // discover .keywatch-baseline.json in the scanned tree. --update-baseline
+    // with nothing discovered creates the conventional file in the current
+    // directory. The resolved path also gets excluded from scanning.
+    let mut args = args.clone();
+    if args.baseline.is_none() && !args.no_baseline_discovery {
+        args.baseline = baseline::discover_baseline_path(&args.paths);
+        if args.baseline.is_none() && args.update_baseline {
+            args.baseline = Some(baseline::DEFAULT_BASELINE_NAME.to_string());
+        }
+    }
+    let args = &args;
 
     let config = if args.config.is_some() || !args.no_config_discovery {
         config::KeywatchConfig::load_for_paths(args.config.as_deref(), &args.paths)?
@@ -66,7 +95,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
         let mut baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
         baseline.update_with_findings(&findings);
         baseline.save(std::path::Path::new(baseline_path))?;
-        println!("Baseline updated: {}", baseline_path);
+        emit(&format!("Baseline updated: {baseline_path}"))?;
         return Ok(());
     }
 
@@ -85,20 +114,15 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     }
     .map_err(|source| RunCliError::ReportSerialize { source })?;
 
-    if args.verbose {
-        println!("{report_out}");
-    } else if findings_count == 0 {
-        println!("No secrets found.");
-    } else {
-        println!(
+    let summary = match findings_count {
+        _ if args.verbose => report_out.clone(),
+        0 => "No secrets found.".to_string(),
+        count => format!(
             "WARNING: {} potential secret(s) detected (CRITICAL: {}, HIGH: {}, MEDIUM: {}, LOW: {})",
-            findings_count,
-            severity_counts.0,
-            severity_counts.1,
-            severity_counts.2,
-            severity_counts.3
-        );
-    }
+            count, severity_counts.0, severity_counts.1, severity_counts.2, severity_counts.3
+        ),
+    };
+    emit(&summary)?;
 
     if let Some(ref output_path) = args.output {
         utils::write_to_file(output_path, &report_out).map_err(|source| {
@@ -139,9 +163,8 @@ fn verify_binary_integrity() -> Result<(), RunCliError> {
         }
     }
 
-    println!("Binary integrity verified: {:?}", exe_path);
-    println!("Size: {} bytes", metadata.len());
-    Ok(())
+    emit(&format!("Binary integrity verified: {exe_path:?}"))?;
+    emit(&format!("Size: {} bytes", metadata.len()))
 }
 
 fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
@@ -152,10 +175,10 @@ fn calculate_exit_code(findings: &[Finding], exit_mode: &ExitMode) -> i32 {
     match exit_mode {
         ExitMode::Always => 0,
         ExitMode::Critical => {
-            let has_critical_or_high = findings.iter().any(|finding| {
-                finding.severity == Severity::Critical || finding.severity == Severity::High
-            });
-            if has_critical_or_high { 1 } else { 0 }
+            let has_critical_or_high = findings
+                .iter()
+                .any(|finding| matches!(finding.severity, Severity::Critical | Severity::High));
+            i32::from(has_critical_or_high)
         }
         ExitMode::Strict => 1,
     }
