@@ -352,6 +352,10 @@ pub fn run_scan(
             .first()
             .map(Path::new)
             .unwrap_or_else(|| Path::new("."));
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        // History diffs are repository-root-relative; the same root anchors
+        // baseline self-exclusion.
+        let repo_root = git_repo_root(&cwd.join(git_root)).unwrap_or_else(|| cwd.join(git_root));
         let mut command = std::process::Command::new("git");
         command.current_dir(git_root).args([
             "--literal-pathspecs",
@@ -389,6 +393,7 @@ pub fn run_scan(
                     reader,
                     &exclude_patterns,
                     excluded_baseline.as_ref(),
+                    &repo_root,
                     &multiline_detectors,
                     &line_detectors,
                 )
@@ -404,6 +409,8 @@ pub fn run_scan(
     }
 
     if args.staged {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let repo_root = git_repo_root(&cwd).unwrap_or(cwd);
         let exclude_patterns = compile_exclude_patterns(args, config)?;
         let mut command = std::process::Command::new("git");
         // The parser depends on undecorated `diff --git`/`@@`/`+` framing and
@@ -442,6 +449,7 @@ pub fn run_scan(
                     reader,
                     &exclude_patterns,
                     excluded_baseline.as_ref(),
+                    &repo_root,
                     &multiline_detectors,
                     &line_detectors,
                 )
@@ -519,6 +527,7 @@ pub fn run_scan(
 
     let exclude_patterns = compile_exclude_patterns(args, config)?;
     let line_scan_context = LineScanContext::new(&line_detectors);
+    let scan_base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
         .into_par_iter()
@@ -528,7 +537,7 @@ pub fn run_scan(
             }
 
             if matches_exclude_patterns(&path, &roots, &exclude_patterns)
-                || is_baseline_file(&path, excluded_baseline.as_ref())
+                || is_baseline_file(&path, &scan_base_dir, excluded_baseline.as_ref())
             {
                 return (Vec::new(), 0, 0, Some(path));
             }
@@ -685,7 +694,7 @@ fn baseline_exclusion(args: &ScanArgs) -> Option<PathBuf> {
     fs::canonicalize(baseline_path).ok()
 }
 
-fn is_baseline_file(path: &str, baseline: Option<&PathBuf>) -> bool {
+fn is_baseline_file(path: &str, base_dir: &Path, baseline: Option<&PathBuf>) -> bool {
     let Some(baseline) = baseline else {
         return false;
     };
@@ -695,7 +704,15 @@ fn is_baseline_file(path: &str, baseline: Option<&PathBuf>) -> bool {
     if candidate.file_name() != baseline.file_name() {
         return false;
     }
-    fs::canonicalize(candidate).is_ok_and(|candidate| candidate == *baseline)
+    // Staged and history diffs emit repository-root-relative paths no matter
+    // where the process runs, so they must be resolved against that root and
+    // not against the current directory.
+    let anchored = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        base_dir.join(candidate)
+    };
+    fs::canonicalize(anchored).is_ok_and(|candidate| candidate == *baseline)
 }
 
 fn parse_hunk_new_start(header: &str) -> usize {
@@ -763,6 +780,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
     mut reader: ReaderType,
     exclude_patterns: &[Pattern],
     excluded_baseline: Option<&PathBuf>,
+    base_dir: &Path,
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
 ) -> Result<StagedScan, ScannerError> {
@@ -856,7 +874,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
             current_path = match parse_diff_target_path(target) {
                 Some(path)
                     if matches_exclude_patterns(&path, &[], exclude_patterns)
-                        || is_baseline_file(&path, excluded_baseline) =>
+                        || is_baseline_file(&path, base_dir, excluded_baseline) =>
                 {
                     excluded_files.push(path);
                     None
@@ -872,7 +890,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
         if let Some(marker) = line.strip_prefix("Binary files ") {
             let path = parse_binary_marker_path(marker);
             if matches_exclude_patterns(&path, &[], exclude_patterns)
-                || is_baseline_file(&path, excluded_baseline)
+                || is_baseline_file(&path, base_dir, excluded_baseline)
             {
                 excluded_files.push(path);
             } else {
@@ -1181,7 +1199,7 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        } = scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1214,7 +1232,7 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        } = scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
 
         assert!(findings.is_empty(), "removed lines must not be scanned");
         assert_eq!(metadata.files_scanned, 0);
@@ -1237,7 +1255,7 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        } = scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1258,7 +1276,7 @@ mod tests {
             index aabbcc0..ddeeff1 100644\n\
             Binary files a/img.png and b/img.png differ\n";
 
-        let staged = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        let staged = scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
 
         assert!(staged.findings.is_empty());
         assert!(
@@ -1282,7 +1300,7 @@ mod tests {
         let pattern = Pattern::new("vendor/**").unwrap();
 
         let staged =
-            scan_staged_diff(Cursor::new(diff), &[pattern], None, &[], &line_detectors).unwrap();
+            scan_staged_diff(Cursor::new(diff), &[pattern], None, Path::new("."), &[], &line_detectors).unwrap();
 
         assert!(
             staged.undiffable_files.is_empty(),
@@ -1307,7 +1325,7 @@ mod tests {
         diff.extend_from_slice(b"+SECRET_AFTER_BINARYISH\n");
 
         let StagedScan { findings, .. } =
-            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+            scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &[], &line_detectors).unwrap();
 
         assert_eq!(
             findings.len(),
@@ -1330,7 +1348,7 @@ mod tests {
             +END KEY\n";
 
         let StagedScan { findings, .. } =
-            scan_staged_diff(Cursor::new(diff), &[], None, &multiline_detectors, &[]).unwrap();
+            scan_staged_diff(Cursor::new(diff), &[], None, Path::new("."), &multiline_detectors, &[]).unwrap();
 
         assert_eq!(findings.len(), 1);
         assert_eq!(

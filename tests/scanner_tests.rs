@@ -2270,3 +2270,74 @@ fn test_trusted_mode_ignores_env_config_inside_the_scan_target() -> Result<(), S
     let _ = fs::remove_dir_all(&elsewhere);
     Ok(())
 }
+
+#[test]
+fn test_staged_scan_from_subdirectory_still_skips_the_baseline_file() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // Staged diffs emit repository-root-relative paths regardless of the
+    // process's directory, so self-exclusion must resolve them against the
+    // repository root: from a subdirectory the baseline file was re-scanned,
+    // and its own hashes failed the scan.
+    let repo_dir = unique_temp_dir("staged_baseline_subdir");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::create_dir_all(repo_dir.join("sub")).map_err(|e| e.to_string())?;
+    commit_file(&repo_dir, "config.txt", "clean line\n", "init")?;
+    fs::write(
+        repo_dir.join("secret.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert!(run(&["scan", ".", "--update-baseline"]).status.success());
+    // Rotate the credential so the baseline gains a second entry; only the
+    // baseline change is staged.
+    fs::write(
+        repo_dir.join("secret.txt"),
+        "aws_access_key_id = AKIA1234567890ABCDEF\n",
+    )
+    .map_err(|e| e.to_string())?;
+    assert!(run(&["scan", ".", "--update-baseline"]).status.success());
+
+    let status = Command::new("git")
+        .args(["add", ".keywatch-baseline.json"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|e| e.to_string())?;
+    assert!(status.success(), "git add should succeed");
+
+    let staged = |dir: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "--staged"])
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert_eq!(
+        staged(&repo_dir).status.code(),
+        Some(0),
+        "from the repository root the baseline stays self-excluded"
+    );
+    assert_eq!(
+        staged(&repo_dir.join("sub")).status.code(),
+        Some(0),
+        "from a subdirectory the baseline must still be self-excluded"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}

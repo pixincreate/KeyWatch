@@ -44,7 +44,7 @@ All notable changes to this project will be documented in this file.
 - `Base64Detector` matches from 28 characters, the length where entropy can actually separate base64 from identifiers
 - `scan --staged` no longer misses findings under `color.ui = always` or custom diff prefixes
 - Non-UTF-8 files no longer abort a staged scan
-- The baseline file is no longer scanned as input to itself
+- The baseline file is no longer scanned as input to itself, including staged scans run from a subdirectory
 - `GenericKeyValueDetector` and `RandomString` no longer flag code identifiers (`let payment_method_token = card_token`, snake_case serde attributes)
 - `PasswordDetector` no longer flags `$PWD:`
 - Piping output to a closed reader no longer panics, including `hook install` and `init`
