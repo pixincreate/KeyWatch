@@ -82,9 +82,12 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     };
     let (mut findings, scan_metadata) = scanner::run_scan(args, config.as_ref())?;
 
+    let mut scan_metadata = scan_metadata;
     if let Some(ref baseline_path) = args.baseline {
         let baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
+        let before = findings.len();
         findings = baseline.filter_findings(findings);
+        scan_metadata.suppressed_by_baseline = before - findings.len();
     }
 
     if args.update_baseline {
@@ -105,6 +108,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
         elapsed.as_secs(),
         elapsed.subsec_millis() / 100
     );
+    let suppressed = scan_metadata.suppressed_by_baseline;
     let severity_counts = report::get_severity_counts(&findings);
     let exit_code = calculate_exit_code(&findings, &args.exit_mode);
     let findings_count = findings.len();
@@ -113,6 +117,17 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
         OutputFormat::Sarif => report::create_sarif_report(findings, scan_metadata, scan_time),
     }
     .map_err(|source| RunCliError::ReportSerialize { source })?;
+
+    if suppressed > 0 && !args.verbose {
+        emit(&format!(
+            "Suppressed {} finding(s) via {}",
+            suppressed,
+            args.baseline
+                .as_deref()
+                .map(|path| utils::display_path(std::path::Path::new(path)))
+                .unwrap_or_else(|| "baseline".to_string())
+        ))?;
+    }
 
     let summary = match findings_count {
         _ if args.verbose => report_out.clone(),

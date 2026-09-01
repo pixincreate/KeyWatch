@@ -1842,3 +1842,43 @@ fn test_staged_scan_reads_blobs_git_renders_as_binary() -> Result<(), String> {
     let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
+
+#[test]
+fn test_baseline_suppression_is_reported() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // A committed baseline is repo-controlled data that silently removes
+    // findings; the count must be visible so suppression cannot hide.
+    let repo_dir = unique_temp_dir("baseline_suppression_visible");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::write(
+        repo_dir.join("secrets.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "."])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert!(run(&["--update-baseline"]).status.success());
+    let scan = run(&[]);
+    let stdout = String::from_utf8_lossy(&scan.stdout);
+
+    assert!(
+        stdout.contains("Suppressed") && stdout.contains("finding(s)"),
+        "the suppressed count must be printed, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}

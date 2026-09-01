@@ -255,11 +255,29 @@ struct DetectorConfig {
     validate: Option<String>,
 }
 
+/// True when `path` sits inside `dir`, i.e. the scanned repository supplied
+/// it rather than the operator.
+fn is_within(path: &std::path::Path, dir: &std::path::Path) -> bool {
+    match (fs::canonicalize(path), fs::canonicalize(dir)) {
+        (Ok(path), Ok(dir)) => path.starts_with(dir),
+        _ => false,
+    }
+}
+
 fn find_detectors_config(include_repository_config: bool) -> Option<std::path::PathBuf> {
     std::env::var("KEYWATCH_CONFIG_PATH")
         .map(std::path::PathBuf::from)
         .ok()
         .filter(|path| path.exists())
+        // KEYWATCH_CONFIG_PATH is an operator channel. A repository can reach
+        // it through .envrc/direnv or a devcontainer, so in trusted mode an
+        // value pointing back into the tree being scanned is ignored.
+        .filter(|path| {
+            include_repository_config
+                || std::env::current_dir()
+                    .map(|cwd| !is_within(path, &cwd))
+                    .unwrap_or(true)
+        })
         .or_else(|| {
             if !include_repository_config {
                 return None;

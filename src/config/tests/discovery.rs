@@ -259,3 +259,33 @@ fn test_load_none_uses_supplied_cwd() {
         .collect();
     assert!(names.contains(&"CwdRule".to_string()));
 }
+
+#[test]
+fn test_config_in_world_writable_directory_is_ignored() {
+    // On a shared host any user can drop a config into a world-writable
+    // directory; trusting it would let them disable detectors for everyone
+    // scanning beneath it.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().unwrap();
+        write_file(
+            &dir,
+            ".keywatch.toml",
+            &minimal_rule_toml("HostileRule", r"\\bX\\b", "LOW"),
+        );
+        let mut perms = std::fs::metadata(dir.path()).unwrap().permissions();
+        perms.set_mode(0o777);
+        std::fs::set_permissions(dir.path(), perms).unwrap();
+        let scan_file = dir.path().join("secrets.txt");
+        std::fs::write(&scan_file, "content").unwrap();
+
+        let paths = vec![scan_file.to_str().unwrap().to_string()];
+        assert!(
+            KeywatchConfig::load_for_paths(None, &paths)
+                .unwrap()
+                .is_none(),
+            "config from a world-writable directory must not be trusted"
+        );
+    }
+}

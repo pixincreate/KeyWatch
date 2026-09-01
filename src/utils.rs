@@ -1,3 +1,25 @@
+use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
+
+/// The user's home directory.
+static HOME_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+});
+
+/// Renders a path for terminal output, abbreviating the home directory as `~`.
+pub fn display_path(path: &Path) -> String {
+    match HOME_DIR
+        .as_deref()
+        .and_then(|home| path.strip_prefix(home).ok())
+    {
+        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
+        Some(rest) => format!("~/{}", rest.display()),
+        None => path.display().to_string(),
+    }
+}
+
 use std::fs::File;
 use std::io::{Result, Write};
 

@@ -109,11 +109,12 @@ pub struct Finding {
     pub plugin_name: String,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Clone, Default)]
 pub struct ScanMetadata {
     pub files_scanned: usize,
     pub total_lines: usize,
     pub excluded_files: Vec<String>,
+    pub suppressed_by_baseline: usize,
 }
 
 #[derive(Serialize)]
@@ -123,6 +124,7 @@ pub struct Report {
     pub files_scanned: usize,
     pub total_lines: usize,
     pub excluded_files: Vec<String>,
+    pub suppressed_by_baseline: usize,
     pub scan_time: String,
 }
 
@@ -142,6 +144,7 @@ pub fn create_report(
         files_scanned: metadata.files_scanned,
         total_lines: metadata.total_lines,
         excluded_files: metadata.excluded_files,
+        suppressed_by_baseline: metadata.suppressed_by_baseline,
         scan_time,
     };
 

@@ -4,7 +4,6 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
-use std::sync::LazyLock;
 
 mod error;
 pub use error::HookError;
@@ -20,28 +19,9 @@ fn shell_escape(input: &str) -> String {
     format!("'{}'", input.replace('\'', "'\"'\"'"))
 }
 
-/// The user's home directory, resolved once per process.
-static HOME_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
-    env::var_os("HOME")
-        .or_else(|| env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-});
-
 /// `"global"` or `"local"`, for messages describing a hook's scope.
 const fn scope_label(is_global: bool) -> &'static str {
     if is_global { "global" } else { "local" }
-}
-
-/// Renders a path for terminal output, abbreviating the home directory as `~`.
-fn display_path(path: &Path) -> String {
-    match HOME_DIR
-        .as_deref()
-        .and_then(|home| path.strip_prefix(home).ok())
-    {
-        Some(rest) if rest.as_os_str().is_empty() => "~".to_string(),
-        Some(rest) => format!("~/{}", rest.display()),
-        None => path.display().to_string(),
-    }
 }
 
 fn build_repo_section(allowed: Option<&str>, blocked: Option<&str>) -> String {
@@ -144,14 +124,14 @@ pub fn install_hook(args: &HookInstallArgs) -> Result<(), HookError> {
     if install_target.configured_global_path {
         println!(
             "Configured git --global core.hooksPath to {}",
-            display_path(&install_target.hooks_dir)
+            utils::display_path(&install_target.hooks_dir)
         );
     }
 
     println!(
         "Installed {} {hook_type_str} hook at {}",
         scope_label(install_target.is_global),
-        display_path(&install_target.path)
+        utils::display_path(&install_target.path)
     );
     println!(
         "The hook will run automatically during git {}.",
@@ -173,7 +153,7 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
     if !install_target.path.exists() {
         println!(
             "No {scope} {hook_type_str} hook found at {}",
-            display_path(&install_target.path)
+            utils::display_path(&install_target.path)
         );
         return Ok(());
     }
@@ -191,7 +171,7 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
 
     println!(
         "Removed {scope} {hook_type_str} hook at {}",
-        display_path(&install_target.path)
+        utils::display_path(&install_target.path)
     );
 
     Ok(())

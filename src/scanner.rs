@@ -384,6 +384,7 @@ pub fn run_scan(
             files_scanned: 1,
             total_lines,
             excluded_files: Vec::new(),
+            suppressed_by_baseline: 0,
         };
 
         return Ok((findings, metadata));
@@ -465,6 +466,7 @@ pub fn run_scan(
             files_scanned: 1,
             total_lines,
             excluded_files: Vec::new(),
+            suppressed_by_baseline: 0,
         };
 
         return Ok((findings, metadata));
@@ -573,6 +575,7 @@ pub fn run_scan(
         files_scanned,
         total_lines,
         excluded_files,
+        suppressed_by_baseline: 0,
     };
 
     Ok((findings, metadata))
@@ -831,6 +834,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
         files_scanned: scanned_files.len(),
         total_lines,
         excluded_files,
+        suppressed_by_baseline: 0,
     };
 
     Ok(StagedScan {
