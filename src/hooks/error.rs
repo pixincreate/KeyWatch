@@ -56,6 +56,9 @@ pub enum HookError {
         path: PathBuf,
         source: std::io::Error,
     },
+    WriteOutput {
+        source: std::io::Error,
+    },
 }
 
 impl Display for HookError {
@@ -140,6 +143,9 @@ impl Display for HookError {
                 path.display(),
                 source
             ),
+            Self::WriteOutput { source } => {
+                write!(formatter, "Failed to write output: {}", source)
+            }
         }
     }
 }
@@ -155,7 +161,8 @@ impl Error for HookError {
             | Self::ReadGlobalHooksPath { source }
             | Self::ConfigureGlobalHooksPath { source }
             | Self::InspectExistingHook { source, .. }
-            | Self::RemoveHook { source, .. } => Some(source),
+            | Self::RemoveHook { source, .. }
+            | Self::WriteOutput { source } => Some(source),
             Self::MissingLocalRepository
             | Self::ResolveGitHooksDirectoryFromGit { .. }
             | Self::EmptyGitHooksDirectory
