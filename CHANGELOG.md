@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 
 - Reports redact matched text by default; `--show-secrets` opts into raw values, and matches shorter than 8 characters are always described by length only
 - Reports summarise exclusions as a count plus a sample instead of listing every path, and report git-rendered binary files as `unscannable` rather than `excluded`
+- Lockfiles (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `go.sum`, and other generated manifests) are excluded from scans by default
 
 ### Fixed
 

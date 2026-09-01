@@ -189,7 +189,7 @@ key-watch verify-integrity
 - `scan --output <path>` - Save report to file
 - `scan --verbose` - Print full JSON output (matched text is redacted; see `--show-secrets`)
 - `scan --show-secrets` - Include raw matched text in reports. Off by default: reports are routinely written to files or uploaded as CI artifacts, and `--output` files are created with owner-only permissions
-- `scan --exclude <patterns>` - Comma-separated glob patterns to exclude
+- `scan --exclude <patterns>` - Comma-separated glob patterns to exclude; lockfiles (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `go.sum`, and other generated manifests) are always excluded by basename
 - `scan --exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH/CRITICAL only), `strict` (fail on any finding, default)
 - `scan --baseline <path>` - Suppress known findings from a previous scan. Without this flag, a `.keywatch-baseline.json` is discovered automatically by walking up from the scan target (bounded at the repository root or home directory), so hook scans pick up a committed repo baseline with no configuration
 - `scan --no-baseline-discovery` - Ignore a discovered baseline (an explicit `--baseline` still loads)

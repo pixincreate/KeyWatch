@@ -538,6 +538,7 @@ pub fn run_scan(
 
             if matches_exclude_patterns(&path, &roots, &exclude_patterns)
                 || is_baseline_file(&path, &scan_base_dir, excluded_baseline.as_ref())
+                || is_default_excluded_file(&path)
             {
                 return (Vec::new(), 0, 0, Some(path));
             }
@@ -698,6 +699,27 @@ fn compile_exclude_patterns(
 fn baseline_exclusion(args: &ScanArgs) -> Option<PathBuf> {
     let baseline_path = args.baseline.as_ref()?;
     fs::canonicalize(baseline_path).ok()
+}
+
+/// Lockfiles hold checksums and resolved URLs, never credentials, and their
+/// generated hashes otherwise flood reports and baselines with "Random
+/// String" findings. Excluded by basename at any depth in every
+/// filesystem-backed mode, matching gitleaks; `--stdin` is unaffected.
+const DEFAULT_EXCLUDED_FILES: [&str; 9] = [
+    "Cargo.lock",
+    "composer.lock",
+    "Gemfile.lock",
+    "go.sum",
+    "package-lock.json",
+    "packages.lock.json",
+    "Pipfile.lock",
+    "poetry.lock",
+    "yarn.lock",
+];
+
+fn is_default_excluded_file(path: &str) -> bool {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    DEFAULT_EXCLUDED_FILES.contains(&name)
 }
 
 fn is_baseline_file(path: &str, base_dir: &Path, baseline: Option<&PathBuf>) -> bool {
@@ -948,7 +970,8 @@ fn scan_staged_diff<ReaderType: BufRead>(
             current_path = match parse_diff_target_path(target) {
                 Some(path)
                     if matches_exclude_patterns(&path, &[], exclude_patterns)
-                        || is_baseline_file(&path, base_dir, excluded_baseline) =>
+                        || is_baseline_file(&path, base_dir, excluded_baseline)
+                        || is_default_excluded_file(&path) =>
                 {
                     excluded_files.push(path);
                     None
@@ -965,6 +988,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
             let path = parse_binary_marker_path(marker);
             if matches_exclude_patterns(&path, &[], exclude_patterns)
                 || is_baseline_file(&path, base_dir, excluded_baseline)
+                || is_default_excluded_file(&path)
             {
                 excluded_files.push(path);
             } else {
@@ -1456,5 +1480,14 @@ mod tests {
             parse_binary_marker_path("Binary files /dev/null and b/plain.bin differ"),
             "plain.bin"
         );
+    }
+
+    #[test]
+    fn test_default_excluded_lockfiles_match_by_basename() {
+        assert!(is_default_excluded_file("Cargo.lock"));
+        assert!(is_default_excluded_file("nested/deep/package-lock.json"));
+        assert!(is_default_excluded_file("vendor\\yarn.lock"));
+        assert!(!is_default_excluded_file("src/Cargo.toml"));
+        assert!(!is_default_excluded_file("mylock"));
     }
 }
