@@ -406,7 +406,9 @@ pub fn run_scan(
         // git-rendered binary in history is unscannable rather than excluded.
         metadata.unscannable_files = history.undiffable_files;
 
-        return Ok((history.findings, metadata));
+        let mut findings = history.findings;
+        sort_findings(&mut findings);
+        return Ok((findings, metadata));
     }
 
     if args.staged {
@@ -471,11 +473,7 @@ pub fn run_scan(
         metadata.files_scanned += undiffable_files.len() - skipped.len();
         metadata.unscannable_files.extend(skipped);
 
-        findings.sort_by(|a, b| {
-            a.file_path
-                .cmp(&b.file_path)
-                .then(a.line_number.cmp(&b.line_number))
-        });
+        sort_findings(&mut findings);
 
         return Ok((findings, metadata));
     }
@@ -591,11 +589,7 @@ pub fn run_scan(
         }
     }
 
-    findings.sort_by(|a, b| {
-        a.file_path
-            .cmp(&b.file_path)
-            .then(a.line_number.cmp(&b.line_number))
-    });
+    sort_findings(&mut findings);
 
     let metadata = ScanMetadata {
         files_scanned,
@@ -650,6 +644,15 @@ fn git_repo_root(dir: &Path) -> Option<PathBuf> {
     }
     let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
     (!root.is_empty()).then(|| PathBuf::from(root))
+}
+
+/// Orders findings by path then line, the stable shape every mode reports.
+fn sort_findings(findings: &mut [Finding]) {
+    findings.sort_by(|a, b| {
+        a.file_path
+            .cmp(&b.file_path)
+            .then(a.line_number.cmp(&b.line_number))
+    });
 }
 
 fn compile_exclude_patterns(
@@ -719,7 +722,7 @@ fn is_baseline_file(path: &str, base_dir: &Path, baseline: Option<&PathBuf>) -> 
 }
 
 fn parse_hunk_new_start(header: &str) -> usize {
-    header
+    let parsed = header
         .split_whitespace()
         .find(|token| token.starts_with('+'))
         .and_then(|token| {
@@ -727,8 +730,59 @@ fn parse_hunk_new_start(header: &str) -> usize {
                 .split(',')
                 .next()
                 .and_then(|start| start.parse().ok())
-        })
-        .unwrap_or(0)
+        });
+    match parsed {
+        Some(start) => start,
+        // Scanning with a wrong offset still reports the secret; the message
+        // makes the misattribution visible instead of silently writing 0.
+        None => {
+            eprintln!("keywatch: unrecognized hunk header, line numbers may be off: {header}");
+            0
+        }
+    }
+}
+
+/// Undoes git's C-style path quoting. `core.quotePath=false` (pinned on both
+/// git invocations) leaves non-ASCII names unquoted, but names containing
+/// quotes or control characters are still emitted as `"b/we\"ird.txt"`.
+fn c_unquote(quoted: &str) -> String {
+    let inner = quoted
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(quoted);
+    let mut unescaped: Vec<u8> = Vec::with_capacity(inner.len());
+    let mut bytes = inner.bytes();
+    while let Some(byte) = bytes.next() {
+        if byte != b'\\' {
+            unescaped.push(byte);
+            continue;
+        }
+        match bytes.next() {
+            Some(b'"') => unescaped.push(b'"'),
+            Some(b'\\') => unescaped.push(b'\\'),
+            Some(b't') => unescaped.push(b'\t'),
+            Some(b'n') => unescaped.push(b'\n'),
+            Some(b'r') => unescaped.push(b'\r'),
+            Some(first @ b'0'..=b'3') => {
+                // Git escapes arbitrary bytes as three-digit octal.
+                let mut value = u32::from(first - b'0');
+                for _ in 0..2 {
+                    match bytes.next() {
+                        Some(digit @ b'0'..=b'7') => value = value * 8 + u32::from(digit - b'0'),
+                        _ => break,
+                    }
+                }
+                unescaped.push(value as u8);
+            }
+            Some(other) => {
+                // Not a recognized escape; keep both characters.
+                unescaped.push(b'\\');
+                unescaped.push(other);
+            }
+            None => unescaped.push(b'\\'),
+        }
+    }
+    String::from_utf8_lossy(&unescaped).into_owned()
 }
 
 fn parse_diff_target_path(target: &str) -> Option<String> {
@@ -736,8 +790,8 @@ fn parse_diff_target_path(target: &str) -> Option<String> {
     if target == "/dev/null" {
         return None;
     }
-    let target = target.trim_matches('"');
-    let target = target.strip_prefix("b/").unwrap_or(target);
+    let unquoted = c_unquote(target);
+    let target = unquoted.strip_prefix("b/").unwrap_or(&unquoted);
     Some(target.to_string())
 }
 
@@ -765,14 +819,31 @@ fn flush_staged_hunk(
 }
 
 /// Best-effort path from a `Binary files a/x and b/x differ` marker: the
-/// post-image side, for surfacing skipped files in `excluded_files`.
+/// post-image side, for surfacing skipped files. Sides that git quoted are
+/// separated by a quoted-space-quoted delimiter, which also keeps `" and "`
+/// inside a quoted name from splitting the pair.
 fn parse_binary_marker_path(marker: &str) -> String {
-    marker
-        .strip_suffix(" differ")
-        .and_then(|paths| paths.rsplit(" and ").next())
-        .map(|target| target.strip_prefix("b/").unwrap_or(target))
-        .unwrap_or(marker)
-        .to_string()
+    let Some(paths) = marker.strip_suffix(" differ") else {
+        return marker.to_string();
+    };
+    let target = if paths.contains("\" and \"") {
+        paths
+            .rsplit("\" and \"")
+            .next()
+            .map(|tail| format!("\"{tail}"))
+    } else {
+        paths.rsplit(" and ").next().map(str::to_string)
+    };
+    match target {
+        Some(target) => {
+            let unquoted = c_unquote(&target);
+            unquoted
+                .strip_prefix("b/")
+                .unwrap_or(&unquoted)
+                .to_string()
+        }
+        None => marker.to_string(),
+    }
 }
 
 /// Scans only the added lines of the staged diff, attributing findings to the
@@ -909,12 +980,6 @@ fn scan_staged_diff<ReaderType: BufRead>(
         multiline_detectors,
         &mut findings,
     );
-
-    findings.sort_by(|a, b| {
-        a.file_path
-            .cmp(&b.file_path)
-            .then(a.line_number.cmp(&b.line_number))
-    });
 
     let metadata = ScanMetadata {
         files_scanned: scanned_files.len(),
@@ -1360,5 +1425,36 @@ mod tests {
             "multiline findings must use the hunk's post-image start line"
         );
         assert_eq!(findings[0].file_path, "key.pem");
+    }
+
+    #[test]
+    fn test_parse_diff_target_path_unquotes_c_quoted_names() {
+        assert_eq!(
+            parse_diff_target_path("\"b/we\\\"ird.txt\"").as_deref(),
+            Some("we\"ird.txt")
+        );
+        assert_eq!(
+            parse_diff_target_path("\"b/tab\\there.txt\"").as_deref(),
+            Some("tab\there.txt")
+        );
+        assert_eq!(
+            parse_diff_target_path("b/plain.txt").as_deref(),
+            Some("plain.txt")
+        );
+        assert_eq!(parse_diff_target_path("/dev/null"), None);
+    }
+
+    #[test]
+    fn test_parse_binary_marker_path_unquotes_and_takes_post_image() {
+        assert_eq!(
+            parse_binary_marker_path(
+                "Binary files \"a/one and two.bin\" and \"b/one and two.bin\" differ"
+            ),
+            "one and two.bin"
+        );
+        assert_eq!(
+            parse_binary_marker_path("Binary files /dev/null and b/plain.bin differ"),
+            "plain.bin"
+        );
     }
 }
