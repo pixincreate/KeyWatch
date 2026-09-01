@@ -320,3 +320,33 @@ fn test_config_at_repository_root_applies_to_nested_paths() {
         .collect();
     assert!(names.contains(&"RootRule".to_string()));
 }
+
+#[test]
+fn test_world_writable_config_file_is_ignored() {
+    // A config file writable by others can be rewritten in place even inside
+    // a 0755 directory, so discovery must refuse it just like a
+    // world-writable directory.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().unwrap();
+        let config_path = write_file(
+            &dir,
+            ".keywatch.toml",
+            &minimal_rule_toml("HostileRule", r"\\bX\\b", "LOW"),
+        );
+        let mut perms = std::fs::metadata(&config_path).unwrap().permissions();
+        perms.set_mode(0o666);
+        std::fs::set_permissions(&config_path, perms).unwrap();
+        let scan_file = dir.path().join("secrets.txt");
+        std::fs::write(&scan_file, "content").unwrap();
+
+        let paths = vec![scan_file.to_str().unwrap().to_string()];
+        assert!(
+            KeywatchConfig::load_for_paths(None, &paths)
+                .unwrap()
+                .is_none(),
+            "a world-writable config file must not be trusted"
+        );
+    }
+}

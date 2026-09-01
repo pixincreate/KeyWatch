@@ -31,8 +31,8 @@ All notable changes to this project will be documented in this file.
 - `scan --git-history` applies `--exclude`, skips the baseline file, and reports real file paths instead of a synthetic `<git-history>` key that no baseline could match
 - `scan --staged` is not fooled by `diff.relative`, which made git drop changes outside the current directory
 - `--output` files are created readable only by their owner
-- Config is not trusted from a world-writable directory, so a `.keywatch.toml` dropped in `/tmp` cannot weaken scans beneath it
-- `KEYWATCH_CONFIG_PATH` is ignored in trusted mode when it points inside the tree being scanned
+- Config is not trusted from a world-writable directory or file, so a `.keywatch.toml` dropped in `/tmp` cannot weaken scans beneath it
+- `KEYWATCH_CONFIG_PATH` is ignored in trusted mode whenever it points inside the tree being scanned, wherever the process runs from
 - Baseline suppression reports how many findings it hid, instead of applying silently
 - `CreditCardDetector` requires an issuer prefix and a valid Luhn checksum, instead of matching any 13-16 digit run
 - `HighEntropyDetector` could never fire (its 4.0 threshold is the ceiling for hex) and now runs, restricted to lines naming a credential

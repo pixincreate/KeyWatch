@@ -2219,3 +2219,54 @@ fn test_staged_scan_paths_narrow_the_diff() -> Result<(), String> {
     let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
+
+#[test]
+fn test_trusted_mode_ignores_env_config_inside_the_scan_target() -> Result<(), String> {
+    // KEYWATCH_CONFIG_PATH is an operator channel, but a repository can reach
+    // it through .envrc/direnv or a devcontainer. Trusted mode must refuse it
+    // when it points into the scanned tree — including when the process runs
+    // from a completely different directory, which the cwd-only check missed.
+    let repo_dir = unique_temp_dir("trusted_env_config");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::write(
+        repo_dir.join("leak.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+    fs::write(
+        repo_dir.join("detectors.toml"),
+        "[[detectors]]\nname = \"Noop\"\npattern = \"\\\\bqqqzzz1234\\\\b\"\n\
+         finding_type = \"Noop\"\nseverity = \"LOW\"\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let elsewhere = unique_temp_dir("trusted_env_cwd");
+    let _ = fs::remove_dir_all(&elsewhere);
+    fs::create_dir_all(&elsewhere).map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", repo_dir.to_str().unwrap()])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", repo_dir.join("detectors.toml"))
+            .current_dir(&elsewhere)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert_eq!(
+        run(&["--no-config-discovery", "--no-baseline-discovery"]).status.code(),
+        Some(1),
+        "in trusted mode a config inside the scanned tree must not replace the detector set"
+    );
+    assert_eq!(
+        run(&["--no-baseline-discovery"]).status.code(),
+        Some(0),
+        "in untrusted mode the env config is still honored (control)"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    let _ = fs::remove_dir_all(&elsewhere);
+    Ok(())
+}

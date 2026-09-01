@@ -1,6 +1,6 @@
 use crate::cli::ScanArgs;
 use crate::config::KeywatchConfig;
-use crate::detector::{Detector, initialize_detectors, initialize_trusted_detectors};
+use crate::detector::{Detector, initialize_detectors, initialize_trusted_detectors, untrusted_root};
 use crate::report::{Finding, ScanMetadata};
 use aho_corasick::AhoCorasick;
 use glob::Pattern;
@@ -329,7 +329,7 @@ pub fn run_scan(
     config: Option<&KeywatchConfig>,
 ) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
     let mut detectors = if args.no_config_discovery {
-        initialize_trusted_detectors()
+        initialize_trusted_detectors(&untrusted_roots(args))
     } else {
         initialize_detectors()
     }
@@ -594,6 +594,50 @@ pub fn run_scan(
     };
 
     Ok((findings, metadata))
+}
+
+/// Directories the scanned tree's owner may control, handed to trusted
+/// detector initialisation so a repository cannot supply its own detector set
+/// through `KEYWATCH_CONFIG_PATH`. Git-backed modes scan a whole working
+/// tree, so that tree's root is untrusted; file scans distrust everything at
+/// or below each target's enclosing repository root. The current directory is
+/// always included: a repository can reach the environment through
+/// `.envrc`/direnv the moment the operator cds into it.
+fn untrusted_roots(args: &ScanArgs) -> Vec<PathBuf> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut roots = vec![cwd.clone()];
+
+    if args.staged {
+        if let Some(root) = git_repo_root(&cwd) {
+            roots.push(root);
+        }
+    } else if args.git_history {
+        let git_root = cwd.join(args.paths.first().map(String::as_str).unwrap_or("."));
+        if let Some(root) = git_repo_root(&git_root) {
+            roots.push(root);
+        }
+    } else {
+        for path in &args.paths {
+            roots.push(untrusted_root(path, &cwd));
+        }
+    }
+
+    roots
+}
+
+/// The enclosing repository's root, via `git rev-parse --show-toplevel`.
+/// `None` when the directory is not inside a working tree.
+fn git_repo_root(dir: &Path) -> Option<PathBuf> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(dir)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!root.is_empty()).then(|| PathBuf::from(root))
 }
 
 fn compile_exclude_patterns(
