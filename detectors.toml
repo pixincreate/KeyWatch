@@ -79,12 +79,13 @@ severity = "LOW"
 
 [[detectors]]
 name = "CreditCardDetector"
-# Issuer prefixes (Visa/Mastercard/Amex/Discover/UnionPay) in 4-digit groups.
-# The old "any 13-16 digits with arbitrary spaces" shape matched commit
-# hashes, timestamps and ids, and even spanned the gap between two unrelated
-# numbers ("index aabbcc0..1111111 100644"). Luhn on its own does not fix
-# that: roughly one in ten random digit runs satisfies it.
-pattern = "\\b(?:4\\d{3}|5[1-5]\\d{2}|2[2-7]\\d{2}|6011|3[47]\\d{2})[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{1,4}\\b"
+# Issuer prefixes (Visa/Mastercard/Amex/Discover/UnionPay) in 4-digit groups,
+# including Discover's 644-649 and 65 ranges. The old "any 13-16 digits with
+# arbitrary spaces" shape matched commit hashes, timestamps and ids, and even
+# spanned the gap between two unrelated numbers ("index aabbcc0..1111111
+# 100644"). Luhn on its own does not fix that: roughly one in ten random
+# digit runs satisfies it.
+pattern = "\\b(?:4\\d{3}|5[1-5]\\d{2}|2[2-7]\\d{2}|6011|64[4-9]\\d{2}|65\\d{2}|3[47]\\d{2})[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{1,4}\\b"
 validate = "luhn"
 finding_type = "Credit Card Number"
 severity = "HIGH"

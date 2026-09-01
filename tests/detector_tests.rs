@@ -246,10 +246,10 @@ fn test_generic_key_value_ignores_unquoted_identifier_assignments() {
         .expect("GenericKeyValueDetector should exist");
 
     let is_reported = |line: &str| {
-        generic.regex.find_iter(line).any(|m| {
-            !generic.allowlist.iter().any(|a| a.is_match(m.as_str()))
-                && generic.has_sufficient_entropy(m.as_str())
-        })
+        generic
+            .regex
+            .find_iter(line)
+            .any(|m| generic.accepts_match(m.as_str()))
     };
 
     // Rust/Python/Go variable bindings are not credentials.
@@ -283,13 +283,7 @@ fn reported_by(line: &str) -> Vec<String> {
     detectors
         .iter()
         .filter(|d| d.has_keywords(&lowered))
-        .filter(|d| {
-            d.regex.find_iter(line).any(|m| {
-                !d.allowlist.iter().any(|a| a.is_match(m.as_str()))
-                    && d.has_sufficient_entropy(m.as_str())
-                    && d.passes_validation(m.as_str())
-            })
-        })
+        .filter(|d| d.regex.find_iter(line).any(|m| d.accepts_match(m.as_str())))
         .map(|d| d.name.clone())
         .collect()
 }
@@ -308,9 +302,17 @@ fn test_credit_card_requires_issuer_prefix_and_luhn() {
         );
     }
 
+    for card in ["6500000000000002", "6441111111111117"] {
+        assert!(
+            reported_by(card).contains(&"CreditCardDetector".to_string()),
+            "should detect Discover card: {card}"
+        );
+    }
+
     for not_a_card in [
         "4111111111111112",              // Visa prefix, fails Luhn
         "1234567890123456",              // no issuer prefix
+        "6411111111111111",              // 641x is neither Discover nor UnionPay
         "index aabbcc0..1111111 100644", // spans two unrelated numbers
         "timestamp = 1700000000123",
     ] {

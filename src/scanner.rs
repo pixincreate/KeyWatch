@@ -19,13 +19,6 @@ fn is_inline_suppressed(line: &str) -> bool {
     line.to_lowercase().contains(INLINE_SUPPRESS)
 }
 
-fn is_allowlisted(matched: &str, detector: &Detector) -> bool {
-    detector
-        .allowlist
-        .iter()
-        .any(|pattern| pattern.is_match(matched))
-}
-
 /// Lowercases `src` into `buf` without allocating a fresh string per line.
 fn to_lowercase_into(src: &str, buf: &mut String) {
     buf.clear();
@@ -147,10 +140,7 @@ fn scan_line_detectors(
             continue;
         }
         for mat in detector.regex.find_iter(line) {
-            if !is_allowlisted(mat.as_str(), detector)
-                && detector.has_sufficient_entropy(mat.as_str())
-                && detector.passes_validation(mat.as_str())
-            {
+            if detector.accepts_match(mat.as_str()) {
                 findings.push(Finding {
                     file_path: path.to_string(),
                     line_number,
@@ -185,11 +175,7 @@ fn scan_multiline_chunk(
                     .unwrap_or_default();
                 let line_is_suppressed = is_inline_suppressed(line_content);
 
-                if !line_is_suppressed
-                    && !is_allowlisted(mat.as_str(), detector)
-                    && detector.has_sufficient_entropy(mat.as_str())
-                    && detector.passes_validation(mat.as_str())
-                {
+                if !line_is_suppressed && detector.accepts_match(mat.as_str()) {
                     findings.push(Finding {
                         file_path: path.to_string(),
                         line_number: line_offset + line_in_chunk,

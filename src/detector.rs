@@ -215,6 +215,15 @@ impl Detector {
             .any(|keyword| lowercase_content.contains(keyword.as_str()))
     }
 
+    /// Whether a regex match clears every detector gate — allowlist, entropy
+    /// and the structural validator. The scanner loops and the tests share
+    /// this so the accept chain exists in exactly one place.
+    pub fn accepts_match(&self, matched: &str) -> bool {
+        !self.allowlist.iter().any(|pattern| pattern.is_match(matched))
+            && self.has_sufficient_entropy(matched)
+            && self.passes_validation(matched)
+    }
+
     pub fn has_sufficient_entropy(&self, matched: &str) -> bool {
         match self.entropy_threshold {
             Some(threshold) => shannon_entropy(matched) >= threshold,

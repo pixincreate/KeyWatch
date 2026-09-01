@@ -35,7 +35,7 @@ All notable changes to this project will be documented in this file.
 - Config is not trusted from a world-writable directory or file, so a `.keywatch.toml` dropped in `/tmp` cannot weaken scans beneath it
 - `KEYWATCH_CONFIG_PATH` is ignored in trusted mode whenever it points inside the tree being scanned, wherever the process runs from
 - Baseline suppression reports how many findings it hid, instead of applying silently
-- `CreditCardDetector` requires an issuer prefix and a valid Luhn checksum, instead of matching any 13-16 digit run
+- `CreditCardDetector` requires an issuer prefix and a valid Luhn checksum, instead of matching any 13-16 digit run; Discover's 644-649 and 65 ranges are covered
 - `HighEntropyDetector` could never fire (its 4.0 threshold is the ceiling for hex) and now runs, restricted to lines naming a credential
 - PKCS#8 private key headers (`BEGIN PRIVATE KEY`, `BEGIN ENCRYPTED PRIVATE KEY`) are detected
 - `PhoneNumberDetector` needs punctuation or a country code, so unix timestamps are not phone numbers
