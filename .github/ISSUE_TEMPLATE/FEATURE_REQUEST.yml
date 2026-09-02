@@ -1,5 +1,5 @@
 name: Feature Request
-description: Suggest an idea for zParse 
+description: Suggest an idea for KeyWatch 
 title: "feat: "
 labels: ["enhancement"]
 body:
@@ -33,7 +33,7 @@ body:
       render: rust
       placeholder: |
         // Example API usage or implementation
-        use zparse::SomeNewFeature;
+        use key_watch::scanner::run_scan;
 
         fn example() {
             // Your example code here

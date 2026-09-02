@@ -327,9 +327,12 @@ pub fn run_scan(
         cfg.apply_to(&mut detectors)
             .map_err(|source| ScannerError::Config { source })?;
     }
+    // A pattern carrying the dot-matches-newline flag anywhere — `(?s)` or
+    // the grouped `(?s:...)` form — spans lines and must run per-chunk, not
+    // per-line, or multiline secrets slip past it.
     let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
         .iter()
-        .partition(|detector| detector.regex.as_str().contains("(?s)"));
+        .partition(|detector| detector.regex.as_str().contains("(?s"));
 
     // Resolved once: every scan mode must skip the baseline file itself.
     let excluded_baseline = baseline_exclusion(args);

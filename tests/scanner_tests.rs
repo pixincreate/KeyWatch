@@ -2121,3 +2121,56 @@ fn test_lockfiles_are_excluded_by_default_in_every_mode() -> Result<(), String> 
     let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
+
+#[test]
+fn test_explicit_baseline_missing_file_errors_unless_creating() -> Result<(), String> {
+    // A typo'd --baseline used to scan with a silently empty baseline, so the
+    // user believed findings were suppressed. It must error instead — unless
+    // --update-baseline is going to create the file.
+    let dir = unique_temp_dir("baseline_missing_explicit");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("leak.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "."])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    let missing = run(&["--baseline", "nope.json"]);
+    assert_eq!(
+        missing.status.code(),
+        Some(2),
+        "a missing explicit baseline must fail the scan, got:\n{}",
+        String::from_utf8_lossy(&missing.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("Baseline file not found"),
+        "the error must name the baseline, got:\n{}",
+        String::from_utf8_lossy(&missing.stderr)
+    );
+    assert!(
+        !dir.join("nope.json").exists(),
+        "a failing scan must not create the baseline"
+    );
+
+    let creating = run(&["--baseline", "nope.json", "--update-baseline"]);
+    assert!(
+        creating.status.success(),
+        "--update-baseline must create the missing baseline, got:\n{}",
+        String::from_utf8_lossy(&creating.stderr)
+    );
+    assert!(dir.join("nope.json").exists(), "baseline should be created");
+
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}

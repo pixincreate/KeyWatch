@@ -51,6 +51,10 @@ All notable changes to this project will be documented in this file.
 - `GenericKeyValueDetector` and `RandomString` no longer flag code identifiers (`let payment_method_token = card_token`, snake_case serde attributes)
 - `PasswordDetector` no longer flags `$PWD:`
 - `GenericKeyValueDetector` no longer flags bare CamelCase type paths (`token: PaymentTokenData,`)
+- `--baseline` naming a missing file is an error instead of silently scanning with an empty baseline
+- Baseline files with an unknown format version are rejected instead of silently accepted
+- `--update-baseline` refreshes the recorded line numbers of entries it already knows, and saved baselines end with a newline
+- SARIF report property order is deterministic
 - Piping output to a closed reader no longer panics, including `hook install` and `init`; hook commands now report real output failures instead of discarding them
 
 ### Performance

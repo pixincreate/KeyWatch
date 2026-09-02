@@ -1,6 +1,6 @@
 use super::{Finding, ScanMetadata, Severity};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 /// Generate a SARIF 2.1.0 report from findings.
 pub fn create_sarif_report(
@@ -22,7 +22,7 @@ pub fn create_sarif_report(
     struct SarifRun {
         tool: SarifTool,
         results: Vec<SarifResult>,
-        properties: HashMap<String, serde_json::Value>,
+        properties: BTreeMap<String, serde_json::Value>,
     }
 
     #[derive(Serialize)]
@@ -48,7 +48,7 @@ pub fn create_sarif_report(
         level: &'static str,
         message: SarifMessage,
         locations: Vec<SarifLocation>,
-        properties: HashMap<String, serde_json::Value>,
+        properties: BTreeMap<String, serde_json::Value>,
     }
 
     #[derive(Serialize)]
@@ -100,7 +100,7 @@ pub fn create_sarif_report(
             let uri = finding.file_path;
             let start_line = finding.line_number;
 
-            let mut properties = HashMap::new();
+            let mut properties = BTreeMap::new();
             properties.insert(
                 "precision".to_string(),
                 serde_json::Value::String("very-high".to_string()),
@@ -129,7 +129,7 @@ pub fn create_sarif_report(
 
     let status = if results.is_empty() { "pass" } else { "fail" };
 
-    let mut properties = HashMap::new();
+    let mut properties = BTreeMap::new();
     properties.insert(
         "status".to_string(),
         serde_json::Value::String(status.to_string()),

@@ -66,6 +66,18 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     }
     let args = &args;
 
+    // Discovery only ever resolves existing files, so a missing baseline here
+    // means an explicit --baseline typo. Without --update-baseline nothing
+    // will create it, and scanning with a silently-empty baseline would
+    // report suppression that never happens.
+    if let Some(baseline_path) = args.baseline.as_deref() {
+        if !args.update_baseline && !std::path::Path::new(baseline_path).exists() {
+            return Err(RunCliError::BaselineNotFound {
+                path: baseline_path.to_string(),
+            });
+        }
+    }
+
     let config = if args.config.is_some() || !args.no_config_discovery {
         config::KeywatchConfig::load_for_paths(args.config.as_deref(), &args.paths)?
     } else {

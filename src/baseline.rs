@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     error::Error,
     fmt, fs, io,
     path::{Path, PathBuf},
@@ -113,6 +113,11 @@ pub enum BaselineError {
         path: PathBuf,
         source: serde_json::Error,
     },
+    UnsupportedVersion {
+        path: PathBuf,
+        found: String,
+        expected: String,
+    },
     Serialize {
         source: serde_json::Error,
     },
@@ -141,6 +146,18 @@ impl fmt::Display for BaselineError {
                     source
                 )
             }
+            Self::UnsupportedVersion {
+                path,
+                found,
+                expected,
+            } => write!(
+                formatter,
+                "Baseline '{}' has unsupported format version '{}' (expected '{}'): \
+                 it may have been written by an incompatible release",
+                path.display(),
+                found,
+                expected
+            ),
             Self::Serialize { source } => {
                 write!(formatter, "Failed to serialize baseline: {}", source)
             }
@@ -161,6 +178,7 @@ impl Error for BaselineError {
         match self {
             Self::Read { source, .. } => Some(source),
             Self::Parse { source, .. } => Some(source),
+            Self::UnsupportedVersion { .. } => None,
             Self::Serialize { source } => Some(source),
             Self::Write { source, .. } => Some(source),
         }
@@ -195,12 +213,21 @@ impl Baseline {
                 source,
             })?;
 
+        if baseline.version != BASELINE_VERSION {
+            return Err(BaselineError::UnsupportedVersion {
+                path: path.to_path_buf(),
+                found: baseline.version,
+                expected: BASELINE_VERSION.to_string(),
+            });
+        }
+
         Ok(baseline)
     }
 
     pub fn save(&self, path: &Path) -> Result<(), BaselineError> {
-        let json = serde_json::to_string_pretty(self)
+        let mut json = serde_json::to_string_pretty(self)
             .map_err(|source| BaselineError::Serialize { source })?;
+        json.push('\n');
 
         fs::write(path, json).map_err(|source| BaselineError::Write {
             path: path.to_path_buf(),
@@ -250,12 +277,28 @@ impl Baseline {
     }
 
     pub fn update_with_findings(&mut self, findings: &[Finding]) {
-        let mut existing: HashSet<BaselineFingerprint> =
-            self.entries.iter().map(BaselineFingerprint::from).collect();
-        for f in findings {
-            let fingerprint = BaselineFingerprint::from_finding(f);
-            if existing.insert(fingerprint) {
-                self.entries.push(Self::entry_from_finding(f));
+        // First occurrence wins within one scan, matching `from_findings`.
+        // Pre-existing entries refresh their recorded line number — code
+        // edits move findings around — while entries added by this call keep
+        // the line they were first seen at.
+        let mut index: HashMap<BaselineFingerprint, usize> = self
+            .entries
+            .iter()
+            .enumerate()
+            .map(|(entry_index, entry)| (BaselineFingerprint::from(entry), entry_index))
+            .collect();
+        let mut seen: HashSet<BaselineFingerprint> = HashSet::new();
+        for finding in findings {
+            let fingerprint = BaselineFingerprint::from_finding(finding);
+            if !seen.insert(fingerprint.clone()) {
+                continue;
+            }
+            match index.get(&fingerprint) {
+                Some(&entry_index) => self.entries[entry_index].line_number = finding.line_number,
+                None => {
+                    index.insert(fingerprint, self.entries.len());
+                    self.entries.push(Self::entry_from_finding(finding));
+                }
             }
         }
     }
@@ -324,5 +367,65 @@ mod tests {
             baseline.filter_findings(vec![seen_again]).is_empty(),
             "a baseline entry must suppress the same finding under any path spelling"
         );
+    }
+
+    #[test]
+    fn update_with_findings_refreshes_line_numbers_of_known_entries() {
+        let mut baseline = Baseline::from_findings(&[Finding {
+            file_path: "secrets.txt".to_string(),
+            line_number: 7,
+            finding_type: "AWS".to_string(),
+            severity: crate::report::Severity::High,
+            matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            plugin_name: "AWSKeyDetector".to_string(),
+        }]);
+
+        // The secret moved down after an edit; the update must move the
+        // recorded line with it instead of adding a duplicate entry.
+        baseline.update_with_findings(&[Finding {
+            file_path: "secrets.txt".to_string(),
+            line_number: 42,
+            finding_type: "AWS".to_string(),
+            severity: crate::report::Severity::High,
+            matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
+            plugin_name: "AWSKeyDetector".to_string(),
+        }]);
+
+        assert_eq!(baseline.entries.len(), 1, "no duplicate entry");
+        assert_eq!(baseline.entries[0].line_number, 42);
+    }
+
+    #[test]
+    fn load_rejects_unknown_format_versions() {
+        let dir =
+            std::env::temp_dir().join(format!("keywatch_baseline_version_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("baseline.json");
+        std::fs::write(&path, r#"{"version":"9.9","entries":[]}"#).expect("write baseline");
+
+        let error = Baseline::load(&path).expect_err("unknown version must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("unsupported format version '9.9'"),
+            "unexpected error: {error}"
+        );
+
+        std::fs::remove_dir_all(&dir).expect("cleanup temp dir");
+    }
+
+    #[test]
+    fn save_writes_a_trailing_newline() {
+        let dir =
+            std::env::temp_dir().join(format!("keywatch_baseline_newline_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("baseline.json");
+
+        Baseline::new().save(&path).expect("save baseline");
+
+        let contents = std::fs::read_to_string(&path).expect("read baseline");
+        assert!(contents.ends_with('\n'), "baseline must end with a newline");
+
+        std::fs::remove_dir_all(&dir).expect("cleanup temp dir");
     }
 }
