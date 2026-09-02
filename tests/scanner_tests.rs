@@ -1910,3 +1910,90 @@ fn test_baseline_suppression_is_reported() -> Result<(), String> {
     let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }
+
+#[test]
+fn test_git_history_attributes_real_paths_and_honours_excludes() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // History findings used to be keyed under a synthetic "<git-history>"
+    // path, which no baseline entry could match, and this mode ignored
+    // --exclude entirely.
+    let repo_dir = unique_temp_dir("git_history_paths");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(
+        &repo_dir,
+        "leak.txt",
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "add",
+    )?;
+
+    let verbose = run_git_history_scan(&repo_dir, &["--verbose", "--no-baseline-discovery"])?;
+    let stdout = String::from_utf8_lossy(&verbose.stdout);
+    assert!(
+        stdout.contains("\"file_path\": \"leak.txt\""),
+        "history findings must carry the real path, got:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("<git-history>"),
+        "the synthetic path must be gone, got:\n{stdout}"
+    );
+
+    let excluded = run_git_history_scan(
+        &repo_dir,
+        &["--exclude", "leak.txt", "--no-baseline-discovery"],
+    )?;
+    assert_eq!(
+        excluded.status.code(),
+        Some(0),
+        "--exclude must apply to git-history scans"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_survives_diff_relative_from_subdirectory() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // diff.relative makes git emit cwd-relative paths and drop changes
+    // outside the cwd, which silently hid staged secrets.
+    let repo_dir = unique_temp_dir("staged_diff_relative");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::create_dir_all(repo_dir.join("sub")).map_err(|e| e.to_string())?;
+    fs::write(repo_dir.join("sub/keep.txt"), "clean\n").map_err(|e| e.to_string())?;
+    commit_file(&repo_dir, "root.txt", "clean\n", "init")?;
+    let status = Command::new("git")
+        .args(["config", "diff.relative", "true"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|e| e.to_string())?;
+    assert!(status.success());
+    stage_file(
+        &repo_dir,
+        "root.txt",
+        "clean\naws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--staged", "--no-baseline-discovery"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .current_dir(repo_dir.join("sub"))
+        .output()
+        .expect("run key-watch");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "diff.relative must not hide a staged secret outside the cwd"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}

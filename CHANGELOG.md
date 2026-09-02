@@ -23,6 +23,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- `scan --git-history` applies `--exclude`, skips the baseline file, and reports real file paths instead of a synthetic `<git-history>` key that no baseline could match
+- `scan --staged` is not fooled by `diff.relative`, which made git drop changes outside the current directory
 - `--output` files are created readable only by their owner
 - Config is not trusted from a world-writable directory, so a `.keywatch.toml` dropped in `/tmp` cannot weaken scans beneath it
 - `KEYWATCH_CONFIG_PATH` is ignored in trusted mode when it points inside the tree being scanned
