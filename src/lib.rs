@@ -52,7 +52,6 @@ fn emit(line: &str) -> Result<(), RunCliError> {
 
 fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let start = Instant::now();
-    report::set_show_secrets(args.show_secrets);
 
     // Resolve the baseline like config: an explicit --baseline wins, otherwise
     // discover .keywatch-baseline.json in the scanned tree. --update-baseline
@@ -97,7 +96,23 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
             .as_mut()
             .ok_or(RunCliError::MissingBaselineForUpdate)?;
         if prune {
+            // Pruning rebuilds from what the scan found, so a narrowed scan
+            // would silently delete entries for everything it never looked
+            // at. Make the drop count and the narrowed scope visible.
+            let stale = baseline.entries.len();
             *baseline = baseline::Baseline::from_findings(&findings);
+            let dropped = stale.saturating_sub(baseline.entries.len());
+            if dropped > 0 {
+                let noun = if dropped == 1 { "entry" } else { "entries" };
+                emit(&format!(
+                    "Pruned {dropped} baseline {noun} not found by this scan"
+                ))?;
+            }
+            if !scan_covers_paths(&args.paths) {
+                emit(
+                    "WARNING: --prune-baseline rebuilt the baseline from the scanned paths only; findings outside them are no longer baselined",
+                )?;
+            }
         } else {
             baseline.update_with_findings(&findings);
         }
@@ -117,7 +132,9 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let exit_code = calculate_exit_code(&findings, &args.exit_mode);
     let findings_count = findings.len();
     let report_out = match args.format {
-        OutputFormat::Json => report::create_report(findings, scan_metadata, scan_time),
+        OutputFormat::Json => {
+            report::create_report(findings, scan_metadata, scan_time, args.show_secrets)
+        }
         OutputFormat::Sarif => report::create_sarif_report(findings, scan_metadata, scan_time),
     }
     .map_err(|source| RunCliError::ReportSerialize { source })?;
@@ -153,6 +170,24 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     }
 
     std::process::exit(exit_code);
+}
+
+/// Whether the scan inputs cover the whole tree around the baseline, i.e.
+/// pruning cannot silently drop entries for locations the scan never looked
+/// at. An empty path list means the current directory; a lone "." or an
+/// explicit path naming the current directory counts as the whole tree.
+fn scan_covers_paths(paths: &[String]) -> bool {
+    match paths {
+        [] => true,
+        [single] => {
+            single == "."
+                || std::fs::canonicalize(single)
+                    .ok()
+                    .zip(std::env::current_dir().ok())
+                    .is_some_and(|(canonical, cwd)| canonical == cwd)
+        }
+        _ => false,
+    }
 }
 
 fn print_shell_init(shell: &Shell) -> Result<(), RunCliError> {

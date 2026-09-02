@@ -289,3 +289,64 @@ fn test_config_in_world_writable_directory_is_ignored() {
         );
     }
 }
+
+#[test]
+fn test_config_at_repository_root_applies_to_nested_paths() {
+    // The candidate check must run before the .git stop check, or a config
+    // sitting AT the repo root stops being discovered. Both existing walk
+    // tests pass either way, so this pins the ordering.
+    let dir = TempDir::new().unwrap();
+    let repo_root = dir.path().join("repo");
+    std::fs::create_dir_all(repo_root.join(".git")).unwrap();
+    std::fs::write(
+        repo_root.join(".keywatch.toml"),
+        minimal_rule_toml("RootRule", r"\\bROOT\\b", "HIGH"),
+    )
+    .unwrap();
+    let nested = repo_root.join("a/b");
+    std::fs::create_dir_all(&nested).unwrap();
+    let scan_file = nested.join("secrets.txt");
+    std::fs::write(&scan_file, "content").unwrap();
+
+    let paths = vec![scan_file.to_str().unwrap().to_string()];
+    let config = KeywatchConfig::load_for_paths(None, &paths)
+        .unwrap()
+        .expect("a config at the repository root must apply to nested paths");
+    let names: Vec<_> = config
+        .rules
+        .unwrap()
+        .into_iter()
+        .map(|rule| rule.name)
+        .collect();
+    assert!(names.contains(&"RootRule".to_string()));
+}
+
+#[test]
+fn test_world_writable_config_file_is_ignored() {
+    // A config file writable by others can be rewritten in place even inside
+    // a 0755 directory, so discovery must refuse it just like a
+    // world-writable directory.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = TempDir::new().unwrap();
+        let config_path = write_file(
+            &dir,
+            ".keywatch.toml",
+            &minimal_rule_toml("HostileRule", r"\\bX\\b", "LOW"),
+        );
+        let mut perms = std::fs::metadata(&config_path).unwrap().permissions();
+        perms.set_mode(0o666);
+        std::fs::set_permissions(&config_path, perms).unwrap();
+        let scan_file = dir.path().join("secrets.txt");
+        std::fs::write(&scan_file, "content").unwrap();
+
+        let paths = vec![scan_file.to_str().unwrap().to_string()];
+        assert!(
+            KeywatchConfig::load_for_paths(None, &paths)
+                .unwrap()
+                .is_none(),
+            "a world-writable config file must not be trusted"
+        );
+    }
+}

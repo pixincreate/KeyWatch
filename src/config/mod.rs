@@ -260,14 +260,15 @@ pub(crate) fn find_file_upwards(
             .map(|name| dir.join(name))
             .find(|candidate_path| candidate_path.exists())
             .and_then(|candidate_path| candidate_path.to_str().map(str::to_string));
-        if found.is_some() {
+        if let Some(config_path) = found {
             // A world-writable directory is not a trust boundary: on a shared
             // host any user could drop a config into /tmp and weaken every
-            // scan beneath it.
-            if is_world_writable(dir) {
+            // scan beneath it. Neither is a world-writable config file: it
+            // can be rewritten in place even inside a 0755 directory.
+            if is_world_writable(dir) || is_world_writable(Path::new(&config_path)) {
                 return None;
             }
-            return found;
+            return Some(config_path);
         }
         if dir.join(".git").exists() || home.as_deref() == Some(dir) {
             return None;
@@ -277,14 +278,14 @@ pub(crate) fn find_file_upwards(
 }
 
 #[cfg(unix)]
-fn is_world_writable(dir: &Path) -> bool {
+fn is_world_writable(path: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
-    fs::metadata(dir)
+    fs::metadata(path)
         .map(|metadata| metadata.permissions().mode() & 0o002 != 0)
         .unwrap_or(false)
 }
 
 #[cfg(not(unix))]
-fn is_world_writable(_dir: &Path) -> bool {
+fn is_world_writable(_path: &Path) -> bool {
     false
 }

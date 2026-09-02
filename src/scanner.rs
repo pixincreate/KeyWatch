@@ -1,6 +1,8 @@
 use crate::cli::ScanArgs;
 use crate::config::KeywatchConfig;
-use crate::detector::{Detector, initialize_detectors, initialize_trusted_detectors};
+use crate::detector::{
+    Detector, initialize_detectors, initialize_trusted_detectors, untrusted_root,
+};
 use crate::report::{Finding, ScanMetadata};
 use aho_corasick::AhoCorasick;
 use glob::Pattern;
@@ -17,13 +19,6 @@ const INLINE_SUPPRESS: &str = "keywatch:ignore";
 
 fn is_inline_suppressed(line: &str) -> bool {
     line.to_lowercase().contains(INLINE_SUPPRESS)
-}
-
-fn is_allowlisted(matched: &str, detector: &Detector) -> bool {
-    detector
-        .allowlist
-        .iter()
-        .any(|pattern| pattern.is_match(matched))
 }
 
 /// Lowercases `src` into `buf` without allocating a fresh string per line.
@@ -147,10 +142,7 @@ fn scan_line_detectors(
             continue;
         }
         for mat in detector.regex.find_iter(line) {
-            if !is_allowlisted(mat.as_str(), detector)
-                && detector.has_sufficient_entropy(mat.as_str())
-                && detector.passes_validation(mat.as_str())
-            {
+            if detector.accepts_match(mat.as_str()) {
                 findings.push(Finding {
                     file_path: path.to_string(),
                     line_number,
@@ -185,11 +177,7 @@ fn scan_multiline_chunk(
                     .unwrap_or_default();
                 let line_is_suppressed = is_inline_suppressed(line_content);
 
-                if !line_is_suppressed
-                    && !is_allowlisted(mat.as_str(), detector)
-                    && detector.has_sufficient_entropy(mat.as_str())
-                    && detector.passes_validation(mat.as_str())
-                {
+                if !line_is_suppressed && detector.accepts_match(mat.as_str()) {
                     findings.push(Finding {
                         file_path: path.to_string(),
                         line_number: line_offset + line_in_chunk,
@@ -329,7 +317,7 @@ pub fn run_scan(
     config: Option<&KeywatchConfig>,
 ) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
     let mut detectors = if args.no_config_discovery {
-        initialize_trusted_detectors()
+        initialize_trusted_detectors(&untrusted_roots(args))
     } else {
         initialize_detectors()
     }
@@ -352,6 +340,10 @@ pub fn run_scan(
             .first()
             .map(Path::new)
             .unwrap_or_else(|| Path::new("."));
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        // History diffs are repository-root-relative; the same root anchors
+        // baseline self-exclusion.
+        let repo_root = git_repo_root(&cwd.join(git_root)).unwrap_or_else(|| cwd.join(git_root));
         let mut command = std::process::Command::new("git");
         command.current_dir(git_root).args([
             "--literal-pathspecs",
@@ -389,6 +381,7 @@ pub fn run_scan(
                     reader,
                     &exclude_patterns,
                     excluded_baseline.as_ref(),
+                    &repo_root,
                     &multiline_detectors,
                     &line_detectors,
                 )
@@ -397,13 +390,18 @@ pub fn run_scan(
         )?;
 
         let mut metadata = history.metadata;
-        // Blobs are only re-readable from the index, not from history.
-        metadata.excluded_files.extend(history.undiffable_files);
+        // Blobs are only re-readable from the index, not from history, so a
+        // git-rendered binary in history is unscannable rather than excluded.
+        metadata.unscannable_files = history.undiffable_files;
 
-        return Ok((history.findings, metadata));
+        let mut findings = history.findings;
+        sort_findings(&mut findings);
+        return Ok((findings, metadata));
     }
 
     if args.staged {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let repo_root = git_repo_root(&cwd).unwrap_or(cwd);
         let exclude_patterns = compile_exclude_patterns(args, config)?;
         let mut command = std::process::Command::new("git");
         // The parser depends on undecorated `diff --git`/`@@`/`+` framing and
@@ -442,6 +440,7 @@ pub fn run_scan(
                     reader,
                     &exclude_patterns,
                     excluded_baseline.as_ref(),
+                    &repo_root,
                     &multiline_detectors,
                     &line_detectors,
                 )
@@ -460,13 +459,9 @@ pub fn run_scan(
         findings.extend(blob_findings);
         metadata.total_lines += blob_lines;
         metadata.files_scanned += undiffable_files.len() - skipped.len();
-        metadata.excluded_files.extend(skipped);
+        metadata.unscannable_files.extend(skipped);
 
-        findings.sort_by(|a, b| {
-            a.file_path
-                .cmp(&b.file_path)
-                .then(a.line_number.cmp(&b.line_number))
-        });
+        sort_findings(&mut findings);
 
         return Ok((findings, metadata));
     }
@@ -481,6 +476,7 @@ pub fn run_scan(
             files_scanned: 1,
             total_lines,
             excluded_files: Vec::new(),
+            unscannable_files: Vec::new(),
             suppressed_by_baseline: 0,
         };
 
@@ -519,6 +515,7 @@ pub fn run_scan(
 
     let exclude_patterns = compile_exclude_patterns(args, config)?;
     let line_scan_context = LineScanContext::new(&line_detectors);
+    let scan_base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
     let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
         .into_par_iter()
@@ -528,7 +525,8 @@ pub fn run_scan(
             }
 
             if matches_exclude_patterns(&path, &roots, &exclude_patterns)
-                || is_baseline_file(&path, excluded_baseline.as_ref())
+                || is_baseline_file(&path, &scan_base_dir, excluded_baseline.as_ref())
+                || is_default_excluded_file(&path)
             {
                 return (Vec::new(), 0, 0, Some(path));
             }
@@ -580,20 +578,70 @@ pub fn run_scan(
         }
     }
 
-    findings.sort_by(|a, b| {
-        a.file_path
-            .cmp(&b.file_path)
-            .then(a.line_number.cmp(&b.line_number))
-    });
+    sort_findings(&mut findings);
 
     let metadata = ScanMetadata {
         files_scanned,
         total_lines,
         excluded_files,
+        unscannable_files: Vec::new(),
         suppressed_by_baseline: 0,
     };
 
     Ok((findings, metadata))
+}
+
+/// Directories the scanned tree's owner may control, handed to trusted
+/// detector initialisation so a repository cannot supply its own detector set
+/// through `KEYWATCH_CONFIG_PATH`. Git-backed modes scan a whole working
+/// tree, so that tree's root is untrusted; file scans distrust everything at
+/// or below each target's enclosing repository root. The current directory is
+/// always included: a repository can reach the environment through
+/// `.envrc`/direnv the moment the operator cds into it.
+fn untrusted_roots(args: &ScanArgs) -> Vec<PathBuf> {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let mut roots = vec![cwd.clone()];
+
+    if args.staged {
+        if let Some(root) = git_repo_root(&cwd) {
+            roots.push(root);
+        }
+    } else if args.git_history {
+        let git_root = cwd.join(args.paths.first().map(String::as_str).unwrap_or("."));
+        if let Some(root) = git_repo_root(&git_root) {
+            roots.push(root);
+        }
+    } else {
+        for path in &args.paths {
+            roots.push(untrusted_root(path, &cwd));
+        }
+    }
+
+    roots
+}
+
+/// The enclosing repository's root, via `git rev-parse --show-toplevel`.
+/// `None` when the directory is not inside a working tree.
+fn git_repo_root(dir: &Path) -> Option<PathBuf> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .current_dir(dir)
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!root.is_empty()).then(|| PathBuf::from(root))
+}
+
+/// Orders findings by path then line, the stable shape every mode reports.
+fn sort_findings(findings: &mut [Finding]) {
+    findings.sort_by(|a, b| {
+        a.file_path
+            .cmp(&b.file_path)
+            .then(a.line_number.cmp(&b.line_number))
+    });
 }
 
 fn compile_exclude_patterns(
@@ -641,7 +689,28 @@ fn baseline_exclusion(args: &ScanArgs) -> Option<PathBuf> {
     fs::canonicalize(baseline_path).ok()
 }
 
-fn is_baseline_file(path: &str, baseline: Option<&PathBuf>) -> bool {
+/// Lockfiles hold checksums and resolved URLs, never credentials, and their
+/// generated hashes otherwise flood reports and baselines with "Random
+/// String" findings. Excluded by basename at any depth in every
+/// filesystem-backed mode, matching gitleaks; `--stdin` is unaffected.
+const DEFAULT_EXCLUDED_FILES: [&str; 9] = [
+    "Cargo.lock",
+    "composer.lock",
+    "Gemfile.lock",
+    "go.sum",
+    "package-lock.json",
+    "packages.lock.json",
+    "Pipfile.lock",
+    "poetry.lock",
+    "yarn.lock",
+];
+
+fn is_default_excluded_file(path: &str) -> bool {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    DEFAULT_EXCLUDED_FILES.contains(&name)
+}
+
+fn is_baseline_file(path: &str, base_dir: &Path, baseline: Option<&PathBuf>) -> bool {
     let Some(baseline) = baseline else {
         return false;
     };
@@ -651,11 +720,19 @@ fn is_baseline_file(path: &str, baseline: Option<&PathBuf>) -> bool {
     if candidate.file_name() != baseline.file_name() {
         return false;
     }
-    fs::canonicalize(candidate).is_ok_and(|candidate| candidate == *baseline)
+    // Staged and history diffs emit repository-root-relative paths no matter
+    // where the process runs, so they must be resolved against that root and
+    // not against the current directory.
+    let anchored = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        base_dir.join(candidate)
+    };
+    fs::canonicalize(anchored).is_ok_and(|candidate| candidate == *baseline)
 }
 
 fn parse_hunk_new_start(header: &str) -> usize {
-    header
+    let parsed = header
         .split_whitespace()
         .find(|token| token.starts_with('+'))
         .and_then(|token| {
@@ -663,8 +740,59 @@ fn parse_hunk_new_start(header: &str) -> usize {
                 .split(',')
                 .next()
                 .and_then(|start| start.parse().ok())
-        })
-        .unwrap_or(0)
+        });
+    match parsed {
+        Some(start) => start,
+        // Scanning with a wrong offset still reports the secret; the message
+        // makes the misattribution visible instead of silently writing 0.
+        None => {
+            eprintln!("keywatch: unrecognized hunk header, line numbers may be off: {header}");
+            0
+        }
+    }
+}
+
+/// Undoes git's C-style path quoting. `core.quotePath=false` (pinned on both
+/// git invocations) leaves non-ASCII names unquoted, but names containing
+/// quotes or control characters are still emitted as `"b/we\"ird.txt"`.
+fn c_unquote(quoted: &str) -> String {
+    let inner = quoted
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+        .unwrap_or(quoted);
+    let mut unescaped: Vec<u8> = Vec::with_capacity(inner.len());
+    let mut bytes = inner.bytes();
+    while let Some(byte) = bytes.next() {
+        if byte != b'\\' {
+            unescaped.push(byte);
+            continue;
+        }
+        match bytes.next() {
+            Some(b'"') => unescaped.push(b'"'),
+            Some(b'\\') => unescaped.push(b'\\'),
+            Some(b't') => unescaped.push(b'\t'),
+            Some(b'n') => unescaped.push(b'\n'),
+            Some(b'r') => unescaped.push(b'\r'),
+            Some(first @ b'0'..=b'3') => {
+                // Git escapes arbitrary bytes as three-digit octal.
+                let mut value = u32::from(first - b'0');
+                for _ in 0..2 {
+                    match bytes.next() {
+                        Some(digit @ b'0'..=b'7') => value = value * 8 + u32::from(digit - b'0'),
+                        _ => break,
+                    }
+                }
+                unescaped.push(value as u8);
+            }
+            Some(other) => {
+                // Not a recognized escape; keep both characters.
+                unescaped.push(b'\\');
+                unescaped.push(other);
+            }
+            None => unescaped.push(b'\\'),
+        }
+    }
+    String::from_utf8_lossy(&unescaped).into_owned()
 }
 
 fn parse_diff_target_path(target: &str) -> Option<String> {
@@ -672,8 +800,8 @@ fn parse_diff_target_path(target: &str) -> Option<String> {
     if target == "/dev/null" {
         return None;
     }
-    let target = target.trim_matches('"');
-    let target = target.strip_prefix("b/").unwrap_or(target);
+    let unquoted = c_unquote(target);
+    let target = unquoted.strip_prefix("b/").unwrap_or(&unquoted);
     Some(target.to_string())
 }
 
@@ -701,14 +829,28 @@ fn flush_staged_hunk(
 }
 
 /// Best-effort path from a `Binary files a/x and b/x differ` marker: the
-/// post-image side, for surfacing skipped files in `excluded_files`.
+/// post-image side, for surfacing skipped files. Sides that git quoted are
+/// separated by a quoted-space-quoted delimiter, which also keeps `" and "`
+/// inside a quoted name from splitting the pair.
 fn parse_binary_marker_path(marker: &str) -> String {
-    marker
-        .strip_suffix(" differ")
-        .and_then(|paths| paths.rsplit(" and ").next())
-        .map(|target| target.strip_prefix("b/").unwrap_or(target))
-        .unwrap_or(marker)
-        .to_string()
+    let Some(paths) = marker.strip_suffix(" differ") else {
+        return marker.to_string();
+    };
+    let target = if paths.contains("\" and \"") {
+        paths
+            .rsplit("\" and \"")
+            .next()
+            .map(|tail| format!("\"{tail}"))
+    } else {
+        paths.rsplit(" and ").next().map(str::to_string)
+    };
+    match target {
+        Some(target) => {
+            let unquoted = c_unquote(&target);
+            unquoted.strip_prefix("b/").unwrap_or(&unquoted).to_string()
+        }
+        None => marker.to_string(),
+    }
 }
 
 /// Scans only the added lines of the staged diff, attributing findings to the
@@ -719,6 +861,7 @@ fn scan_staged_diff<ReaderType: BufRead>(
     mut reader: ReaderType,
     exclude_patterns: &[Pattern],
     excluded_baseline: Option<&PathBuf>,
+    base_dir: &Path,
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
 ) -> Result<StagedScan, ScannerError> {
@@ -812,7 +955,8 @@ fn scan_staged_diff<ReaderType: BufRead>(
             current_path = match parse_diff_target_path(target) {
                 Some(path)
                     if matches_exclude_patterns(&path, &[], exclude_patterns)
-                        || is_baseline_file(&path, excluded_baseline) =>
+                        || is_baseline_file(&path, base_dir, excluded_baseline)
+                        || is_default_excluded_file(&path) =>
                 {
                     excluded_files.push(path);
                     None
@@ -828,7 +972,8 @@ fn scan_staged_diff<ReaderType: BufRead>(
         if let Some(marker) = line.strip_prefix("Binary files ") {
             let path = parse_binary_marker_path(marker);
             if matches_exclude_patterns(&path, &[], exclude_patterns)
-                || is_baseline_file(&path, excluded_baseline)
+                || is_baseline_file(&path, base_dir, excluded_baseline)
+                || is_default_excluded_file(&path)
             {
                 excluded_files.push(path);
             } else {
@@ -845,16 +990,11 @@ fn scan_staged_diff<ReaderType: BufRead>(
         &mut findings,
     );
 
-    findings.sort_by(|a, b| {
-        a.file_path
-            .cmp(&b.file_path)
-            .then(a.line_number.cmp(&b.line_number))
-    });
-
     let metadata = ScanMetadata {
         files_scanned: scanned_files.len(),
         total_lines,
         excluded_files,
+        unscannable_files: Vec::new(),
         suppressed_by_baseline: 0,
     };
 
@@ -1085,6 +1225,44 @@ mod tests {
     }
 
     #[test]
+    fn test_prefilter_selects_detectors_with_overlapping_keywords() {
+        // detectors.toml has genuinely overlapping keywords ("sk_" for Adyen,
+        // "sk_test_" for Stripe). A non-overlapping search reports only the
+        // shorter one and the longer detector silently never runs.
+        let short = Detector::new(
+            "Short",
+            r"sk_\w+",
+            "Short",
+            "HIGH",
+            &[],
+            &["sk_".to_string()],
+            None,
+        )
+        .unwrap();
+        let long = Detector::new(
+            "Long",
+            r"sk_test_\w+",
+            "Long",
+            "HIGH",
+            &[],
+            &["sk_test_".to_string()],
+            None,
+        )
+        .unwrap();
+        let detectors = vec![&short, &long];
+        let prefilter = KeywordPrefilter::new(&detectors);
+
+        let mut candidates = Vec::new();
+        prefilter.candidates_into("sk_test_51abcdef", &mut candidates);
+
+        assert_eq!(
+            candidates,
+            vec![true, true],
+            "both the shorter and longer keyword owners must be selected"
+        );
+    }
+
+    #[test]
     fn test_scan_staged_diff_preserves_plus_prefixed_added_content() {
         let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
         let line_detectors = vec![&detector];
@@ -1099,7 +1277,15 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1132,7 +1318,15 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         assert!(findings.is_empty(), "removed lines must not be scanned");
         assert_eq!(metadata.files_scanned, 0);
@@ -1155,7 +1349,15 @@ mod tests {
 
         let StagedScan {
             findings, metadata, ..
-        } = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         let summary: Vec<(String, usize)> = findings
             .iter()
@@ -1176,7 +1378,15 @@ mod tests {
             index aabbcc0..ddeeff1 100644\n\
             Binary files a/img.png and b/img.png differ\n";
 
-        let staged = scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        let staged = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         assert!(staged.findings.is_empty());
         assert!(
@@ -1199,8 +1409,15 @@ mod tests {
             Binary files a/vendor/blob.bin and b/vendor/blob.bin differ\n";
         let pattern = Pattern::new("vendor/**").unwrap();
 
-        let staged =
-            scan_staged_diff(Cursor::new(diff), &[pattern], None, &[], &line_detectors).unwrap();
+        let staged = scan_staged_diff(
+            Cursor::new(diff),
+            &[pattern],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         assert!(
             staged.undiffable_files.is_empty(),
@@ -1224,8 +1441,15 @@ mod tests {
         diff.extend_from_slice(b"+caf\xE9 latin-1 line\n");
         diff.extend_from_slice(b"+SECRET_AFTER_BINARYISH\n");
 
-        let StagedScan { findings, .. } =
-            scan_staged_diff(Cursor::new(diff), &[], None, &[], &line_detectors).unwrap();
+        let StagedScan { findings, .. } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &[],
+            &line_detectors,
+        )
+        .unwrap();
 
         assert_eq!(
             findings.len(),
@@ -1247,8 +1471,15 @@ mod tests {
             +material\n\
             +END KEY\n";
 
-        let StagedScan { findings, .. } =
-            scan_staged_diff(Cursor::new(diff), &[], None, &multiline_detectors, &[]).unwrap();
+        let StagedScan { findings, .. } = scan_staged_diff(
+            Cursor::new(diff),
+            &[],
+            None,
+            Path::new("."),
+            &multiline_detectors,
+            &[],
+        )
+        .unwrap();
 
         assert_eq!(findings.len(), 1);
         assert_eq!(
@@ -1256,5 +1487,45 @@ mod tests {
             "multiline findings must use the hunk's post-image start line"
         );
         assert_eq!(findings[0].file_path, "key.pem");
+    }
+
+    #[test]
+    fn test_parse_diff_target_path_unquotes_c_quoted_names() {
+        assert_eq!(
+            parse_diff_target_path("\"b/we\\\"ird.txt\"").as_deref(),
+            Some("we\"ird.txt")
+        );
+        assert_eq!(
+            parse_diff_target_path("\"b/tab\\there.txt\"").as_deref(),
+            Some("tab\there.txt")
+        );
+        assert_eq!(
+            parse_diff_target_path("b/plain.txt").as_deref(),
+            Some("plain.txt")
+        );
+        assert_eq!(parse_diff_target_path("/dev/null"), None);
+    }
+
+    #[test]
+    fn test_parse_binary_marker_path_unquotes_and_takes_post_image() {
+        assert_eq!(
+            parse_binary_marker_path(
+                "Binary files \"a/one and two.bin\" and \"b/one and two.bin\" differ"
+            ),
+            "one and two.bin"
+        );
+        assert_eq!(
+            parse_binary_marker_path("Binary files /dev/null and b/plain.bin differ"),
+            "plain.bin"
+        );
+    }
+
+    #[test]
+    fn test_default_excluded_lockfiles_match_by_basename() {
+        assert!(is_default_excluded_file("Cargo.lock"));
+        assert!(is_default_excluded_file("nested/deep/package-lock.json"));
+        assert!(is_default_excluded_file("vendor\\yarn.lock"));
+        assert!(!is_default_excluded_file("src/Cargo.toml"));
+        assert!(!is_default_excluded_file("mylock"));
     }
 }

@@ -215,6 +215,18 @@ impl Detector {
             .any(|keyword| lowercase_content.contains(keyword.as_str()))
     }
 
+    /// Whether a regex match clears every detector gate — allowlist, entropy
+    /// and the structural validator. The scanner loops and the tests share
+    /// this so the accept chain exists in exactly one place.
+    pub fn accepts_match(&self, matched: &str) -> bool {
+        !self
+            .allowlist
+            .iter()
+            .any(|pattern| pattern.is_match(matched))
+            && self.has_sufficient_entropy(matched)
+            && self.passes_validation(matched)
+    }
+
     pub fn has_sufficient_entropy(&self, matched: &str) -> bool {
         match self.entropy_threshold {
             Some(threshold) => shannon_entropy(matched) >= threshold,
@@ -264,19 +276,51 @@ fn is_within(path: &std::path::Path, dir: &std::path::Path) -> bool {
     }
 }
 
-fn find_detectors_config(include_repository_config: bool) -> Option<std::path::PathBuf> {
+/// Highest directory whose contents the scanned tree's owner controls: the
+/// enclosing repository root when the target sits inside one, otherwise the
+/// target directory itself. A repository that reaches `KEYWATCH_CONFIG_PATH`
+/// through `.envrc`/direnv or a devcontainer can point it anywhere in this
+/// subtree, so nothing inside it can be trusted in trusted mode.
+pub(crate) fn untrusted_root(scan_path: &str, cwd: &std::path::Path) -> std::path::PathBuf {
+    let path = std::path::Path::new(scan_path);
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
+    let start = if absolute.is_dir() {
+        absolute
+    } else {
+        absolute
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| cwd.to_path_buf())
+    };
+
+    for dir in start.ancestors().skip(1) {
+        if dir.join(".git").exists() {
+            return dir.to_path_buf();
+        }
+    }
+    start
+}
+
+fn find_detectors_config(
+    include_repository_config: bool,
+    untrusted_roots: &[std::path::PathBuf],
+) -> Option<std::path::PathBuf> {
     std::env::var("KEYWATCH_CONFIG_PATH")
         .map(std::path::PathBuf::from)
         .ok()
         .filter(|path| path.exists())
         // KEYWATCH_CONFIG_PATH is an operator channel. A repository can reach
-        // it through .envrc/direnv or a devcontainer, so in trusted mode an
-        // value pointing back into the tree being scanned is ignored.
+        // it through .envrc/direnv or a devcontainer, so in trusted mode a
+        // value pointing back into the tree being scanned — at or below any
+        // untrusted root — is ignored.
         .filter(|path| {
             include_repository_config
-                || std::env::current_dir()
-                    .map(|cwd| !is_within(path, &cwd))
-                    .unwrap_or(true)
+                || untrusted_roots.is_empty()
+                || !untrusted_roots.iter().any(|root| is_within(path, root))
         })
         .or_else(|| {
             if !include_repository_config {
@@ -304,17 +348,20 @@ fn find_detectors_config(include_repository_config: bool) -> Option<std::path::P
 }
 
 pub fn initialize_detectors() -> Result<Vec<Detector>, DetectorInitError> {
-    initialize_detectors_from_config(true)
+    initialize_detectors_from_config(true, &[])
 }
 
-pub(crate) fn initialize_trusted_detectors() -> Result<Vec<Detector>, DetectorInitError> {
-    initialize_detectors_from_config(false)
+pub(crate) fn initialize_trusted_detectors(
+    untrusted_roots: &[std::path::PathBuf],
+) -> Result<Vec<Detector>, DetectorInitError> {
+    initialize_detectors_from_config(false, untrusted_roots)
 }
 
 fn initialize_detectors_from_config(
     include_repository_config: bool,
+    untrusted_roots: &[std::path::PathBuf],
 ) -> Result<Vec<Detector>, DetectorInitError> {
-    let toml_contents = match find_detectors_config(include_repository_config) {
+    let toml_contents = match find_detectors_config(include_repository_config, untrusted_roots) {
         Some(config_path) => Cow::Owned(fs::read_to_string(&config_path).map_err(|source| {
             DetectorInitError::ReadConfig {
                 path: config_path,

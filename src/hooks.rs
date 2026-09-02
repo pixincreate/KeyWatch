@@ -122,21 +122,24 @@ pub fn install_hook(args: &HookInstallArgs) -> Result<(), HookError> {
     })?;
 
     if install_target.configured_global_path {
-        let _ = utils::emit_line(&format!(
+        utils::emit_line(&format!(
             "Configured git --global core.hooksPath to {}",
             utils::display_path(&install_target.hooks_dir)
-        ));
+        ))
+        .map_err(|source| HookError::WriteOutput { source })?;
     }
 
-    let _ = utils::emit_line(&format!(
+    utils::emit_line(&format!(
         "Installed {} {hook_type_str} hook at {}",
         scope_label(install_target.is_global),
         utils::display_path(&install_target.path)
-    ));
-    let _ = utils::emit_line(&format!(
+    ))
+    .map_err(|source| HookError::WriteOutput { source })?;
+    utils::emit_line(&format!(
         "The hook will run automatically during git {}.",
         hook_type_str.replace('-', " ")
-    ));
+    ))
+    .map_err(|source| HookError::WriteOutput { source })?;
 
     Ok(())
 }
@@ -151,10 +154,11 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
 
     let scope = scope_label(install_target.is_global);
     if !install_target.path.exists() {
-        let _ = utils::emit_line(&format!(
+        utils::emit_line(&format!(
             "No {scope} {hook_type_str} hook found at {}",
             utils::display_path(&install_target.path)
-        ));
+        ))
+        .map_err(|source| HookError::WriteOutput { source })?;
         return Ok(());
     }
 
@@ -169,10 +173,11 @@ pub fn uninstall_hook(args: &HookUninstallArgs) -> Result<(), HookError> {
         source,
     })?;
 
-    let _ = utils::emit_line(&format!(
+    utils::emit_line(&format!(
         "Removed {scope} {hook_type_str} hook at {}",
         utils::display_path(&install_target.path)
-    ));
+    ))
+    .map_err(|source| HookError::WriteOutput { source })?;
 
     Ok(())
 }
@@ -300,17 +305,15 @@ fn read_global_hooks_path() -> Result<Option<PathBuf>, HookError> {
         .output()
         .map_err(|source| HookError::ReadGlobalHooksPath { source })?;
 
-    match output.status.code() {
-        _ if output.status.success() => {
-            let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            Ok((!value.is_empty()).then(|| PathBuf::from(value)))
-        }
+    if output.status.success() {
+        let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        Ok((!value.is_empty()).then(|| PathBuf::from(value)))
+    } else if output.status.code() == Some(1) {
         // Exit code 1 means the key is not set.
-        Some(1) => Ok(None),
-        _ => {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            Err(HookError::ReadGlobalHooksPathFromGit { stderr })
-        }
+        Ok(None)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        Err(HookError::ReadGlobalHooksPathFromGit { stderr })
     }
 }
 

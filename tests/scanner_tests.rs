@@ -1,4 +1,4 @@
-use key_watch::cli::{ExitMode, OutputFormat, ScanArgs};
+use key_watch::cli::ScanArgs;
 use key_watch::scanner::{ScannerError, run_scan};
 use std::env::temp_dir;
 use std::fs;
@@ -15,8 +15,15 @@ fn unique_temp_dir(name: &str) -> PathBuf {
     temp_dir().join(format!("keywatch_{name}_{stamp}_{}", std::process::id()))
 }
 
-fn git_available() -> bool {
-    Command::new("git").arg("--version").output().is_ok()
+/// Git backs the --staged, --git-history and baseline modes, so its absence
+/// is a broken environment rather than a reason to pass silently. Twenty
+/// tests used to return Ok(()) here, reporting green while covering nothing.
+fn require_git() {
+    let output = Command::new("git")
+        .arg("--version")
+        .output()
+        .expect("git is required to test KeyWatch's git-backed scan modes");
+    assert!(output.status.success(), "`git --version` failed");
 }
 
 fn init_git_repo(path: &Path) -> Result<(), String> {
@@ -109,21 +116,8 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -146,21 +140,8 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -184,21 +165,8 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -223,21 +191,8 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -256,21 +211,8 @@ fn test_multiple_detections_in_line() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -301,21 +243,8 @@ fn test_directory_scan_with_exclusions() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -345,21 +274,9 @@ fn test_exclude_pattern_filtering() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
         exclude: Some("*.log".to_string()),
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (_findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -379,21 +296,9 @@ fn test_exclude_pattern_filtering() {
 fn test_invalid_cli_exclude_pattern_returns_typed_error() {
     let options = ScanArgs {
         paths: vec![".".to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
         exclude: Some("[".to_string()),
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let error = match run_scan(&options, None) {
@@ -431,21 +336,8 @@ fn test_dot_github_directory_is_scanned() {
 
     let options = ScanArgs {
         paths: vec![test_dir.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -463,21 +355,8 @@ fn test_scan_no_secrets() {
 
     let options = ScanArgs {
         paths: vec![temp_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -496,21 +375,8 @@ fn test_non_utf8_file_handling() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -533,21 +399,8 @@ fn test_multiple_files_scan() {
             test_file1.to_str().unwrap().to_string(),
             test_file2.to_str().unwrap().to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -571,21 +424,8 @@ fn test_duplicate_paths_are_scanned_once() {
             temp_file.to_str().unwrap().to_string(),
             temp_file.to_str().unwrap().to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -623,21 +463,8 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
             direct_file.to_str().unwrap().to_string(),
             test_dir.to_str().unwrap().to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -667,21 +494,8 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
 
     let options = ScanArgs {
         paths: vec![missing_path.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -718,21 +532,8 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
                 .ok_or("link path should be utf-8")?
                 .to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -767,21 +568,8 @@ fn test_recursive_symlink_path_is_skipped() -> Result<(), String> {
                 .ok_or("scan root should be utf-8")?
                 .to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -809,21 +597,8 @@ fn test_detect_aadhaar() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -849,21 +624,8 @@ fn test_detect_voter_id() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -886,21 +648,8 @@ fn test_detect_pan_card() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -923,21 +672,8 @@ fn test_detect_abha() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -961,21 +697,8 @@ fn test_multiple_indian_ids() {
 
     let options = ScanArgs {
         paths: vec![test_file.to_str().unwrap().to_string()],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -1024,21 +747,9 @@ fn test_overlapping_scan_roots_with_exclusions() {
             root2.to_str().unwrap().to_string(), // Root 2 comes first to try to mess up order
             root1.to_str().unwrap().to_string(),
         ],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
         exclude: Some("subdir/secret.txt".to_string()),
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
@@ -1072,21 +783,8 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
 
     let options = ScanArgs {
         paths: vec![path_str],
-        stdin: false,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
@@ -1122,22 +820,9 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
 #[test]
 fn test_stdin_args_validation() {
     let options = ScanArgs {
-        paths: vec![],
         stdin: true,
-        git_history: false,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     assert!(options.validate().is_ok());
@@ -1186,61 +871,24 @@ fn test_stdin_scanning_integration() -> Result<(), String> {
 #[test]
 fn test_git_history_args_validation_allows_zero_or_one_path() {
     let zero_paths = ScanArgs {
-        paths: vec![],
-        stdin: false,
         git_history: true,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
     let one_path = ScanArgs {
         paths: vec!["/tmp/requested-root".to_string()],
-        stdin: false,
         git_history: true,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
     let two_paths = ScanArgs {
         paths: vec![
             "/tmp/requested-root".to_string(),
             "/tmp/other-root".to_string(),
         ],
-        stdin: false,
         git_history: true,
-        staged: false,
-        output: None,
-        verbose: false,
-        show_secrets: false,
-        exclude: None,
-        exit_mode: ExitMode::Strict,
-        baseline: None,
-        update_baseline: false,
-        prune_baseline: false,
         no_baseline_discovery: true,
-        config: None,
-        no_config_discovery: false,
-        format: OutputFormat::Json,
+        ..Default::default()
     };
 
     assert!(zero_paths.validate().is_ok());
@@ -1250,9 +898,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
 
 #[test]
 fn test_git_history_defaults_to_current_directory_when_no_path_is_provided() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("git_history_default_cwd");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1284,9 +930,7 @@ fn test_git_history_defaults_to_current_directory_when_no_path_is_provided() -> 
 #[test]
 fn test_git_history_scans_requested_root_from_a_different_current_directory() -> Result<(), String>
 {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let parent_dir = unique_temp_dir("git_history_requested_root_parent");
     let requested_root = parent_dir.join("requested-repo");
@@ -1318,9 +962,7 @@ fn test_git_history_scans_requested_root_from_a_different_current_directory() ->
 
 #[test]
 fn test_git_history_does_not_execute_textconv_helpers() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("git_history_no_textconv");
     let marker_path = repo_dir.join("textconv-helper-ran");
@@ -1387,9 +1029,7 @@ fn stage_file(path: &Path, file_name: &str, contents: &str) -> Result<(), String
 
 #[test]
 fn test_staged_scan_ignores_findings_on_unchanged_lines() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_unchanged_lines");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1423,9 +1063,7 @@ fn test_staged_scan_ignores_findings_on_unchanged_lines() -> Result<(), String> 
 
 #[test]
 fn test_staged_scan_ignores_deletion_only_changes() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_deletion_only");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1455,9 +1093,7 @@ fn test_staged_scan_ignores_deletion_only_changes() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_reports_added_secret_with_real_path_and_line() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_added_secret");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1496,9 +1132,7 @@ fn test_staged_scan_reports_added_secret_with_real_path_and_line() -> Result<(),
 
 #[test]
 fn test_staged_scan_respects_exclude_patterns() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_exclude");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1527,9 +1161,7 @@ fn test_staged_scan_respects_exclude_patterns() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_composes_with_baseline() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_baseline");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1614,9 +1246,7 @@ fn test_baseline_file_itself_is_never_scanned() {
 
 #[test]
 fn test_baseline_auto_discovered_from_repo_root() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("baseline_auto_discovery");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1670,9 +1300,7 @@ fn test_baseline_auto_discovered_from_repo_root() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_uses_discovered_baseline() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     let repo_dir = unique_temp_dir("staged_auto_baseline");
     let _ = fs::remove_dir_all(&repo_dir);
@@ -1713,9 +1341,7 @@ fn test_staged_scan_uses_discovered_baseline() -> Result<(), String> {
 
 #[test]
 fn test_discovered_baseline_file_is_never_scanned() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // A discovered baseline resolves to an absolute path while scanned files
     // are relative, so self-exclusion must compare canonical paths.
@@ -1765,9 +1391,7 @@ fn test_discovered_baseline_file_is_never_scanned() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_skips_the_baseline_file() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // Committing a baseline must not trip the hook: its stored hashes are
     // added lines in the staged diff and would otherwise be flagged.
@@ -1811,9 +1435,7 @@ fn test_staged_scan_skips_the_baseline_file() -> Result<(), String> {
 
 #[test]
 fn test_repo_detectors_toml_cannot_disable_hook_scan() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // A repository that ships its own detectors.toml replaces the detector
     // set. The hook runs with --no-config-discovery precisely so a scanned
@@ -1860,9 +1482,7 @@ fn test_repo_detectors_toml_cannot_disable_hook_scan() -> Result<(), String> {
 
 #[test]
 fn test_staged_scan_reads_blobs_git_renders_as_binary() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // `*.env -diff` makes git emit only "Binary files ... differ", so the
     // added lines never appear in the diff. The scan must read the staged
@@ -1901,9 +1521,7 @@ fn test_staged_scan_reads_blobs_git_renders_as_binary() -> Result<(), String> {
 
 #[test]
 fn test_baseline_suppression_is_reported() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // A committed baseline is repo-controlled data that silently removes
     // findings; the count must be visible so suppression cannot hide.
@@ -1941,9 +1559,7 @@ fn test_baseline_suppression_is_reported() -> Result<(), String> {
 
 #[test]
 fn test_git_history_attributes_real_paths_and_honours_excludes() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // History findings used to be keyed under a synthetic "<git-history>"
     // path, which no baseline entry could match, and this mode ignored
@@ -1985,9 +1601,7 @@ fn test_git_history_attributes_real_paths_and_honours_excludes() -> Result<(), S
 
 #[test]
 fn test_staged_scan_survives_diff_relative_from_subdirectory() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // diff.relative makes git emit cwd-relative paths and drop changes
     // outside the cwd, which silently hid staged secrets.
@@ -2028,9 +1642,7 @@ fn test_staged_scan_survives_diff_relative_from_subdirectory() -> Result<(), Str
 
 #[test]
 fn test_prune_baseline_drops_stale_entries() -> Result<(), String> {
-    if !git_available() {
-        return Ok(());
-    }
+    require_git();
 
     // --update-baseline only ever appends, so entries for deleted files and
     // rotated credentials kept suppressing forever.
@@ -2075,16 +1687,437 @@ fn test_prune_baseline_drops_stale_entries() -> Result<(), String> {
         "a plain update must not drop the stale entry"
     );
 
-    assert!(
-        run(&["--update-baseline", "--prune-baseline"])
-            .status
-            .success()
-    );
+    let pruned = run(&["--update-baseline", "--prune-baseline"]);
+    assert!(pruned.status.success());
     assert!(
         entries() < with_both,
         "--prune-baseline must drop entries the scan no longer finds"
     );
+    assert!(
+        String::from_utf8_lossy(&pruned.stdout).contains("Pruned 1 baseline entry"),
+        "the dropped count must be visible, got:\n{}",
+        String::from_utf8_lossy(&pruned.stdout)
+    );
 
     let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_survives_hostile_git_config() -> Result<(), String> {
+    require_git();
+
+    // Every override in the staged git invocation exists because one of these
+    // settings breaks parsing. Without this test, deleting any of them is
+    // invisible: the scan reports clean or attributes findings to a mangled
+    // path, and no other test notices.
+    let repo_dir = unique_temp_dir("hostile_git_config");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    for (key, value) in [
+        ("color.ui", "always"),
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.noprefix", "true"),
+        ("core.quotePath", "true"),
+        ("diff.relative", "true"),
+    ] {
+        let status = Command::new("git")
+            .args(["config", key, value])
+            .current_dir(&repo_dir)
+            .status()
+            .map_err(|e| e.to_string())?;
+        assert!(status.success(), "git config {key} failed");
+    }
+    commit_file(&repo_dir, "config.txt", "one\ntwo\n", "init")?;
+    stage_file(
+        &repo_dir,
+        "config.txt",
+        "one\ntwo\naws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--staged", "--verbose", "--no-baseline-discovery"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .current_dir(&repo_dir)
+        .output()
+        .expect("run key-watch");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert_eq!(output.status.code(), Some(1), "stdout:\n{stdout}");
+    assert!(
+        stdout.contains("\"file_path\": \"config.txt\""),
+        "path attribution must survive prefix settings, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"line_number\": 3"),
+        "line attribution must survive, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_outside_a_repository_fails_closed() {
+    // templates/pre-commit.sh documents that any exit above 1 blocks the
+    // commit; nothing pinned that the scanner actually produces it.
+    let dir = unique_temp_dir("staged_outside_repo");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--staged", "--no-baseline-discovery"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .env("GIT_CEILING_DIRECTORIES", &dir)
+        .current_dir(&dir)
+        .output()
+        .expect("run key-watch");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "a git failure must exit 2 so the hook fails closed, stderr:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_staged_scan_paths_narrow_the_diff() -> Result<(), String> {
+    require_git();
+
+    let repo_dir = unique_temp_dir("staged_path_narrowing");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(&repo_dir, "clean.txt", "nothing\n", "init")?;
+    stage_file(&repo_dir, "clean.txt", "nothing\nstill nothing\n")?;
+    stage_file(
+        &repo_dir,
+        "secret.txt",
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )?;
+
+    let run = |path: &str| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "--staged", "--no-baseline-discovery", "--", path])
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert_eq!(
+        run("clean.txt").status.code(),
+        Some(0),
+        "narrowing to a clean path must not report the other file"
+    );
+    assert_eq!(
+        run("secret.txt").status.code(),
+        Some(1),
+        "narrowing to the secret path must still report it"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_trusted_mode_ignores_env_config_inside_the_scan_target() -> Result<(), String> {
+    // KEYWATCH_CONFIG_PATH is an operator channel, but a repository can reach
+    // it through .envrc/direnv or a devcontainer. Trusted mode must refuse it
+    // when it points into the scanned tree — including when the process runs
+    // from a completely different directory, which the cwd-only check missed.
+    let repo_dir = unique_temp_dir("trusted_env_config");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::write(
+        repo_dir.join("leak.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+    fs::write(
+        repo_dir.join("detectors.toml"),
+        "[[detectors]]\nname = \"Noop\"\npattern = \"\\\\bqqqzzz1234\\\\b\"\n\
+         finding_type = \"Noop\"\nseverity = \"LOW\"\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let elsewhere = unique_temp_dir("trusted_env_cwd");
+    let _ = fs::remove_dir_all(&elsewhere);
+    fs::create_dir_all(&elsewhere).map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", repo_dir.to_str().unwrap()])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", repo_dir.join("detectors.toml"))
+            .current_dir(&elsewhere)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert_eq!(
+        run(&["--no-config-discovery", "--no-baseline-discovery"])
+            .status
+            .code(),
+        Some(1),
+        "in trusted mode a config inside the scanned tree must not replace the detector set"
+    );
+    assert_eq!(
+        run(&["--no-baseline-discovery"]).status.code(),
+        Some(0),
+        "in untrusted mode the env config is still honored (control)"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    let _ = fs::remove_dir_all(&elsewhere);
+    Ok(())
+}
+
+#[test]
+fn test_staged_scan_from_subdirectory_still_skips_the_baseline_file() -> Result<(), String> {
+    require_git();
+
+    // Staged diffs emit repository-root-relative paths regardless of the
+    // process's directory, so self-exclusion must resolve them against the
+    // repository root: from a subdirectory the baseline file was re-scanned,
+    // and its own hashes failed the scan.
+    let repo_dir = unique_temp_dir("staged_baseline_subdir");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    fs::create_dir_all(repo_dir.join("sub")).map_err(|e| e.to_string())?;
+    commit_file(&repo_dir, "config.txt", "clean line\n", "init")?;
+    fs::write(
+        repo_dir.join("secret.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&repo_dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert!(run(&["scan", ".", "--update-baseline"]).status.success());
+    // Rotate the credential so the baseline gains a second entry; only the
+    // baseline change is staged.
+    fs::write(
+        repo_dir.join("secret.txt"),
+        "aws_access_key_id = AKIA1234567890ABCDEF\n",
+    )
+    .map_err(|e| e.to_string())?;
+    assert!(run(&["scan", ".", "--update-baseline"]).status.success());
+
+    let status = Command::new("git")
+        .args(["add", ".keywatch-baseline.json"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|e| e.to_string())?;
+    assert!(status.success(), "git add should succeed");
+
+    let staged = |dir: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "--staged"])
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert_eq!(
+        staged(&repo_dir).status.code(),
+        Some(0),
+        "from the repository root the baseline stays self-excluded"
+    );
+    assert_eq!(
+        staged(&repo_dir.join("sub")).status.code(),
+        Some(0),
+        "from a subdirectory the baseline must still be self-excluded"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_prune_baseline_rejects_partial_and_standalone_use() {
+    // Pruning rebuilds the baseline from what the scan found, so partial
+    // scans must refuse it, and a bare --prune-baseline must error instead
+    // of being silently ignored.
+    let dir = unique_temp_dir("prune_rejects");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("create dir");
+
+    let run = |args: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(args)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    let staged = run(&["scan", "--staged", "--update-baseline", "--prune-baseline"]);
+    assert_eq!(staged.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&staged.stderr).contains("cannot be used with"),
+        "staged scans must refuse --prune-baseline"
+    );
+
+    let bare = run(&["scan", ".", "--prune-baseline"]);
+    assert_eq!(bare.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&bare.stderr).contains("--update-baseline"),
+        "a bare --prune-baseline must error instead of being ignored"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn test_prune_baseline_warns_when_paths_narrow_the_scan() -> Result<(), String> {
+    // A path-narrowed scan rebuilds the baseline from that subtree only;
+    // silently dropping everything else would hide the data loss.
+    let dir = unique_temp_dir("prune_narrow_warning");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("a.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("b.txt"),
+        "aws_access_key_id = AKIAJJJJJJJJJJJJJJJJ\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", "--baseline", "bl.json"])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    assert!(run(&[".", "--update-baseline"]).status.success());
+    let narrowed = run(&["a.txt", "--update-baseline", "--prune-baseline"]);
+    assert!(narrowed.status.success());
+    let stdout = String::from_utf8_lossy(&narrowed.stdout);
+    assert!(
+        stdout.contains("scanned paths only"),
+        "a narrowed prune must warn, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("Pruned 1 baseline entry"),
+        "the dropped count must be visible, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[test]
+fn test_git_history_reports_unscannable_blobs_separately() -> Result<(), String> {
+    require_git();
+
+    // A git-rendered binary was never seen by the scanner; listing it under
+    // "excluded" would read like an operator decision instead of a gap.
+    let repo_dir = unique_temp_dir("history_unscannable");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(
+        &repo_dir,
+        "blob.bin",
+        "bin\u{0}ary\u{0}content",
+        "add binary",
+    )?;
+
+    let output = run_git_history_scan(&repo_dir, &["--verbose", "--no-baseline-discovery"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert!(
+        stdout.contains("\"unscannable\": {\n    \"count\": 1"),
+        "the binary blob must be reported as unscannable, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"excluded\": {\n    \"count\": 0"),
+        "unscannable files must not be counted as excluded, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_lockfiles_are_excluded_by_default_in_every_mode() -> Result<(), String> {
+    require_git();
+
+    // Lockfile checksums flood reports and baselines with "Random String"
+    // findings; they hold checksums and URLs, never credentials.
+    let repo_dir = unique_temp_dir("lockfile_default_exclude");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(
+        &repo_dir,
+        "Cargo.lock",
+        "# generated by cargo\n\"checksum 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"\n",
+        "lockfile",
+    )?;
+
+    let scan = |args: &[&str], dir: &Path| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(args)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(dir)
+            .output()
+            .expect("run key-watch")
+    };
+
+    let whole = scan(
+        &["scan", ".", "--verbose", "--no-baseline-discovery"],
+        &repo_dir,
+    );
+    assert_eq!(
+        whole.status.code(),
+        Some(0),
+        "a lockfile must not be scanned by default, got:\n{}",
+        String::from_utf8_lossy(&whole.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&whole.stdout).contains("\"excluded\": {\n    \"count\": 1"),
+        "the lockfile must show up as excluded, got:\n{}",
+        String::from_utf8_lossy(&whole.stdout)
+    );
+
+    // The hook path: a staged lockfile change must not fail the commit.
+    fs::write(
+        repo_dir.join("Cargo.lock"),
+        "# appended\n\"checksum ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\"\n",
+    )
+    .map_err(|e| e.to_string())?;
+    let status = Command::new("git")
+        .args(["add", "Cargo.lock"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|e| e.to_string())?;
+    assert!(status.success(), "git add should succeed");
+
+    let staged = scan(&["scan", "--staged", "--no-baseline-discovery"], &repo_dir);
+    assert_eq!(
+        staged.status.code(),
+        Some(0),
+        "a staged lockfile change must not fail, got:\n{}",
+        String::from_utf8_lossy(&staged.stderr)
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
     Ok(())
 }

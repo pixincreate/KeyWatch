@@ -185,15 +185,15 @@ key-watch verify-integrity
 - `scan --format <json|sarif>` - Choose the report format written to stdout or the output file
 - `scan --stdin` - Read content from stdin instead of files
 - `scan --git-history` - Scan git history (`git log -p`) for committed secrets; findings carry real file paths, and `--exclude` and baselines apply
-- `scan --staged [path...]` - Scan only the added lines of the staged diff (run from inside the repository; paths narrow the diff as git pathspecs); findings keep real file paths and line numbers, so `--baseline` and `--exclude` compose. Files git renders as binary (e.g. `-diff` in `.gitattributes`) are listed in `excluded_files` rather than scanned. Note: a multi-line secret added across separate commits can span hunks the diff scan never sees together — the pre-push whole-tree scan remains the backstop for that case
+- `scan --staged [path...]` - Scan only the added lines of the staged diff (run from inside the repository; paths narrow the diff as git pathspecs); findings keep real file paths and line numbers, so `--baseline` and `--exclude` compose. Files git renders as binary (e.g. `-diff` in `.gitattributes`) are read from the index in staged scans and reported under `unscannable` when they cannot be read at all. Note: a multi-line secret added across separate commits can span hunks the diff scan never sees together — the pre-push whole-tree scan remains the backstop for that case
 - `scan --output <path>` - Save report to file
 - `scan --verbose` - Print full JSON output (matched text is redacted; see `--show-secrets`)
 - `scan --show-secrets` - Include raw matched text in reports. Off by default: reports are routinely written to files or uploaded as CI artifacts, and `--output` files are created with owner-only permissions
-- `scan --exclude <patterns>` - Comma-separated glob patterns to exclude
+- `scan --exclude <patterns>` - Comma-separated glob patterns to exclude; lockfiles (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `go.sum`, and other generated manifests) are always excluded by basename
 - `scan --exit-mode <mode>` - Exit behavior: `always` (always pass), `critical` (fail on HIGH/CRITICAL only), `strict` (fail on any finding, default)
 - `scan --baseline <path>` - Suppress known findings from a previous scan. Without this flag, a `.keywatch-baseline.json` is discovered automatically by walking up from the scan target (bounded at the repository root or home directory), so hook scans pick up a committed repo baseline with no configuration
 - `scan --no-baseline-discovery` - Ignore a discovered baseline (an explicit `--baseline` still loads)
-- `scan --prune-baseline` - With `--update-baseline`, rebuild the baseline from current findings instead of merging, dropping stale entries
+- `scan --prune-baseline` - With `--update-baseline`, rebuild the baseline from current findings instead of merging, dropping stale entries; requires a whole-tree scan (`--staged`, `--stdin` and `--git-history` are refused, narrowed paths draw a warning), and the dropped count is always printed
 - `scan --update-baseline` - Update the baseline with current findings; creates `.keywatch-baseline.json` when no baseline exists. The baseline stores fingerprints (path + finding type + SHA-256 of the match + detector), never secrets, and is meant to be committed. The `update-baseline` workflow can regenerate it via a reviewable pull request
 - `hook install <pre-commit|pre-push> [--global]` - Install a git hook
 - `hook uninstall <pre-commit|pre-push> [--global]` - Remove a git hook

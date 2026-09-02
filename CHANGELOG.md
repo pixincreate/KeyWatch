@@ -18,22 +18,24 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- `--prune-baseline` rewrites the baseline from current findings, dropping entries for deleted files and rotated credentials
+- CI scans this repository with KeyWatch and fails if the committed baseline has drifted
+- `--prune-baseline` rewrites the baseline from current findings, dropping entries for deleted files and rotated credentials; requires `--update-baseline` and a whole-tree scan, and prints what it dropped
 
 ### Changed
 
-- Reports redact matched text by default; `--show-secrets` opts into raw values
-- Reports summarise exclusions as a count plus a sample instead of listing every path
+- Reports redact matched text by default; `--show-secrets` opts into raw values, and matches shorter than 8 characters are always described by length only
+- Reports summarise exclusions as a count plus a sample instead of listing every path, and report git-rendered binary files as `unscannable` rather than `excluded`
+- Lockfiles (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `go.sum`, and other generated manifests) are excluded from scans by default
 
 ### Fixed
 
 - `scan --git-history` applies `--exclude`, skips the baseline file, and reports real file paths instead of a synthetic `<git-history>` key that no baseline could match
 - `scan --staged` is not fooled by `diff.relative`, which made git drop changes outside the current directory
-- `--output` files are created readable only by their owner
-- Config is not trusted from a world-writable directory, so a `.keywatch.toml` dropped in `/tmp` cannot weaken scans beneath it
-- `KEYWATCH_CONFIG_PATH` is ignored in trusted mode when it points inside the tree being scanned
+- `--output` files are readable only by their owner, including when the file already existed with wider permissions
+- Config is not trusted from a world-writable directory or file, so a `.keywatch.toml` dropped in `/tmp` cannot weaken scans beneath it
+- `KEYWATCH_CONFIG_PATH` is ignored in trusted mode whenever it points inside the tree being scanned, wherever the process runs from
 - Baseline suppression reports how many findings it hid, instead of applying silently
-- `CreditCardDetector` requires an issuer prefix and a valid Luhn checksum, instead of matching any 13-16 digit run
+- `CreditCardDetector` requires an issuer prefix and a valid Luhn checksum, instead of matching any 13-16 digit run; Discover's 644-649 and 65 ranges are covered
 - `HighEntropyDetector` could never fire (its 4.0 threshold is the ceiling for hex) and now runs, restricted to lines naming a credential
 - PKCS#8 private key headers (`BEGIN PRIVATE KEY`, `BEGIN ENCRYPTED PRIVATE KEY`) are detected
 - `PhoneNumberDetector` needs punctuation or a country code, so unix timestamps are not phone numbers
@@ -43,10 +45,12 @@ All notable changes to this project will be documented in this file.
 - `Base64Detector` matches from 28 characters, the length where entropy can actually separate base64 from identifiers
 - `scan --staged` no longer misses findings under `color.ui = always` or custom diff prefixes
 - Non-UTF-8 files no longer abort a staged scan
-- The baseline file is no longer scanned as input to itself
+- A malformed diff hunk header is reported instead of silently attributing its findings to line 0
+- Diff paths that git quoted (names containing quotes or control characters) are unescaped before attribution
+- The baseline file is no longer scanned as input to itself, including staged scans run from a subdirectory
 - `GenericKeyValueDetector` and `RandomString` no longer flag code identifiers (`let payment_method_token = card_token`, snake_case serde attributes)
 - `PasswordDetector` no longer flags `$PWD:`
-- Piping output to a closed reader no longer panics, including `hook install` and `init`
+- Piping output to a closed reader no longer panics, including `hook install` and `init`; hook commands now report real output failures instead of discarding them
 
 ### Performance
 

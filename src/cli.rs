@@ -133,7 +133,12 @@ pub struct ScanArgs {
     pub update_baseline: bool,
 
     /// Rewrite the baseline from the current findings, dropping stale entries
-    #[arg(long, default_value_t = false)]
+    /// (requires --update-baseline; whole-tree scans only)
+    #[arg(
+        long,
+        requires = "update_baseline",
+        conflicts_with_all = ["staged", "stdin", "git_history"]
+    )]
     pub prune_baseline: bool,
 
     /// Path to .keywatch.toml config file
@@ -147,6 +152,29 @@ pub struct ScanArgs {
     /// Output format for the report (json or sarif)
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     pub format: OutputFormat,
+}
+
+impl Default for ScanArgs {
+    fn default() -> Self {
+        Self {
+            paths: Vec::new(),
+            stdin: false,
+            git_history: false,
+            staged: false,
+            output: None,
+            verbose: false,
+            show_secrets: false,
+            exclude: None,
+            exit_mode: ExitMode::Strict,
+            baseline: None,
+            no_baseline_discovery: false,
+            update_baseline: false,
+            prune_baseline: false,
+            config: None,
+            no_config_discovery: false,
+            format: OutputFormat::Json,
+        }
+    }
 }
 
 impl ScanArgs {

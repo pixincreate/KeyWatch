@@ -31,3 +31,32 @@ fn test_portable_config_loading() {
     let detectors = initialize_detectors().expect("Should load detectors");
     assert!(!detectors.is_empty(), "Should load at least one detector");
 }
+
+#[cfg(unix)]
+#[test]
+fn test_write_to_file_tightens_existing_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // `mode(0o600)` only applies at creation; a pre-existing world-readable
+    // report must be tightened before new content is written into it.
+    let temp_file = unique_temp_file("existing_output");
+    let path_str = temp_file.to_str().unwrap();
+    fs::write(path_str, "old content").expect("create pre-existing file");
+    let mut perms = fs::metadata(path_str).expect("stat file").permissions();
+    perms.set_mode(0o644);
+    fs::set_permissions(path_str, perms).expect("set 0644");
+
+    write_to_file(path_str, "new content").expect("rewrite file");
+
+    let mode = fs::metadata(path_str)
+        .expect("stat file")
+        .permissions()
+        .mode();
+    assert_eq!(
+        mode & 0o777,
+        0o600,
+        "rewritten reports must be readable only by their owner"
+    );
+
+    let _ = fs::remove_file(path_str);
+}
