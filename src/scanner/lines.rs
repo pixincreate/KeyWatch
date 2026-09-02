@@ -5,6 +5,7 @@ use crate::detector::Detector;
 use crate::report::Finding;
 use crate::scanner::ScannerError;
 use aho_corasick::AhoCorasick;
+use std::collections::HashSet;
 use std::io::BufRead;
 
 const INLINE_SUPPRESS: &str = "keywatch:ignore";
@@ -152,6 +153,7 @@ pub(super) fn scan_multiline_chunk(
     path: &str,
     multiline_detectors: &[&Detector],
     findings: &mut Vec<Finding>,
+    reported: &mut HashSet<(usize, usize, String)>,
 ) {
     if multiline_detectors.is_empty() {
         return;
@@ -161,6 +163,16 @@ pub(super) fn scan_multiline_chunk(
         if detector.has_keywords(&lowered_chunk) {
             for mat in detector.regex.find_iter(chunk) {
                 let line_in_chunk = chunk[..mat.start()].matches('\n').count() + 1;
+                let line_start = chunk[..mat.start()].rfind('\n').map(|i| i + 1).unwrap_or(0);
+                // Start position identifies a match exactly; sliding windows
+                // re-scan their carry, so the same match can be seen twice.
+                if !reported.insert((
+                    line_offset + line_in_chunk,
+                    mat.start() - line_start,
+                    detector.name.clone(),
+                )) {
+                    continue;
+                }
                 let line_content = chunk
                     .lines()
                     .nth(line_in_chunk.saturating_sub(1))
@@ -189,8 +201,16 @@ pub(super) fn scan_content(
 ) -> (Vec<Finding>, usize) {
     let mut findings = Vec::new();
     let mut total_lines = 0;
+    let mut reported = HashSet::new();
 
-    scan_multiline_chunk(content, 0, path, multiline_detectors, &mut findings);
+    scan_multiline_chunk(
+        content,
+        0,
+        path,
+        multiline_detectors,
+        &mut findings,
+        &mut reported,
+    );
 
     let mut scratch = LineScratch::default();
     for (line_idx, line) in content.lines().enumerate() {
@@ -207,66 +227,134 @@ pub(super) fn scan_content(
 
     (findings, total_lines)
 }
-pub(super) fn scan_stream<ReaderType: BufRead>(
-    reader: ReaderType,
+const CHUNK_SIZE: usize = 1000;
+const OVERLAP_LINES: usize = 50;
+
+/// Outcome of a streaming scan.
+pub(super) struct StreamScan {
+    pub(super) findings: Vec<Finding>,
+    pub(super) total_lines: usize,
+    /// A NUL byte was seen: the input is binary. `findings` is empty.
+    pub(super) binary: bool,
+}
+
+/// Shared streaming core for stdin and file mode. Reads line by line so
+/// memory stays bounded regardless of input size, decodes lossily so one
+/// invalid byte cannot abort the scan, and runs multiline detectors over
+/// sliding windows whose carry keeps boundary-crossing secrets whole.
+///
+/// Multiline matches are deduplicated by start position: a secret entirely
+/// inside the carry would otherwise be reported by both adjacent windows.
+/// Matches longer than OVERLAP_LINES that cross a window boundary are still
+/// missed - inherent to a fixed window.
+fn scan_lines<R: BufRead>(
+    reader: &mut R,
     path: &str,
     multiline_detectors: &[&Detector],
-    line_detectors: &[&Detector],
-) -> Result<(Vec<Finding>, usize), ScannerError> {
-    const CHUNK_SIZE: usize = 1000;
-    const OVERLAP_LINES: usize = 50;
-
-    let context = LineScanContext::new(line_detectors);
+    context: &LineScanContext,
+    binary_detection: bool,
+) -> Result<StreamScan, ScannerError> {
     let mut findings = Vec::new();
+    let mut reported: HashSet<(usize, usize, String)> = HashSet::new();
     let mut total_lines = 0;
     let mut buffer: Vec<String> = Vec::with_capacity(CHUNK_SIZE + OVERLAP_LINES);
-    let mut line_offset = 0;
+    // Lines preceding buffer[0]: scan_multiline_chunk adds its 1-based
+    // in-window line index to this offset.
+    let mut lines_before_window = 0;
     let mut scratch = LineScratch::default();
+    let mut binary = false;
+    let mut raw_line: Vec<u8> = Vec::new();
 
-    for line_result in reader.lines() {
-        let line = line_result.map_err(|source| ScannerError::ReadStream {
-            path: path.to_string(),
-            source,
-        })?;
+    loop {
+        raw_line.clear();
+        let bytes_read =
+            reader
+                .read_until(b'\n', &mut raw_line)
+                .map_err(|source| ScannerError::ReadStream {
+                    path: path.to_string(),
+                    source,
+                })?;
+
+        if bytes_read == 0 {
+            break;
+        }
+        if raw_line.last() == Some(&b'\n') {
+            raw_line.pop();
+        }
+        if raw_line.last() == Some(&b'\r') {
+            raw_line.pop();
+        }
+        if binary_detection && raw_line.contains(&0) {
+            binary = true;
+            break;
+        }
         total_lines += 1;
-
+        let line = String::from_utf8_lossy(&raw_line).into_owned();
         scan_line_detectors(
             &line,
             total_lines,
             path,
-            &context,
+            context,
             &mut scratch,
             &mut findings,
         );
-
         buffer.push(line);
 
         if buffer.len() >= CHUNK_SIZE + OVERLAP_LINES {
             let chunk = buffer.join("\n");
             scan_multiline_chunk(
                 &chunk,
-                line_offset,
+                lines_before_window,
                 path,
                 multiline_detectors,
                 &mut findings,
+                &mut reported,
             );
-            line_offset += buffer.len() - OVERLAP_LINES;
+            lines_before_window += buffer.len() - OVERLAP_LINES;
             buffer.drain(..buffer.len() - OVERLAP_LINES);
         }
     }
 
-    if !buffer.is_empty() {
+    if !binary && !buffer.is_empty() {
         let chunk = buffer.join("\n");
         scan_multiline_chunk(
             &chunk,
-            line_offset,
+            lines_before_window,
             path,
             multiline_detectors,
             &mut findings,
+            &mut reported,
         );
     }
 
-    Ok((findings, total_lines))
+    Ok(StreamScan {
+        findings,
+        total_lines,
+        binary,
+    })
+}
+
+pub(super) fn scan_stream<ReaderType: BufRead>(
+    mut reader: ReaderType,
+    path: &str,
+    multiline_detectors: &[&Detector],
+    line_detectors: &[&Detector],
+) -> Result<(Vec<Finding>, usize), ScannerError> {
+    let context = LineScanContext::new(line_detectors);
+    let scanned = scan_lines(&mut reader, path, multiline_detectors, &context, false)?;
+    Ok((scanned.findings, scanned.total_lines))
+}
+
+/// Streams a filesystem file with binary detection: the first NUL byte
+/// marks the file binary, stops the scan, and discards partial findings -
+/// matching the whole-read behaviour this replaces.
+pub(super) fn scan_file_stream<ReaderType: BufRead>(
+    reader: &mut ReaderType,
+    path: &str,
+    multiline_detectors: &[&Detector],
+    context: &LineScanContext,
+) -> Result<StreamScan, ScannerError> {
+    scan_lines(reader, path, multiline_detectors, context, true)
 }
 
 #[cfg(test)]
@@ -416,6 +504,78 @@ mod tests {
             candidates,
             vec![true, true],
             "both the shorter and longer keyword owners must be selected"
+        );
+    }
+
+    #[test]
+    fn test_scan_stream_multiline_inside_overlap_reports_once() {
+        // A multiline secret sitting entirely inside the 50-line carry
+        // between two windows is scanned by both; it must be reported once.
+        let mut content = String::new();
+        for line in 0..1000 {
+            content.push_str(&format!("filler {line}\n"));
+        }
+        content.push_str("BEGIN KEY\nmaterial\nEND KEY\n"); // lines 1001..1003
+        for line in 0..1100 {
+            content.push_str(&format!("tail {line}\n"));
+        }
+
+        let detector = make_detector("Block", r"(?s)BEGIN KEY.*?END KEY", "Block", "HIGH");
+        let detectors = [detector];
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
+            .iter()
+            .partition(|d| d.regex.as_str().contains("(?s"));
+        let (findings, total_lines) = scan_stream(
+            Cursor::new(content),
+            "<test>",
+            &multiline_detectors,
+            &line_detectors,
+        )
+        .unwrap();
+
+        assert_eq!(total_lines, 2103);
+        assert_eq!(
+            findings
+                .iter()
+                .map(|finding| finding.line_number)
+                .collect::<Vec<_>>(),
+            vec![1001],
+            "overlap windows must not duplicate a multiline match"
+        );
+    }
+
+    #[test]
+    fn test_scan_stream_multiline_crossing_window_boundary_reports_once() {
+        // The secret starts in window 1 but only completes inside window 2's
+        // content: exactly one finding, attributed to the true start line.
+        let mut content = String::new();
+        for line in 0..1048 {
+            content.push_str(&format!("filler {line}\n"));
+        }
+        content.push_str("BEGIN KEY\nmaterial\nEND KEY\n"); // lines 1049..1051
+        for line in 0..1200 {
+            content.push_str(&format!("tail {line}\n"));
+        }
+
+        let detector = make_detector("Block", r"(?s)BEGIN KEY.*?END KEY", "Block", "HIGH");
+        let detectors = [detector];
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
+            .iter()
+            .partition(|d| d.regex.as_str().contains("(?s"));
+        let (findings, _) = scan_stream(
+            Cursor::new(content),
+            "<test>",
+            &multiline_detectors,
+            &line_detectors,
+        )
+        .unwrap();
+
+        assert_eq!(
+            findings
+                .iter()
+                .map(|finding| finding.line_number)
+                .collect::<Vec<_>>(),
+            vec![1049]
         );
     }
 }

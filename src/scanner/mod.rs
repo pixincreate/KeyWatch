@@ -22,7 +22,7 @@ use files::{
     baseline_exclusion, collect_files, compile_exclude_patterns, is_baseline_file,
     is_default_excluded_file, matches_exclude_patterns, path_has_git_dir,
 };
-use lines::{LineScanContext, scan_content, scan_stream};
+use lines::{LineScanContext, scan_file_stream, scan_stream};
 use staged::{StagedScan, scan_git_output, scan_staged_diff, scan_undiffable_blobs};
 pub fn run_scan(
     args: &ScanArgs,
@@ -232,50 +232,93 @@ pub fn run_scan(
     let line_scan_context = LineScanContext::new(&line_detectors);
     let scan_base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-    let results: Vec<(Vec<Finding>, usize, usize, Option<String>)> = unique_paths
+    /// One scanned path's contribution to the report.
+    struct FileOutcome {
+        findings: Vec<Finding>,
+        lines_seen: usize,
+        scanned: bool,
+        excluded: Option<String>,
+        unscannable: Option<String>,
+    }
+
+    impl FileOutcome {
+        fn skipped_but_reported(path: String) -> Self {
+            Self {
+                findings: Vec::new(),
+                lines_seen: 0,
+                scanned: false,
+                excluded: Some(path),
+                unscannable: None,
+            }
+        }
+
+        fn ignored() -> Self {
+            Self {
+                findings: Vec::new(),
+                lines_seen: 0,
+                scanned: false,
+                excluded: None,
+                unscannable: None,
+            }
+        }
+    }
+
+    let results: Vec<FileOutcome> = unique_paths
         .into_par_iter()
         .map(|(path, roots)| {
             if path_has_git_dir(Path::new(&path)) {
-                return (Vec::new(), 0, 0, Some(path));
+                return FileOutcome::skipped_but_reported(path);
             }
 
             if matches_exclude_patterns(&path, &roots, &exclude_patterns)
                 || is_baseline_file(&path, &scan_base_dir, excluded_baseline.as_ref())
                 || is_default_excluded_file(&path)
             {
-                return (Vec::new(), 0, 0, Some(path));
+                return FileOutcome::skipped_but_reported(path);
             }
 
             let metadata = match fs::symlink_metadata(&path) {
                 Ok(metadata) => metadata,
-                Err(_) => return (Vec::new(), 0, 0, None),
+                Err(_) => return FileOutcome::ignored(),
             };
             let file_type = metadata.file_type();
             if file_type.is_symlink() || !file_type.is_file() {
-                return (Vec::new(), 0, 0, None);
+                return FileOutcome::ignored();
             }
 
-            let full_content = match fs::read(&path) {
-                Ok(bytes) => {
-                    if bytes.contains(&0) {
-                        return (Vec::new(), 0, 0, None);
-                    }
-                    match String::from_utf8(bytes) {
-                        Ok(content) => content,
-                        Err(_) => return (Vec::new(), 0, 0, None),
-                    }
-                }
-                Err(_) => return (Vec::new(), 0, 0, None),
+            // Streamed: memory stays bounded for huge files, invalid UTF-8
+            // decodes lossily instead of skipping the file, and a NUL byte
+            // marks the file binary (reported as unscannable).
+            let mut reader = match fs::File::open(&path) {
+                Ok(file) => BufReader::new(file),
+                Err(_) => return FileOutcome::ignored(),
             };
-
-            let (file_findings, file_lines) = scan_content(
-                &full_content,
+            let scanned = match scan_file_stream(
+                &mut reader,
                 &path,
                 &multiline_detectors,
                 &line_scan_context,
-            );
+            ) {
+                Ok(scanned) => scanned,
+                Err(_) => return FileOutcome::ignored(),
+            };
+            if scanned.binary {
+                return FileOutcome {
+                    findings: Vec::new(),
+                    lines_seen: 0,
+                    scanned: false,
+                    excluded: None,
+                    unscannable: Some(path),
+                };
+            }
 
-            (file_findings, 1, file_lines, None)
+            FileOutcome {
+                findings: scanned.findings,
+                lines_seen: scanned.total_lines,
+                scanned: true,
+                excluded: None,
+                unscannable: None,
+            }
         })
         .collect();
 
@@ -283,13 +326,19 @@ pub fn run_scan(
     let mut files_scanned = 0;
     let mut total_lines = 0;
     let mut excluded_files = Vec::new();
+    let mut unscannable_files = Vec::new();
 
-    for (file_findings, file_count, file_lines, excluded) in results {
-        findings.extend(file_findings);
-        files_scanned += file_count;
-        total_lines += file_lines;
-        if let Some(e) = excluded {
+    for outcome in results {
+        findings.extend(outcome.findings);
+        if outcome.scanned {
+            files_scanned += 1;
+            total_lines += outcome.lines_seen;
+        }
+        if let Some(e) = outcome.excluded {
             excluded_files.push(e);
+        }
+        if let Some(u) = outcome.unscannable {
+            unscannable_files.push(u);
         }
     }
 
@@ -299,7 +348,7 @@ pub fn run_scan(
         files_scanned,
         total_lines,
         excluded_files,
-        unscannable_files: Vec::new(),
+        unscannable_files,
         suppressed_by_baseline: 0,
     };
 

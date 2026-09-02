@@ -9,6 +9,7 @@ use crate::scanner::lines::{
     LineScanContext, LineScratch, scan_content, scan_line_detectors, scan_multiline_chunk,
 };
 use glob::Pattern;
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
@@ -128,12 +129,14 @@ fn flush_staged_hunk(
     }
     if let Some(path) = path {
         let chunk = hunk_added.join("\n");
+        let mut reported = HashSet::new();
         scan_multiline_chunk(
             &chunk,
             hunk_start.saturating_sub(1),
             path,
             multiline_detectors,
             findings,
+            &mut reported,
         );
     }
     hunk_added.clear();
