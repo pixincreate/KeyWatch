@@ -257,6 +257,12 @@ fn test_generic_key_value_ignores_unquoted_identifier_assignments() {
         "        let payment_method_token = card_token.clone();",
         "let secret = client_secret;",
         "token = payment_method_token",
+        // Rust type paths in field declarations are not credentials either:
+        // `token: PaymentTokenData,` reads identically to `token: <10 random
+        // chars>` to the pattern above, but a bare CamelCase value is a type.
+        "token: PaymentTokenData,",
+        "secret: ConfigValue,",
+        "auth: NmiAuthType,",
     ] {
         assert!(
             !is_reported(code),
@@ -264,13 +270,14 @@ fn test_generic_key_value_ignores_unquoted_identifier_assignments() {
         );
     }
 
-    // Quoted literals, and unquoted values carrying digits or capitals, must
-    // still be reported.
+    // Quoted literals, and unquoted values carrying digits, must still be
+    // reported. A value with digits or symbols cannot be a type path.
     for secret in [
         "api_key = \"sk_live_51abcdefghij\"",
         "API_KEY=abc123def456789",
         "password = \"hunter2hunter2\"",
         "token = api_key_2024",
+        "token = Abc123def456",
     ] {
         assert!(is_reported(secret), "should flag credential: {secret}");
     }
