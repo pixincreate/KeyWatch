@@ -3,10 +3,9 @@ use crate::detector::DetectorError;
 use crate::report::Severity;
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::error::Error as StdError;
-use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 
 #[cfg(test)]
 mod tests;
@@ -25,62 +24,19 @@ pub struct KeywatchConfig {
     pub exclude: Option<Vec<String>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ConfigError {
-    CurrentDirectory {
-        source: std::io::Error,
-    },
-    NotFound {
-        path: String,
-    },
-    Read {
-        path: String,
-        source: std::io::Error,
-    },
-    Invalid {
-        source: toml::de::Error,
-    },
-    CustomRule {
-        name: String,
-        source: DetectorError,
-    },
-}
-
-impl fmt::Display for ConfigError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ConfigError::CurrentDirectory { source } => {
-                write!(
-                    formatter,
-                    "Failed to determine current directory: {}",
-                    source
-                )
-            }
-            ConfigError::NotFound { path } => {
-                write!(formatter, "Config file not found: '{}'", path)
-            }
-            ConfigError::Read { path, source } => {
-                write!(formatter, "Failed to read config '{}': {}", path, source)
-            }
-            ConfigError::Invalid { source } => write!(formatter, "Invalid config: {}", source),
-            ConfigError::CustomRule { name, source } => {
-                write!(formatter, "custom rule '{}': {}", name, source)
-            }
-        }
-    }
-}
-
-impl StdError for ConfigError {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        match self {
-            ConfigError::CurrentDirectory { source } => Some(source),
-            ConfigError::NotFound { .. } => None,
-            ConfigError::Read { source, .. } => Some(source),
-            ConfigError::Invalid { source } => Some(source),
-            ConfigError::CustomRule { source, .. } => Some(source),
-        }
-    }
+    #[error("Failed to determine current directory: {source}")]
+    CurrentDirectory { source: std::io::Error },
+    #[error("Config file not found: '{path}'")]
+    NotFound { path: String },
+    #[error("Failed to read config '{path}': {source}")]
+    Read { path: String, source: std::io::Error },
+    #[error("Invalid config: {source}")]
+    Invalid { source: toml::de::Error },
+    #[error("custom rule '{name}': {source}")]
+    CustomRule { name: String, source: DetectorError },
 }
 
 impl KeywatchConfig {

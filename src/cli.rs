@@ -1,50 +1,26 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use std::error::Error;
-use std::fmt::{Display, Formatter};
+use thiserror::Error;
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Error, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CliValidationError {
+    #[error("Cannot specify both --git-history and --stdin")]
     GitHistoryWithStdin,
+    #[error("Cannot specify more than one path with --git-history")]
     GitHistoryWithMultiplePaths,
+    #[error("Cannot specify both --staged and --stdin")]
     StagedWithStdin,
+    #[error("Cannot specify both --staged and --git-history")]
     StagedWithGitHistory,
+    #[error("Cannot specify both --stdin and paths")]
     StdinWithPaths,
+    #[error("Must specify paths, use --stdin, --staged, or --git-history")]
     MissingScanInput,
+    #[error("--allowed-repos and --blocked-repos are only supported for pre-push hooks")]
     PreCommitRepositoryFilters,
+    #[error("--exclude is only supported for pre-commit hooks")]
     PrePushExclude,
 }
-
-impl Display for CliValidationError {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::GitHistoryWithStdin => {
-                formatter.write_str("Cannot specify both --git-history and --stdin")
-            }
-            Self::GitHistoryWithMultiplePaths => {
-                formatter.write_str("Cannot specify more than one path with --git-history")
-            }
-            Self::StagedWithStdin => {
-                formatter.write_str("Cannot specify both --staged and --stdin")
-            }
-            Self::StagedWithGitHistory => {
-                formatter.write_str("Cannot specify both --staged and --git-history")
-            }
-            Self::StdinWithPaths => formatter.write_str("Cannot specify both --stdin and paths"),
-            Self::MissingScanInput => {
-                formatter.write_str("Must specify paths, use --stdin, --staged, or --git-history")
-            }
-            Self::PreCommitRepositoryFilters => formatter.write_str(
-                "--allowed-repos and --blocked-repos are only supported for pre-push hooks",
-            ),
-            Self::PrePushExclude => {
-                formatter.write_str("--exclude is only supported for pre-commit hooks")
-            }
-        }
-    }
-}
-
-impl Error for CliValidationError {}
 
 /// KeyWatch: A secret scanner for your files and directories.
 #[derive(Parser, Debug)]

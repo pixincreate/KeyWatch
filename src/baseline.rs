@@ -2,10 +2,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
-    error::Error,
-    fmt, fs, io,
+    fs, io,
     path::{Path, PathBuf},
 };
+use thiserror::Error;
 
 use crate::report::Finding;
 
@@ -102,87 +102,34 @@ pub struct Baseline {
     pub entries: Vec<BaselineEntry>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum BaselineError {
+    #[error("Failed to read baseline '{}': {source}", path.display())]
     Read {
         path: PathBuf,
         source: io::Error,
     },
+    #[error("Failed to parse baseline '{}': {source}", path.display())]
     Parse {
         path: PathBuf,
         source: serde_json::Error,
     },
+    #[error(
+        "Baseline '{path}' has unsupported format version '{found}' (expected '{expected}'): it may have been written by an incompatible release"
+    )]
     UnsupportedVersion {
         path: PathBuf,
         found: String,
         expected: String,
     },
-    Serialize {
-        source: serde_json::Error,
-    },
+    #[error("Failed to serialize baseline: {source}")]
+    Serialize { source: serde_json::Error },
+    #[error("Failed to write baseline '{}': {source}", path.display())]
     Write {
         path: PathBuf,
         source: io::Error,
     },
-}
-
-impl fmt::Display for BaselineError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Read { path, source } => {
-                write!(
-                    formatter,
-                    "Failed to read baseline '{}': {}",
-                    path.display(),
-                    source
-                )
-            }
-            Self::Parse { path, source } => {
-                write!(
-                    formatter,
-                    "Failed to parse baseline '{}': {}",
-                    path.display(),
-                    source
-                )
-            }
-            Self::UnsupportedVersion {
-                path,
-                found,
-                expected,
-            } => write!(
-                formatter,
-                "Baseline '{}' has unsupported format version '{}' (expected '{}'): \
-                 it may have been written by an incompatible release",
-                path.display(),
-                found,
-                expected
-            ),
-            Self::Serialize { source } => {
-                write!(formatter, "Failed to serialize baseline: {}", source)
-            }
-            Self::Write { path, source } => {
-                write!(
-                    formatter,
-                    "Failed to write baseline '{}': {}",
-                    path.display(),
-                    source
-                )
-            }
-        }
-    }
-}
-
-impl Error for BaselineError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Read { source, .. } => Some(source),
-            Self::Parse { source, .. } => Some(source),
-            Self::UnsupportedVersion { .. } => None,
-            Self::Serialize { source } => Some(source),
-            Self::Write { source, .. } => Some(source),
-        }
-    }
 }
 
 impl Baseline {
