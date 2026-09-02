@@ -645,7 +645,13 @@ fn is_baseline_file(path: &str, baseline: Option<&PathBuf>) -> bool {
     let Some(baseline) = baseline else {
         return false;
     };
-    fs::canonicalize(path).is_ok_and(|candidate| candidate == *baseline)
+    // Compare file names before paying for a realpath(2) on every scanned
+    // file: only a handful can possibly be the baseline.
+    let candidate = Path::new(path);
+    if candidate.file_name() != baseline.file_name() {
+        return false;
+    }
+    fs::canonicalize(candidate).is_ok_and(|candidate| candidate == *baseline)
 }
 
 fn parse_hunk_new_start(header: &str) -> usize {

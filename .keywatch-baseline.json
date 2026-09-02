@@ -1610,6 +1610,13 @@
       "finding_type": "Private Key Content",
       "matched_content_hash": "43531827dd6142886cfeb10207f046021a4eb6c575828583ad2cb20d9430c72f",
       "plugin_name": "PrivateKeyDetector"
+    },
+    {
+      "file_path": "./tests/scanner_tests.rs",
+      "line_number": 2047,
+      "finding_type": "AWS Access Key",
+      "matched_content_hash": "357b7fb7890985d4c94a43012d1f7aefe25757f36d8810388357993bb38bd8e7",
+      "plugin_name": "AWSKeyDetector"
     }
   ]
 }

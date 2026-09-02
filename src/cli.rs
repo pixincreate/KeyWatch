@@ -132,6 +132,10 @@ pub struct ScanArgs {
     #[arg(long)]
     pub update_baseline: bool,
 
+    /// Rewrite the baseline from the current findings, dropping stale entries
+    #[arg(long, default_value_t = false)]
+    pub prune_baseline: bool,
+
     /// Path to .keywatch.toml config file
     #[arg(long)]
     pub config: Option<String>,
@@ -265,17 +269,6 @@ pub enum Shell {
     Posix,
 }
 
-impl Shell {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Bash => "bash",
-            Self::Zsh => "zsh",
-            Self::Fish => "fish",
-            Self::Posix => "posix",
-        }
-    }
-}
-
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
 pub enum ExitMode {
     Always,
@@ -287,23 +280,4 @@ pub enum ExitMode {
 pub enum OutputFormat {
     Json,
     Sarif,
-}
-
-impl OutputFormat {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Json => "json",
-            Self::Sarif => "sarif",
-        }
-    }
-}
-
-impl ExitMode {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Always => "always",
-            Self::Critical => "critical",
-            Self::Strict => "strict",
-        }
-    }
 }

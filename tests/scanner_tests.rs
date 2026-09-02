@@ -119,6 +119,7 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -155,6 +156,7 @@ Stripe: sk_test_51ABCDEF12345678901234567890\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -192,6 +194,7 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -230,6 +233,7 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -262,6 +266,7 @@ fn test_multiple_detections_in_line() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -306,6 +311,7 @@ fn test_directory_scan_with_exclusions() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -349,6 +355,7 @@ fn test_exclude_pattern_filtering() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -382,6 +389,7 @@ fn test_invalid_cli_exclude_pattern_returns_typed_error() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -433,6 +441,7 @@ fn test_dot_github_directory_is_scanned() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -464,6 +473,7 @@ fn test_scan_no_secrets() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -496,6 +506,7 @@ fn test_non_utf8_file_handling() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -532,6 +543,7 @@ fn test_multiple_files_scan() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -569,6 +581,7 @@ fn test_duplicate_paths_are_scanned_once() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -620,6 +633,7 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -663,6 +677,7 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -713,6 +728,7 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -761,6 +777,7 @@ fn test_recursive_symlink_path_is_skipped() -> Result<(), String> {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -802,6 +819,7 @@ fn test_detect_aadhaar() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -841,6 +859,7 @@ fn test_detect_voter_id() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -877,6 +896,7 @@ fn test_detect_pan_card() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -913,6 +933,7 @@ fn test_detect_abha() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -950,6 +971,7 @@ fn test_multiple_indian_ids() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -1012,6 +1034,7 @@ fn test_overlapping_scan_roots_with_exclusions() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -1059,6 +1082,7 @@ AWS Key: AKIAABCDEFGHIJKLMNOP # keywatch:ignore\npassword = 'mySecretPassword'\n
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -1109,6 +1133,7 @@ fn test_stdin_args_validation() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -1172,6 +1197,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -1189,6 +1215,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -1209,6 +1236,7 @@ fn test_git_history_args_validation_allows_zero_or_one_path() {
         exit_mode: ExitMode::Strict,
         baseline: None,
         update_baseline: false,
+        prune_baseline: false,
         no_baseline_discovery: true,
         config: None,
         no_config_discovery: false,
@@ -1995,5 +2023,68 @@ fn test_staged_scan_survives_diff_relative_from_subdirectory() -> Result<(), Str
     );
 
     let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_prune_baseline_drops_stale_entries() -> Result<(), String> {
+    if !git_available() {
+        return Ok(());
+    }
+
+    // --update-baseline only ever appends, so entries for deleted files and
+    // rotated credentials kept suppressing forever.
+    let dir = unique_temp_dir("prune_baseline");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("a.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+    )
+    .map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("b.txt"),
+        "aws_access_key_id = AKIAJJJJJJJJJJJJJJJJ\n",
+    )
+    .map_err(|e| e.to_string())?;
+
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .args(["scan", ".", "--baseline", "bl.json"])
+            .args(extra)
+            .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+            .current_dir(&dir)
+            .output()
+            .expect("run key-watch")
+    };
+    let entries = || -> usize {
+        let text = fs::read_to_string(dir.join("bl.json")).expect("read baseline");
+        text.matches("\"file_path\"").count()
+    };
+
+    assert!(run(&["--update-baseline"]).status.success());
+    let with_both = entries();
+    assert!(with_both >= 2, "expected entries for both files");
+
+    fs::remove_file(dir.join("b.txt")).map_err(|e| e.to_string())?;
+
+    assert!(run(&["--update-baseline"]).status.success());
+    assert_eq!(
+        entries(),
+        with_both,
+        "a plain update must not drop the stale entry"
+    );
+
+    assert!(
+        run(&["--update-baseline", "--prune-baseline"])
+            .status
+            .success()
+    );
+    assert!(
+        entries() < with_both,
+        "--prune-baseline must drop entries the scan no longer finds"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
     Ok(())
 }

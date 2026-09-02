@@ -35,10 +35,7 @@ pub fn run_cli() -> Result<(), RunCliError> {
                 hooks::uninstall_hook(&uninstall_args).map_err(Into::into)
             }
         },
-        Command::Init { shell } => {
-            print_shell_init(&shell);
-            Ok(())
-        }
+        Command::Init { shell } => print_shell_init(&shell),
         Command::VerifyIntegrity => verify_binary_integrity(),
     }
 }
@@ -50,13 +47,7 @@ pub fn run_cli() -> Result<(), RunCliError> {
 /// reader to stop listening, so it is reported as success; anything else is a
 /// real I/O failure and is propagated.
 fn emit(line: &str) -> Result<(), RunCliError> {
-    use std::io::Write;
-
-    let mut stdout = std::io::stdout().lock();
-    match writeln!(stdout, "{line}") {
-        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
-        other => other.map_err(|source| RunCliError::WriteOutput { source }),
-    }
+    utils::emit_line(line).map_err(|source| RunCliError::WriteOutput { source })
 }
 
 fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
@@ -84,8 +75,14 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     let (mut findings, scan_metadata) = scanner::run_scan(args, config.as_ref())?;
 
     let mut scan_metadata = scan_metadata;
-    if let Some(ref baseline_path) = args.baseline {
-        let baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
+    // Pruning rewrites the baseline from what the scan actually found, so the
+    // existing entries must not filter those findings away first.
+    let prune = args.prune_baseline && args.update_baseline;
+    let mut loaded_baseline = match args.baseline.as_deref() {
+        Some(path) => Some(baseline::Baseline::load(std::path::Path::new(path))?),
+        None => None,
+    };
+    if let Some(baseline) = &loaded_baseline.as_ref().filter(|_| !prune) {
         let before = findings.len();
         findings = baseline.filter_findings(findings);
         scan_metadata.suppressed_by_baseline = before - findings.len();
@@ -96,8 +93,14 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
             .baseline
             .as_ref()
             .ok_or(RunCliError::MissingBaselineForUpdate)?;
-        let mut baseline = baseline::Baseline::load(std::path::Path::new(baseline_path))?;
-        baseline.update_with_findings(&findings);
+        let baseline = loaded_baseline
+            .as_mut()
+            .ok_or(RunCliError::MissingBaselineForUpdate)?;
+        if prune {
+            *baseline = baseline::Baseline::from_findings(&findings);
+        } else {
+            baseline.update_with_findings(&findings);
+        }
         baseline.save(std::path::Path::new(baseline_path))?;
         emit(&format!("Baseline updated: {baseline_path}"))?;
         return Ok(());
@@ -152,7 +155,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
     std::process::exit(exit_code);
 }
 
-fn print_shell_init(shell: &Shell) {
+fn print_shell_init(shell: &Shell) -> Result<(), RunCliError> {
     let script = match shell {
         Shell::Fish => "alias keywatch 'key-watch'\nalias kw 'key-watch'\n",
         Shell::Bash | Shell::Zsh | Shell::Posix => {
@@ -160,7 +163,7 @@ fn print_shell_init(shell: &Shell) {
         }
     };
 
-    print!("{script}");
+    emit(script.trim_end())
 }
 
 fn verify_binary_integrity() -> Result<(), RunCliError> {
