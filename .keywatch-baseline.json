@@ -924,6 +924,20 @@
       "finding_type": "AWS Access Key",
       "matched_content_hash": "0cbae582394e61dc81d9946ed87ec44f4c83cf1167181f62cd1454eb5e2e5469",
       "plugin_name": "AWSKeyDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 305,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "52d19e14a2590e721948f58bf1e9dacf8a07049ee1b3238f193a8f15c0f997bf",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 305,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "b542aa1c9d50b5b2f457050ecab5fa170d57ae38ebaeb3ef7d4cfcf97b9d4389",
+      "plugin_name": "CreditCardDetector"
     }
   ]
 }
