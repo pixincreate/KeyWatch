@@ -1,10 +1,10 @@
-use crate::detector::Detector;
-use crate::detector::DetectorError;
+use crate::detector::{ContentValidator, Detector, DetectorError};
 use crate::report::Severity;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 use thiserror::Error;
 
 #[cfg(test)]
@@ -32,7 +32,10 @@ pub enum ConfigError {
     #[error("Config file not found: '{path}'")]
     NotFound { path: String },
     #[error("Failed to read config '{path}': {source}")]
-    Read { path: String, source: std::io::Error },
+    Read {
+        path: String,
+        source: std::io::Error,
+    },
     #[error("Invalid config: {source}")]
     Invalid { source: toml::de::Error },
     #[error("custom rule '{name}': {source}")]
@@ -49,15 +52,28 @@ impl KeywatchConfig {
         let mut staged_detectors: Vec<Detector> = Vec::new();
         if let Some(rules) = &self.rules {
             for rule in rules {
+                let validator = rule
+                    .validate
+                    .as_deref()
+                    .map(ContentValidator::from_str)
+                    .transpose()
+                    .map_err(|source| ConfigError::CustomRule {
+                        name: rule.name.clone(),
+                        source: DetectorError::InvalidValidator {
+                            detector: rule.name.clone(),
+                            source,
+                        },
+                    })?;
                 let detector = Detector::new(
                     &rule.name,
                     &rule.pattern,
                     &rule.finding_type,
                     rule.severity.as_str(),
-                    &[],
-                    &[],
-                    None,
+                    rule.allowlist.as_deref().unwrap_or_default(),
+                    rule.keywords.as_deref().unwrap_or_default(),
+                    rule.entropy,
                 )
+                .map(|detector| detector.with_validator(validator))
                 .map_err(|source| ConfigError::CustomRule {
                     name: rule.name.clone(),
                     source,
@@ -148,6 +164,16 @@ pub struct CustomRule {
     pub finding_type: String,
     #[serde(default = "default_severity")]
     pub severity: Severity,
+    /// Regexes a match must NOT satisfy to be reported — same semantics as
+    /// the built-in detectors' allowlists.
+    pub allowlist: Option<Vec<String>>,
+    /// Lines without one of these (case-insensitive) never run the rule's
+    /// regex.
+    pub keywords: Option<Vec<String>>,
+    /// Minimum Shannon entropy a match must reach to be reported.
+    pub entropy: Option<f64>,
+    /// Extra structural check applied to each match, e.g. `validate = "luhn"`.
+    pub validate: Option<String>,
     #[allow(dead_code)]
     pub description: Option<String>,
 }

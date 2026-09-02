@@ -366,8 +366,8 @@ pub(super) fn scan_undiffable_blobs(
 
 #[cfg(test)]
 mod tests {
-    use crate::scanner::test_support::make_test_detector as make_detector;
     use super::*;
+    use crate::scanner::test_support::make_test_detector as make_detector;
     use std::io::Cursor;
 
     #[test]

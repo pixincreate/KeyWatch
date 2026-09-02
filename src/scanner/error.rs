@@ -1,7 +1,7 @@
 use crate::config::ConfigError;
 use crate::detector::DetectorInitError;
-use thiserror::Error;
 use std::io;
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 #[non_exhaustive]
@@ -11,10 +11,7 @@ pub enum ScannerError {
     #[error("{source}")]
     Config { source: ConfigError },
     #[error("Read error on {path}: {source}")]
-    ReadStream {
-        path: String,
-        source: io::Error,
-    },
+    ReadStream { path: String, source: io::Error },
     #[error("Failed to run git log: {source}")]
     RunGitLog { source: io::Error },
     #[error("Failed to run git diff: {source}")]

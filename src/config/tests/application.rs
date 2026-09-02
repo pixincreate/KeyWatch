@@ -240,3 +240,62 @@ fn test_empty_config_is_default() {
     assert!(config.overrides.is_none());
     assert!(config.exclude.is_none());
 }
+
+#[test]
+fn test_custom_rule_supports_allowlist_keywords_entropy_and_validator() {
+    let toml = r#"
+[[rules]]
+name = "GiftCardCode"
+pattern = '\b[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}\b'
+finding_type = "Gift Card"
+severity = "LOW"
+keywords = ["giftcard", "gift-card"]
+allowlist = ["ABCD-EFGH-JKLM"]
+entropy = 0.0
+
+[[rules]]
+name = "Luhnish"
+pattern = '\b[0-9]{13,16}\b'
+finding_type = "Cardish"
+severity = "HIGH"
+validate = "luhn"
+"#;
+    let config: KeywatchConfig = toml::from_str(toml).expect("parse config");
+    let mut detectors = Vec::new();
+    config.apply_to(&mut detectors).expect("apply config");
+
+    let gift = detectors
+        .iter()
+        .find(|d| d.name == "GiftCardCode")
+        .expect("GiftCardCode should exist");
+    // Keyword prefilter gates the regex; the allowlist suppresses the
+    // documented test code.
+    assert!(!gift.has_keywords("nothing to see here"));
+    assert!(gift.has_keywords("giftcard = ABCD-EFGH-NOPQ"));
+    let reported = |line: &str, det: &crate::detector::Detector| {
+        det.regex
+            .find_iter(line)
+            .any(|m| det.accepts_match(m.as_str()))
+    };
+    assert!(
+        !reported("giftcard = ABCD-EFGH-JKLM", gift),
+        "allowlisted code must not be reported"
+    );
+    assert!(
+        reported("giftcard = ABCD-EFGH-NOPQ", gift),
+        "non-allowlisted code must be reported"
+    );
+
+    let luhn = detectors
+        .iter()
+        .find(|d| d.name == "Luhnish")
+        .expect("Luhnish should exist");
+    assert!(
+        !reported("card = 4111111111111112", luhn),
+        "Luhn-invalid match must be rejected"
+    );
+    assert!(
+        reported("card = 4111111111111111", luhn),
+        "Luhn-valid match must be reported"
+    );
+}

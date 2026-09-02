@@ -106,10 +106,7 @@ pub struct Baseline {
 #[non_exhaustive]
 pub enum BaselineError {
     #[error("Failed to read baseline '{}': {source}", path.display())]
-    Read {
-        path: PathBuf,
-        source: io::Error,
-    },
+    Read { path: PathBuf, source: io::Error },
     #[error("Failed to parse baseline '{}': {source}", path.display())]
     Parse {
         path: PathBuf,
@@ -126,10 +123,7 @@ pub enum BaselineError {
     #[error("Failed to serialize baseline: {source}")]
     Serialize { source: serde_json::Error },
     #[error("Failed to write baseline '{}': {source}", path.display())]
-    Write {
-        path: PathBuf,
-        source: io::Error,
-    },
+    Write { path: PathBuf, source: io::Error },
 }
 
 impl Baseline {

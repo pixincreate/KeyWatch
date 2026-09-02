@@ -44,10 +44,7 @@ pub enum HookError {
         "git config --global core.hooksPath {} failed: {stderr}",
         hooks_dir.display()
     )]
-    ConfigureGlobalHooksPathWithGit {
-        hooks_dir: PathBuf,
-        stderr: String,
-    },
+    ConfigureGlobalHooksPathWithGit { hooks_dir: PathBuf, stderr: String },
     #[error("Failed to inspect existing hook '{}': {source}", path.display())]
     InspectExistingHook {
         path: PathBuf,
