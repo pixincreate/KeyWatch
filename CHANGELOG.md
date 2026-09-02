@@ -50,6 +50,7 @@ All notable changes to this project will be documented in this file.
 - The baseline file is no longer scanned as input to itself, including staged scans run from a subdirectory
 - `GenericKeyValueDetector` and `RandomString` no longer flag code identifiers (`let payment_method_token = card_token`, snake_case serde attributes)
 - `PasswordDetector` no longer flags `$PWD:`
+- `GenericKeyValueDetector` no longer flags bare CamelCase type paths (`token: PaymentTokenData,`)
 - Piping output to a closed reader no longer panics, including `hook install` and `init`; hook commands now report real output failures instead of discarding them
 
 ### Performance

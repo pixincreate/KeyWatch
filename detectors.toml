@@ -108,7 +108,12 @@ entropy = 2.5
 # `token = <10 random chars>` to the pattern above. Requiring no quotes, no
 # digits and no capitals keeps real values flagged — quoted literals end in a
 # quote, and generated secrets carry digits or mixed case.
-allowlist = ["[:=]\\s*[a-z]+(?:_[a-z]+)+$"]
+# A bare CamelCase value (no digits, no symbols) is a Rust type path in a
+# field declaration (`token: PaymentTokenData,`), not a credential either.
+allowlist = [
+  "[:=]\\s*[a-z]+(?:_[a-z]+)+$",
+  "[:=]\\s*[A-Z][a-z]+(?:[A-Z][a-z]*)*$",
+]
 
 [[detectors]]
 name = "CertificateDetector"
