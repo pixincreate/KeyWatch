@@ -315,7 +315,7 @@ fn find_detectors_config(
         .filter(|path| path.exists())
         // KEYWATCH_CONFIG_PATH is an operator channel. A repository can reach
         // it through .envrc/direnv or a devcontainer, so in trusted mode a
-        // value pointing back into the tree being scanned — at or below any
+        // a value pointing back into the tree being scanned — at or below any
         // untrusted root — is ignored.
         .filter(|path| {
             include_repository_config

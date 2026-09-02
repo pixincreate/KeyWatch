@@ -17,6 +17,7 @@ pub enum RunCliError {
     Baseline { source: BaselineError },
     Hooks { source: HookError },
     MissingBaselineForUpdate,
+    BaselineNotFound { path: String },
     ReportSerialize { source: serde_json::Error },
     ReportWrite { path: String, source: io::Error },
     WriteOutput { source: io::Error },
@@ -32,9 +33,14 @@ impl Display for RunCliError {
             Self::Scanner { source } => write!(formatter, "{source}"),
             Self::Baseline { source } => write!(formatter, "{source}"),
             Self::Hooks { source } => write!(formatter, "{source}"),
-            Self::MissingBaselineForUpdate => {
-                formatter.write_str("--update-baseline requires --baseline <path>")
-            }
+            Self::MissingBaselineForUpdate => formatter.write_str(
+                "--update-baseline could not resolve a baseline file: pass --baseline <path>, \
+                 or run where .keywatch-baseline.json can be discovered or created",
+            ),
+            Self::BaselineNotFound { path } => write!(
+                formatter,
+                "Baseline file not found: '{path}' (pass --update-baseline to create it)"
+            ),
             Self::ReportSerialize { source } => {
                 write!(formatter, "Failed to serialize report: {source}")
             }
@@ -62,7 +68,7 @@ impl StdError for RunCliError {
             Self::Scanner { source } => Some(source),
             Self::Baseline { source } => Some(source),
             Self::Hooks { source } => Some(source),
-            Self::MissingBaselineForUpdate => None,
+            Self::MissingBaselineForUpdate | Self::BaselineNotFound { .. } => None,
             Self::ReportSerialize { source } => Some(source),
             Self::ReportWrite { source, .. } | Self::WriteOutput { source } => Some(source),
             Self::ExecutablePath { source } => Some(source),

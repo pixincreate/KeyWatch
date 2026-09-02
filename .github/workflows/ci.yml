@@ -144,7 +144,8 @@ jobs:
         with:
           save-if: ${{ github.event_name == 'push' }}
 
-      # Run only zparse package tests, exclude fuzz package completely
+      # Full suite across all targets and features; fmt and clippy run
+      # in their own jobs.
       - name: Run tests
         run: cargo test --all-features --all-targets
 

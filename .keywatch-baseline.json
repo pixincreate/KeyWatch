@@ -276,70 +276,70 @@
     },
     {
       "file_path": "./src/baseline.rs",
-      "line_number": 279,
+      "line_number": 318,
       "finding_type": "Random String",
       "matched_content_hash": "c40c9141cd77d55f1ba9d21fb045f8e7c5e900c16f2e563779e7ed75cee6b15b",
       "plugin_name": "RandomString"
     },
     {
       "file_path": "./src/baseline.rs",
-      "line_number": 309,
+      "line_number": 348,
       "finding_type": "AWS Access Key",
       "matched_content_hash": "bc377e3c9554437ff10fd844193b505dced77a6af5a662e74232e814d284a1a2",
       "plugin_name": "AWSKeyDetector"
     },
     {
       "file_path": "./src/scanner.rs",
-      "line_number": 1123,
+      "line_number": 1126,
       "finding_type": "AWS Access Key",
       "matched_content_hash": "3f733150de7916d4778298d7f90493889c38b76876b80c058e439851ce60cb2b",
       "plugin_name": "AWSKeyDetector"
     },
     {
       "file_path": "./src/scanner.rs",
-      "line_number": 1123,
+      "line_number": 1126,
       "finding_type": "Password",
       "matched_content_hash": "f6bd37622d846ac435a7b7dcbde2347d59494dfd3c3a787604e8b91491a39c95",
       "plugin_name": "PasswordDetector"
     },
     {
       "file_path": "./src/scanner.rs",
-      "line_number": 1123,
+      "line_number": 1126,
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "f6bd37622d846ac435a7b7dcbde2347d59494dfd3c3a787604e8b91491a39c95",
       "plugin_name": "GenericKeyValueDetector"
     },
     {
       "file_path": "./src/scanner.rs",
-      "line_number": 1179,
+      "line_number": 1182,
       "finding_type": "Private Key Content",
       "matched_content_hash": "f91082d1cbd2032b5ea19f2bbf6b3f88e02c12ae320fc9e08e6dc0f73d82bdd1",
       "plugin_name": "PrivateKeyDetector"
     },
     {
       "file_path": "./src/scanner.rs",
-      "line_number": 1179,
+      "line_number": 1182,
       "finding_type": "Private Key Content",
       "matched_content_hash": "f91082d1cbd2032b5ea19f2bbf6b3f88e02c12ae320fc9e08e6dc0f73d82bdd1",
       "plugin_name": "PrivateKeyContentDetector"
     },
     {
       "file_path": "./src/scanner.rs",
-      "line_number": 1179,
+      "line_number": 1182,
       "finding_type": "SSH Private Key",
       "matched_content_hash": "678a65e8968aabff441076ae306e13d4fc85b1d36d8036a10d2100c1dc40d251",
       "plugin_name": "SSHPrivateKeyDetector"
     },
     {
       "file_path": "./src/scanner.rs",
-      "line_number": 1179,
+      "line_number": 1182,
       "finding_type": "Base64 Encoded String",
       "matched_content_hash": "3dde06bf268892d4210f4b0bf1402ecc6a8ad1e015f8204cdc31667762572ef5",
       "plugin_name": "Base64Detector"
     },
     {
       "file_path": "./src/scanner.rs",
-      "line_number": 1202,
+      "line_number": 1205,
       "finding_type": "Password",
       "matched_content_hash": "f260ab98a91b6cf1495f7d0048606e54f4ea955195e06f0523068b49a9611b44",
       "plugin_name": "PasswordDetector"
