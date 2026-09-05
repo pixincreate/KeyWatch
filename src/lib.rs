@@ -264,7 +264,7 @@ mod tests {
             finding_type: "Critical".to_string(),
             severity: Severity::Critical,
             matched_content: "secret".to_string(),
-            plugin_name: "DetectorCritical".to_string(),
+            detector_name: "DetectorCritical".to_string(),
         };
         let high = Finding {
             file_path: "high.txt".to_string(),
@@ -272,7 +272,7 @@ mod tests {
             finding_type: "High".to_string(),
             severity: Severity::High,
             matched_content: "secret".to_string(),
-            plugin_name: "DetectorHigh".to_string(),
+            detector_name: "DetectorHigh".to_string(),
         };
         let low = Finding {
             file_path: "low.txt".to_string(),
@@ -280,7 +280,7 @@ mod tests {
             finding_type: "Low".to_string(),
             severity: Severity::Low,
             matched_content: "token".to_string(),
-            plugin_name: "DetectorLow".to_string(),
+            detector_name: "DetectorLow".to_string(),
         };
 
         assert_eq!(calculate_exit_code(&[], &ExitMode::Strict), 0);

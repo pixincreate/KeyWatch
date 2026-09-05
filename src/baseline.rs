@@ -71,7 +71,7 @@ impl BaselineFingerprint {
             file_path: normalize_fingerprint_path(&finding.file_path),
             finding_type: finding.finding_type.clone(),
             matched_content_hash: hash_content(&finding.matched_content),
-            plugin_name: finding.plugin_name.clone(),
+            plugin_name: finding.detector_name.clone(),
         }
     }
 }
@@ -93,6 +93,10 @@ pub struct BaselineEntry {
     pub line_number: usize,
     pub finding_type: String,
     pub matched_content_hash: String,
+    /// The detector that produced the finding, under the historical
+    /// `plugin_name` key: this is the versioned on-disk format, so the wire
+    /// name stays even though the domain says detector.
+    #[serde(rename = "plugin_name", alias = "detector_name")]
     pub plugin_name: String,
 }
 
@@ -188,7 +192,7 @@ impl Baseline {
             line_number: finding.line_number,
             finding_type: finding.finding_type.clone(),
             matched_content_hash: hash_content(&finding.matched_content),
-            plugin_name: finding.plugin_name.clone(),
+            plugin_name: finding.detector_name.clone(),
         }
     }
 
@@ -291,7 +295,7 @@ mod tests {
             finding_type: "AWS".to_string(),
             severity: crate::report::Severity::High,
             matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            plugin_name: "AWSKeyDetector".to_string(),
+            detector_name: "AWSKeyDetector".to_string(),
         };
         let baseline = Baseline::from_findings(&[recorded]);
 
@@ -301,7 +305,7 @@ mod tests {
             finding_type: "AWS".to_string(),
             severity: crate::report::Severity::High,
             matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            plugin_name: "AWSKeyDetector".to_string(),
+            detector_name: "AWSKeyDetector".to_string(),
         };
 
         assert!(
@@ -318,7 +322,7 @@ mod tests {
             finding_type: "AWS".to_string(),
             severity: crate::report::Severity::High,
             matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            plugin_name: "AWSKeyDetector".to_string(),
+            detector_name: "AWSKeyDetector".to_string(),
         }]);
 
         // The secret moved down after an edit; the update must move the
@@ -329,7 +333,7 @@ mod tests {
             finding_type: "AWS".to_string(),
             severity: crate::report::Severity::High,
             matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            plugin_name: "AWSKeyDetector".to_string(),
+            detector_name: "AWSKeyDetector".to_string(),
         }]);
 
         assert_eq!(baseline.entries.len(), 1, "no duplicate entry");

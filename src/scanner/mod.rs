@@ -23,7 +23,7 @@ use files::{
     is_default_excluded_file, matches_exclude_patterns, path_has_git_dir,
 };
 use lines::{LineScanContext, scan_file_stream, scan_stream};
-use staged::{StagedScan, scan_git_output, scan_staged_diff, scan_undiffable_blobs};
+use staged::{StagedScan, scan_git_output, scan_index_blobs, scan_staged_diff};
 /// Git config that must be overridden for every diff-based scan: the parser
 /// depends on undecorated `diff --git`/`@@`/`+` framing and literal `a/`/`b/`
 /// path prefixes, so user git config that colors, re-prefixes, quotes, or
@@ -119,7 +119,7 @@ pub fn run_scan(
         let mut metadata = history.metadata;
         // Blobs are only re-readable from the index, not from history, so a
         // git-rendered binary in history is unscannable rather than excluded.
-        metadata.unscannable_files = history.undiffable_files;
+        metadata.unscannable_files = history.unscannable_from_diff;
 
         let mut findings = history.findings;
         sort_findings(&mut findings);
@@ -161,14 +161,17 @@ pub fn run_scan(
         let StagedScan {
             mut findings,
             mut metadata,
-            undiffable_files,
+            unscannable_from_diff,
         } = staged;
 
-        let (blob_findings, blob_lines, skipped) =
-            scan_undiffable_blobs(&undiffable_files, &multiline_detectors, &line_detectors)?;
+        let (blob_findings, blob_lines, skipped) = scan_index_blobs(
+            &unscannable_from_diff,
+            &multiline_detectors,
+            &line_detectors,
+        )?;
         findings.extend(blob_findings);
         metadata.total_lines += blob_lines;
-        metadata.files_scanned += undiffable_files.len() - skipped.len();
+        metadata.files_scanned += unscannable_from_diff.len() - skipped.len();
         metadata.unscannable_files.extend(skipped);
 
         sort_findings(&mut findings);

@@ -140,7 +140,7 @@ pub(super) fn scan_line_detectors(
                     matched_content: mat.as_str().to_string(),
                     finding_type: detector.finding_type.clone(),
                     severity: detector.severity,
-                    plugin_name: detector.name.clone(),
+                    detector_name: detector.name.clone(),
                 });
             }
         }
@@ -186,7 +186,7 @@ pub(super) fn scan_multiline_chunk(
                         matched_content: mat.as_str().to_string(),
                         finding_type: detector.finding_type.clone(),
                         severity: detector.severity,
-                        plugin_name: detector.name.clone(),
+                        detector_name: detector.name.clone(),
                     });
                 }
             }

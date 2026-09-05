@@ -114,7 +114,12 @@ pub struct Finding {
     pub finding_type: String,
     pub severity: Severity,
     pub matched_content: String,
-    pub plugin_name: String,
+    /// The detector that produced this finding. The domain calls these
+    /// detectors; the wire format keeps the historical `plugin_name` key
+    /// (with an alias on deserialize) so existing report consumers are
+    /// unaffected.
+    #[serde(rename = "plugin_name", alias = "plugin_name")]
+    pub detector_name: String,
 }
 
 #[derive(Serialize, Clone, Default)]

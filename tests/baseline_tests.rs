@@ -3,14 +3,14 @@ use key_watch::report::{Finding, Severity};
 use std::fs;
 use tempfile::tempdir;
 
-fn make_finding(file: &str, line: usize, ftype: &str, content: &str, plugin: &str) -> Finding {
+fn make_finding(file: &str, line: usize, ftype: &str, content: &str, detector: &str) -> Finding {
     Finding {
         file_path: file.to_string(),
         line_number: line,
         finding_type: ftype.to_string(),
         severity: Severity::High,
         matched_content: content.to_string(),
-        plugin_name: plugin.to_string(),
+        detector_name: detector.to_string(),
     }
 }
 
