@@ -5,6 +5,7 @@ use crate::detector::Detector;
 use crate::report::Finding;
 use crate::scanner::ScannerError;
 use aho_corasick::AhoCorasick;
+use regex::Regex;
 use std::collections::HashSet;
 use std::io::BufRead;
 
@@ -15,9 +16,16 @@ fn is_inline_suppressed(line: &str) -> bool {
 }
 
 /// Lowercases `src` into `buf` without allocating a fresh string per line.
+/// ASCII input (the overwhelming majority of scanned bytes) takes a
+/// byte-per-byte fast path; the Unicode path is char-by-char and an order of
+/// magnitude slower.
 fn to_lowercase_into(src: &str, buf: &mut String) {
     buf.clear();
-    buf.extend(src.chars().flat_map(char::to_lowercase));
+    if src.is_ascii() {
+        buf.extend(src.chars().map(|c| c.to_ascii_lowercase()));
+    } else {
+        buf.extend(src.chars().flat_map(char::to_lowercase));
+    }
 }
 /// Folds every distinct detector keyword into one Aho-Corasick automaton so a
 /// line is checked against all keywords in a single pass instead of one
@@ -72,6 +80,22 @@ impl KeywordPrefilter {
         }
     }
 
+    /// Whether the combined keywordless gate may filter detectors: the gate
+    /// is only sound while the automaton handles exactly the keyword
+    /// detectors (on the fail-open path `unconditional` holds every detector,
+    /// and gating them would risk missed secrets).
+    fn gate_eligible(&self) -> bool {
+        self.automaton.is_some()
+    }
+
+    /// Clears the keywordless detectors from `candidates` after the combined
+    /// gate ruled the line out.
+    fn clear_unconditional(&self, candidates: &mut [bool]) {
+        for &detector_index in &self.unconditional {
+            candidates[detector_index] = false;
+        }
+    }
+
     /// Marks the detectors whose keywords occur in `lowered_line` in
     /// `candidates`, a scratch buffer reused across lines.
     fn candidates_into(&self, lowered_line: &str, candidates: &mut Vec<bool>) {
@@ -93,13 +117,42 @@ impl KeywordPrefilter {
 pub(super) struct LineScanContext<'detectors> {
     line_detectors: &'detectors [&'detectors Detector],
     prefilter: KeywordPrefilter,
+    /// One combined any-of regex over the keywordless detectors: a single
+    /// pass decides whether any of them can match the line, and their
+    /// individual regex passes are skipped on lines that cannot. The gate is
+    /// exact — is_match is existence, and each pattern is isolated in its own
+    /// group so flags cannot leak between branches — so no match is ever
+    /// lost; matching lines simply pay the gate plus their real passes.
+    /// `None` when a gate cannot be built (fail open).
+    unconditional_gate: Option<Regex>,
 }
 
 impl<'detectors> LineScanContext<'detectors> {
     pub(super) fn new(line_detectors: &'detectors [&'detectors Detector]) -> Self {
+        let prefilter = KeywordPrefilter::new(line_detectors);
+        let unconditional_gate = prefilter
+            .gate_eligible()
+            .then(|| {
+                let branches: Vec<&str> = line_detectors
+                    .iter()
+                    .filter(|detector| detector.keywords.is_empty())
+                    .map(|detector| detector.regex.as_str())
+                    .collect();
+                let combined = format!(
+                    "(?:{})",
+                    branches
+                        .iter()
+                        .map(|branch| format!("(?:{branch})"))
+                        .collect::<Vec<_>>()
+                        .join("|")
+                );
+                Regex::new(&combined).ok()
+            })
+            .flatten();
         Self {
             line_detectors,
-            prefilter: KeywordPrefilter::new(line_detectors),
+            prefilter,
+            unconditional_gate,
         }
     }
 }
@@ -127,6 +180,15 @@ pub(super) fn scan_line_detectors(
     context
         .prefilter
         .candidates_into(&scratch.lowered_line, &mut scratch.candidates);
+    let run_unconditional = context
+        .unconditional_gate
+        .as_ref()
+        .is_none_or(|gate| gate.is_match(line));
+    if !run_unconditional {
+        context
+            .prefilter
+            .clear_unconditional(&mut scratch.candidates);
+    }
 
     for (detector_index, detector) in context.line_detectors.iter().enumerate() {
         if !scratch.candidates[detector_index] {

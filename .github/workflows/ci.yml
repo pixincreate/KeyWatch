@@ -71,7 +71,7 @@ jobs:
           test "$(docker run --rm --entrypoint id keywatch:ci -u)" != "0"
 
           set +e
-          printf '%s\n' 'AWS_KEY=AKIAIOSFODNN7EXAMPLE' | \
+          printf '%s\n' 'AWS_KEY=AKIAABCDEFGHIJKLMNOP' | \
             docker run --rm -i keywatch:ci scan --stdin --exit-mode strict
           scan_status=$?
           set -e

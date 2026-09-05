@@ -68,6 +68,7 @@ All notable changes to this project will be documented in this file.
 
 - Keyword matching uses a single Aho-Corasick pass per line: ~3x faster file scans, ~9x faster streams
 - File scans stream line by line instead of reading whole files into memory
+- ~2.5x faster file scans: one combined prefilter pass for the keywordless detectors, an ASCII fast path for line lowering, and a byte-histogram entropy check that no longer allocates per match
 
 ## [2.0.1] - 2026-08-02
 

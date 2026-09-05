@@ -275,15 +275,23 @@ impl Detector {
 }
 
 fn shannon_entropy(input: &str) -> f64 {
-    if input.is_empty() {
+    // Byte-histogram in a fixed array: no allocation per candidate match,
+    // and for the ASCII secret shapes the thresholds target, identical to a
+    // char-based count.
+    let mut counts = [0u32; 256];
+    let mut length = 0usize;
+    for byte in input.bytes() {
+        counts[byte as usize] += 1;
+        length += 1;
+    }
+    if length == 0 {
         return 0.0;
     }
-    let mut counts = std::collections::HashMap::new();
-    for character in input.chars() {
-        *counts.entry(character).or_insert(0) += 1;
-    }
-    let input_length = input.len() as f64;
-    counts.values().fold(0.0, |entropy, &count| {
+    let input_length = length as f64;
+    counts.iter().fold(0.0, |entropy, &count| {
+        if count == 0 {
+            return entropy;
+        }
         let probability = count as f64 / input_length;
         entropy - probability * probability.log2()
     })

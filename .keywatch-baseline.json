@@ -910,6 +910,13 @@
       "finding_type": "Aadhaar Card Number",
       "matched_content_hash": "a8718ff203b57b356b230985c321360b679a53eb01ac1d626f34f58b6f4adc08",
       "plugin_name": "AadhaarCardDetector"
+    },
+    {
+      "file_path": "./.github/workflows/ci.yml",
+      "line_number": 74,
+      "finding_type": "AWS Access Key",
+      "matched_content_hash": "3f733150de7916d4778298d7f90493889c38b76876b80c058e439851ce60cb2b",
+      "plugin_name": "AWSKeyDetector"
     }
   ]
 }
