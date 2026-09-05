@@ -37,7 +37,7 @@ fn test_report_with_findings() {
         finding_type: "AWS Key".to_string(),
         severity: Severity::High,
         matched_content: "AKIATESTKEY".to_string(),
-        plugin_name: "AWSKeyDetector".to_string(),
+        detector_name: "AWSKeyDetector".to_string(),
     }];
     let metadata = ScanMetadata {
         files_scanned: 1,
@@ -68,7 +68,7 @@ fn test_create_report_includes_excluded_files_and_plugin_metadata() {
         finding_type: "API Token".to_string(),
         severity: Severity::Medium,
         matched_content: "tok_test_123".to_string(),
-        plugin_name: "TokenDetector".to_string(),
+        detector_name: "TokenDetector".to_string(),
     }];
     let metadata = ScanMetadata {
         files_scanned: 2,
@@ -103,7 +103,7 @@ fn test_create_sarif_report_uses_camel_case_fields_and_hides_matched_content() {
         finding_type: "AWS Key".to_string(),
         severity: Severity::Critical,
         matched_content: secret.clone(),
-        plugin_name: "AwsKeyDetector".to_string(),
+        detector_name: "AwsKeyDetector".to_string(),
     }];
     let metadata = ScanMetadata {
         files_scanned: 1,
@@ -172,7 +172,7 @@ fn test_create_sarif_report_maps_all_severities_to_expected_levels() {
             finding_type: "CriticalRule".to_string(),
             severity: Severity::Critical,
             matched_content: "critical-secret".to_string(),
-            plugin_name: "CriticalDetector".to_string(),
+            detector_name: "CriticalDetector".to_string(),
         },
         Finding {
             file_path: "high.txt".to_string(),
@@ -180,7 +180,7 @@ fn test_create_sarif_report_maps_all_severities_to_expected_levels() {
             finding_type: "HighRule".to_string(),
             severity: Severity::High,
             matched_content: "high-secret".to_string(),
-            plugin_name: "HighDetector".to_string(),
+            detector_name: "HighDetector".to_string(),
         },
         Finding {
             file_path: "medium.txt".to_string(),
@@ -188,7 +188,7 @@ fn test_create_sarif_report_maps_all_severities_to_expected_levels() {
             finding_type: "MediumRule".to_string(),
             severity: Severity::Medium,
             matched_content: "medium-secret".to_string(),
-            plugin_name: "MediumDetector".to_string(),
+            detector_name: "MediumDetector".to_string(),
         },
         Finding {
             file_path: "low.txt".to_string(),
@@ -196,7 +196,7 @@ fn test_create_sarif_report_maps_all_severities_to_expected_levels() {
             finding_type: "LowRule".to_string(),
             severity: Severity::Low,
             matched_content: "low-secret".to_string(),
-            plugin_name: "LowDetector".to_string(),
+            detector_name: "LowDetector".to_string(),
         },
     ];
     let metadata = ScanMetadata {
@@ -248,7 +248,7 @@ fn test_get_severity_counts_groups_high_medium_low() {
             finding_type: "A".to_string(),
             severity: Severity::High,
             matched_content: "a".to_string(),
-            plugin_name: "DetectorA".to_string(),
+            detector_name: "DetectorA".to_string(),
         },
         Finding {
             file_path: "b.txt".to_string(),
@@ -256,7 +256,7 @@ fn test_get_severity_counts_groups_high_medium_low() {
             finding_type: "B".to_string(),
             severity: Severity::Medium,
             matched_content: "b".to_string(),
-            plugin_name: "DetectorB".to_string(),
+            detector_name: "DetectorB".to_string(),
         },
         Finding {
             file_path: "c.txt".to_string(),
@@ -264,7 +264,7 @@ fn test_get_severity_counts_groups_high_medium_low() {
             finding_type: "C".to_string(),
             severity: Severity::Low,
             matched_content: "c".to_string(),
-            plugin_name: "DetectorC".to_string(),
+            detector_name: "DetectorC".to_string(),
         },
         Finding {
             file_path: "d.txt".to_string(),
@@ -272,7 +272,7 @@ fn test_get_severity_counts_groups_high_medium_low() {
             finding_type: "D".to_string(),
             severity: Severity::High,
             matched_content: "d".to_string(),
-            plugin_name: "DetectorD".to_string(),
+            detector_name: "DetectorD".to_string(),
         },
     ];
 

@@ -184,7 +184,7 @@ pub(super) fn scan_staged_diff<ReaderType: BufRead>(
     let mut total_lines = 0;
     let mut scanned_files: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
     let mut excluded_files: Vec<String> = Vec::new();
-    let mut undiffable_files: Vec<String> = Vec::new();
+    let mut unscannable_from_diff: Vec<String> = Vec::new();
     let mut current_path: Option<String> = None;
     let mut in_hunk = false;
     let mut next_line_number = 0;
@@ -291,7 +291,7 @@ pub(super) fn scan_staged_diff<ReaderType: BufRead>(
             {
                 excluded_files.push(path);
             } else {
-                undiffable_files.push(path);
+                unscannable_from_diff.push(path);
             }
         }
     }
@@ -315,17 +315,18 @@ pub(super) fn scan_staged_diff<ReaderType: BufRead>(
     Ok(StagedScan {
         findings,
         metadata,
-        undiffable_files,
+        unscannable_from_diff,
     })
 }
 
-/// Result of parsing a staged diff. `undiffable_files` are paths git rendered
-/// as binary (a real binary, or text marked `-diff` in .gitattributes); their
-/// content never appears in the diff and must be read from the index instead.
+/// Result of parsing a staged diff. `unscannable_from_diff` are paths git
+/// rendered as binary — "undiffable" is the cause (a real binary, or text
+/// marked `-diff` in .gitattributes), not an outcome: their content never
+/// appears in the diff and must be read from the index instead.
 pub(super) struct StagedScan {
     pub(super) findings: Vec<Finding>,
     pub(super) metadata: ScanMetadata,
-    pub(super) undiffable_files: Vec<String>,
+    pub(super) unscannable_from_diff: Vec<String>,
 }
 
 /// Scans the staged blob of each undiffable path via `git cat-file`.
@@ -333,7 +334,7 @@ pub(super) struct StagedScan {
 /// Without this a `.gitattributes` entry like `*.env -diff` would hide a
 /// staged secret completely: git emits only "Binary files ... differ" and the
 /// scan would report the file as clean.
-pub(super) fn scan_undiffable_blobs(
+pub(super) fn scan_index_blobs(
     paths: &[String],
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
@@ -505,7 +506,7 @@ mod tests {
             "an undiffable file is not 'excluded' — its blob still gets scanned"
         );
         assert_eq!(
-            staged.undiffable_files,
+            staged.unscannable_from_diff,
             vec!["img.png".to_string()],
             "binary-rendered files must be queued for a direct blob read, or a \
              '-diff' gitattribute hides a staged secret entirely"
@@ -531,7 +532,7 @@ mod tests {
         .unwrap();
 
         assert!(
-            staged.undiffable_files.is_empty(),
+            staged.unscannable_from_diff.is_empty(),
             "an excluded path must not be re-read from the index"
         );
         assert_eq!(

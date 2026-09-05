@@ -94,7 +94,14 @@ pub(super) fn is_baseline_file(path: &str, base_dir: &Path, baseline: Option<&Pa
     };
     fs::canonicalize(anchored).is_ok_and(|candidate| candidate == *baseline)
 }
-pub(super) fn collect_files(dir_path: &str, files: &mut Vec<(String, Option<String>)>, root: &str) {
+/// A path queued for scanning, with the scan root it was collected under
+/// (explicit operands carry none).
+pub(super) struct ScanTarget {
+    pub(super) path: String,
+    pub(super) root: Option<String>,
+}
+
+pub(super) fn collect_files(dir_path: &str, targets: &mut Vec<ScanTarget>, root: &str) {
     if let Ok(entries) = fs::read_dir(dir_path) {
         for entry in entries.flatten() {
             let Ok(file_type) = entry.file_type() else {
@@ -106,11 +113,14 @@ pub(super) fn collect_files(dir_path: &str, files: &mut Vec<(String, Option<Stri
             let path = entry.path();
             if file_type.is_file() {
                 if let Some(path_str) = path.to_str() {
-                    files.push((path_str.to_string(), Some(root.to_string())));
+                    targets.push(ScanTarget {
+                        path: path_str.to_string(),
+                        root: Some(root.to_string()),
+                    });
                 }
             } else if file_type.is_dir() && path.file_name().is_none_or(|name| name != ".git") {
                 if let Some(path_str) = path.to_str() {
-                    collect_files(path_str, files, root);
+                    collect_files(path_str, targets, root);
                 }
             }
         }

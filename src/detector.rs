@@ -10,6 +10,11 @@ use thiserror::Error;
 
 const EMBEDDED_DETECTORS_CONFIG: &str = include_str!("../detectors.toml");
 
+/// Filename searched for at the repository root, the user config directory
+/// and next to the executable. One constant so a rename cannot split
+/// discovery from its error messages.
+const DETECTORS_FILE_NAME: &str = "detectors.toml";
+
 #[derive(Debug, Error)]
 pub enum DetectorError {
     #[error("invalid pattern in detector '{detector}': {source}")]
@@ -178,6 +183,14 @@ impl Detector {
             && self.passes_validation(matched)
     }
 
+    /// Whether the pattern carries the dot-matches-newline flag anywhere —
+    /// `(?s)` or the grouped `(?s:...)` form — and must therefore run per
+    /// chunk instead of per line, or multiline secrets slip past it. Single
+    /// source for the production partition and the tests.
+    pub fn is_multiline(&self) -> bool {
+        self.regex.as_str().contains("(?s")
+    }
+
     pub fn has_sufficient_entropy(&self, matched: &str) -> bool {
         match self.entropy_threshold {
             Some(threshold) => shannon_entropy(matched) >= threshold,
@@ -278,12 +291,12 @@ fn find_detectors_config(
                 return None;
             }
 
-            let repository_config = std::path::PathBuf::from("detectors.toml");
+            let repository_config = std::path::PathBuf::from(DETECTORS_FILE_NAME);
             repository_config.exists().then_some(repository_config)
         })
         .or_else(|| {
             dirs::config_dir()
-                .map(|config_directory| config_directory.join("keywatch").join("detectors.toml"))
+                .map(|config_directory| config_directory.join("keywatch").join(DETECTORS_FILE_NAME))
                 .filter(|path| path.exists())
         })
         .or_else(|| {
@@ -292,7 +305,7 @@ fn find_detectors_config(
                 .and_then(|executable_path| {
                     executable_path
                         .parent()
-                        .map(|directory| directory.join("detectors.toml"))
+                        .map(|directory| directory.join(DETECTORS_FILE_NAME))
                 })
                 .filter(|path| path.exists())
         })

@@ -140,7 +140,7 @@ pub(super) fn scan_line_detectors(
                     matched_content: mat.as_str().to_string(),
                     finding_type: detector.finding_type.clone(),
                     severity: detector.severity,
-                    plugin_name: detector.name.clone(),
+                    detector_name: detector.name.clone(),
                 });
             }
         }
@@ -186,7 +186,7 @@ pub(super) fn scan_multiline_chunk(
                         matched_content: mat.as_str().to_string(),
                         finding_type: detector.finding_type.clone(),
                         severity: detector.severity,
-                        plugin_name: detector.name.clone(),
+                        detector_name: detector.name.clone(),
                     });
                 }
             }
@@ -230,6 +230,14 @@ pub(super) fn scan_content(
 const CHUNK_SIZE: usize = 1000;
 const OVERLAP_LINES: usize = 50;
 
+/// How a streaming scan treats NUL bytes: stdin is scanned through, while
+/// a filesystem file containing one is binary and stops the scan.
+#[derive(Clone, Copy)]
+enum BinaryHandling {
+    ScanThrough,
+    StopAtNul,
+}
+
 /// Outcome of a streaming scan.
 pub(super) struct StreamScan {
     pub(super) findings: Vec<Finding>,
@@ -252,7 +260,7 @@ fn scan_lines<R: BufRead>(
     path: &str,
     multiline_detectors: &[&Detector],
     context: &LineScanContext,
-    binary_detection: bool,
+    binary_handling: BinaryHandling,
 ) -> Result<StreamScan, ScannerError> {
     let mut findings = Vec::new();
     let mut reported: HashSet<(usize, usize, String)> = HashSet::new();
@@ -284,7 +292,7 @@ fn scan_lines<R: BufRead>(
         if raw_line.last() == Some(&b'\r') {
             raw_line.pop();
         }
-        if binary_detection && raw_line.contains(&0) {
+        if matches!(binary_handling, BinaryHandling::StopAtNul) && raw_line.contains(&0) {
             binary = true;
             break;
         }
@@ -341,7 +349,13 @@ pub(super) fn scan_stream<ReaderType: BufRead>(
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, usize), ScannerError> {
     let context = LineScanContext::new(line_detectors);
-    let scanned = scan_lines(&mut reader, path, multiline_detectors, &context, false)?;
+    let scanned = scan_lines(
+        &mut reader,
+        path,
+        multiline_detectors,
+        &context,
+        BinaryHandling::ScanThrough,
+    )?;
     Ok((scanned.findings, scanned.total_lines))
 }
 
@@ -354,7 +368,13 @@ pub(super) fn scan_file_stream<ReaderType: BufRead>(
     multiline_detectors: &[&Detector],
     context: &LineScanContext,
 ) -> Result<StreamScan, ScannerError> {
-    scan_lines(reader, path, multiline_detectors, context, true)
+    scan_lines(
+        reader,
+        path,
+        multiline_detectors,
+        context,
+        BinaryHandling::StopAtNul,
+    )
 }
 
 #[cfg(test)]
@@ -378,7 +398,7 @@ mod tests {
         ];
         let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|detector| detector.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.is_multiline());
 
         let (findings, total_lines) =
             scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
@@ -409,7 +429,7 @@ mod tests {
         )];
         let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|detector| detector.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.is_multiline());
 
         let (findings, _) =
             scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
@@ -431,7 +451,7 @@ mod tests {
         )];
         let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|detector| detector.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.is_multiline());
 
         let (findings, _) =
             scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
@@ -457,7 +477,7 @@ mod tests {
         )];
         let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|detector| detector.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.is_multiline());
 
         let (findings, total_lines) =
             scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
@@ -522,9 +542,8 @@ mod tests {
 
         let detector = make_detector("Block", r"(?s)BEGIN KEY.*?END KEY", "Block", "HIGH");
         let detectors = [detector];
-        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
-            .iter()
-            .partition(|d| d.regex.as_str().contains("(?s"));
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) =
+            detectors.iter().partition(|d| d.is_multiline());
         let (findings, total_lines) = scan_stream(
             Cursor::new(content),
             "<test>",
@@ -559,9 +578,8 @@ mod tests {
 
         let detector = make_detector("Block", r"(?s)BEGIN KEY.*?END KEY", "Block", "HIGH");
         let detectors = [detector];
-        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
-            .iter()
-            .partition(|d| d.regex.as_str().contains("(?s"));
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) =
+            detectors.iter().partition(|d| d.is_multiline());
         let (findings, _) = scan_stream(
             Cursor::new(content),
             "<test>",

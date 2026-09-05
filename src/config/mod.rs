@@ -174,8 +174,6 @@ pub struct CustomRule {
     pub entropy: Option<f64>,
     /// Extra structural check applied to each match, e.g. `validate = "luhn"`.
     pub validate: Option<String>,
-    #[allow(dead_code)]
-    pub description: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
@@ -232,9 +230,7 @@ pub(crate) fn find_file_upwards(
         .filter(|component| !matches!(component, std::path::Component::CurDir))
         .collect();
 
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from);
+    let home = crate::utils::home_dir();
 
     for dir in search_dir.ancestors() {
         let found = names
@@ -252,7 +248,7 @@ pub(crate) fn find_file_upwards(
             }
             return Some(config_path);
         }
-        if dir.join(".git").exists() || home.as_deref() == Some(dir) {
+        if dir.join(".git").exists() || home.is_some_and(|home| home.as_path() == dir) {
             return None;
         }
     }

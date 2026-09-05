@@ -55,6 +55,8 @@ All notable changes to this project will be documented in this file.
 - Pre-push repository filters fail closed on Windows drive-path remotes instead of misparsing the drive letter as a host
 - Chunked streaming scans no longer duplicate multiline matches that land inside the window overlap
 - Files with invalid UTF-8 are decoded lossily and scanned instead of silently skipped; NUL-containing files are reported as `unscannable`
+- `Finding`'s `plugin_name` field is now `detector_name` in the code; the JSON report and baseline schema still emit/accept `plugin_name`
+- `CustomRule.description` was parsed but never surfaced and has been dropped (configs carrying it keep parsing)
 - `--baseline` naming a missing file is an error instead of silently scanning with an empty baseline
 - Baseline files with an unknown format version are rejected instead of silently accepted
 - `--update-baseline` refreshes the recorded line numbers of entries it already knows, and saved baselines end with a newline
