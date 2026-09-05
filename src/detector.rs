@@ -178,6 +178,14 @@ impl Detector {
             && self.passes_validation(matched)
     }
 
+    /// Whether the pattern carries the dot-matches-newline flag anywhere —
+    /// `(?s)` or the grouped `(?s:...)` form — and must therefore run per
+    /// chunk instead of per line, or multiline secrets slip past it. Single
+    /// source for the production partition and the tests.
+    pub fn is_multiline(&self) -> bool {
+        self.regex.as_str().contains("(?s")
+    }
+
     pub fn has_sufficient_entropy(&self, matched: &str) -> bool {
         match self.entropy_threshold {
             Some(threshold) => shannon_entropy(matched) >= threshold,

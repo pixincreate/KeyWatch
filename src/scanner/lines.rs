@@ -378,7 +378,7 @@ mod tests {
         ];
         let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|detector| detector.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.is_multiline());
 
         let (findings, total_lines) =
             scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
@@ -409,7 +409,7 @@ mod tests {
         )];
         let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|detector| detector.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.is_multiline());
 
         let (findings, _) =
             scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
@@ -431,7 +431,7 @@ mod tests {
         )];
         let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|detector| detector.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.is_multiline());
 
         let (findings, _) =
             scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
@@ -457,7 +457,7 @@ mod tests {
         )];
         let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
             .iter()
-            .partition(|detector| detector.regex.as_str().contains("(?s)"));
+            .partition(|detector| detector.is_multiline());
 
         let (findings, total_lines) =
             scan_stream(reader, "<test>", &multiline_detectors, &line_detectors).unwrap();
@@ -522,9 +522,8 @@ mod tests {
 
         let detector = make_detector("Block", r"(?s)BEGIN KEY.*?END KEY", "Block", "HIGH");
         let detectors = [detector];
-        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
-            .iter()
-            .partition(|d| d.regex.as_str().contains("(?s"));
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) =
+            detectors.iter().partition(|d| d.is_multiline());
         let (findings, total_lines) = scan_stream(
             Cursor::new(content),
             "<test>",
@@ -559,9 +558,8 @@ mod tests {
 
         let detector = make_detector("Block", r"(?s)BEGIN KEY.*?END KEY", "Block", "HIGH");
         let detectors = [detector];
-        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
-            .iter()
-            .partition(|d| d.regex.as_str().contains("(?s"));
+        let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) =
+            detectors.iter().partition(|d| d.is_multiline());
         let (findings, _) = scan_stream(
             Cursor::new(content),
             "<test>",

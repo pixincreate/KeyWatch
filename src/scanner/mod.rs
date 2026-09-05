@@ -24,6 +24,28 @@ use files::{
 };
 use lines::{LineScanContext, scan_file_stream, scan_stream};
 use staged::{StagedScan, scan_git_output, scan_staged_diff, scan_undiffable_blobs};
+/// Git config that must be overridden for every diff-based scan: the parser
+/// depends on undecorated `diff --git`/`@@`/`+` framing and literal `a/`/`b/`
+/// path prefixes, so user git config that colors, re-prefixes, quotes, or
+/// glob-expands would otherwise hide added lines or mangle path attribution.
+/// One list for both `--staged` and `--git-history`: a new override added to
+/// only one mode leaves the other silently vulnerable.
+const GIT_DIFF_FRAMING_ARGS: &[&str] = &[
+    "--literal-pathspecs",
+    "-c",
+    "diff.external=",
+    "-c",
+    "color.ui=false",
+    "-c",
+    "diff.mnemonicPrefix=false",
+    "-c",
+    "diff.noprefix=false",
+    "-c",
+    "core.quotePath=false",
+    "-c",
+    "diff.relative=false",
+];
+
 pub fn run_scan(
     args: &ScanArgs,
     config: Option<&KeywatchConfig>,
@@ -44,7 +66,7 @@ pub fn run_scan(
     // per-line, or multiline secrets slip past it.
     let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
         .iter()
-        .partition(|detector| detector.regex.as_str().contains("(?s"));
+        .partition(|detector| detector.is_multiline());
 
     // Resolved once: every scan mode must skip the baseline file itself.
     let excluded_baseline = baseline_exclusion(args);
@@ -60,27 +82,17 @@ pub fn run_scan(
         // baseline self-exclusion.
         let repo_root = git_repo_root(&cwd.join(git_root)).unwrap_or_else(|| cwd.join(git_root));
         let mut command = std::process::Command::new("git");
-        command.current_dir(git_root).args([
-            "--literal-pathspecs",
-            "-c",
-            "diff.external=",
-            "-c",
-            "color.ui=false",
-            "-c",
-            "diff.mnemonicPrefix=false",
-            "-c",
-            "diff.noprefix=false",
-            "-c",
-            "core.quotePath=false",
-            "-c",
-            "diff.relative=false",
-            "log",
-            "-p",
-            "-U0",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--no-color",
-        ]);
+        command
+            .current_dir(git_root)
+            .args(GIT_DIFF_FRAMING_ARGS)
+            .args([
+                "log",
+                "-p",
+                "-U0",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-color",
+            ]);
 
         // `git log -p` emits the same diff framing as `git diff --cached`, so
         // history reuses the staged parser. That gives it real file paths
@@ -119,24 +131,7 @@ pub fn run_scan(
         let repo_root = git_repo_root(&cwd).unwrap_or(cwd);
         let exclude_patterns = compile_exclude_patterns(args, config)?;
         let mut command = std::process::Command::new("git");
-        // The parser depends on undecorated `diff --git`/`@@`/`+` framing and
-        // literal `a/`/`b/` path prefixes, so user git config that colors,
-        // re-prefixes, quotes, or glob-expands must be overridden here — a
-        // stray `color.ui = always` would otherwise hide every added line.
-        command.args([
-            "--literal-pathspecs",
-            "-c",
-            "diff.external=",
-            "-c",
-            "color.ui=false",
-            "-c",
-            "diff.mnemonicPrefix=false",
-            "-c",
-            "diff.noprefix=false",
-            "-c",
-            "core.quotePath=false",
-            "-c",
-            "diff.relative=false",
+        command.args(GIT_DIFF_FRAMING_ARGS).args([
             "diff",
             "--cached",
             "-U0",
