@@ -23,6 +23,13 @@ pub fn emit_line(line: &str) -> std::io::Result<()> {
     }
 }
 
+/// The user's home directory: `$HOME`, falling back to `$USERPROFILE` (the
+/// Windows convention). Callers with platform-specific fallback orders
+/// (hooks resolve XDG/APPDATA first) resolve their own.
+pub fn home_dir() -> Option<&'static PathBuf> {
+    HOME_DIR.as_ref()
+}
+
 /// Renders a path for terminal output, abbreviating the home directory as `~`.
 pub fn display_path(path: &Path) -> String {
     match HOME_DIR

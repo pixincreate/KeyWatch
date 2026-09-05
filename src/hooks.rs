@@ -412,7 +412,8 @@ fn ensure_hook_target_is_keywatch_managed(
 #[cfg(test)]
 mod tests {
     use super::{
-        HookError, ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
+        HookError, KEYWATCH_MARKER, PRE_COMMIT_TEMPLATE, PRE_PUSH_TEMPLATE,
+        ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
         global_uninstall_target, managed_global_hooks_dir, resolve_local_hooks_dir_from,
     };
     use std::env;
@@ -444,6 +445,15 @@ mod tests {
             .status()
             .expect("run git config");
         assert!(status.success(), "git config should succeed");
+    }
+
+    #[test]
+    fn test_hook_templates_carry_the_uninstall_marker() {
+        // `hook uninstall` recognizes KeyWatch-managed hooks by this marker;
+        // editing a template's header without the marker would make uninstall
+        // refuse to remove hooks the tool itself installed.
+        assert!(PRE_COMMIT_TEMPLATE.contains(KEYWATCH_MARKER));
+        assert!(PRE_PUSH_TEMPLATE.contains(KEYWATCH_MARKER));
     }
 
     #[test]

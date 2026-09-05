@@ -2,16 +2,21 @@ use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
+/// Characters of a match kept visible in a redacted report.
+const VISIBLE_PREFIX_CHARS: usize = 4;
+/// Matches shorter than this show no prefix at all: four visible characters
+/// would reveal most or all of the secret.
+const MIN_LENGTH_FOR_PREFIX: usize = 8;
+
 /// Keeps enough to identify a finding without reproducing the credential:
-/// the first four characters and the length. Short matches show the length
-/// only — below eight characters a four-character prefix would reveal most
-/// or all of the secret.
+/// the first few characters and the length. Short matches show the length
+/// only.
 pub fn redact(matched: &str) -> String {
     let length = matched.chars().count();
-    if length < 8 {
+    if length < MIN_LENGTH_FOR_PREFIX {
         return format!("({length} chars, redacted)");
     }
-    let visible: String = matched.chars().take(4).collect();
+    let visible: String = matched.chars().take(VISIBLE_PREFIX_CHARS).collect();
     format!("{visible}... ({length} chars, redacted)")
 }
 use std::{fmt, str::FromStr};
