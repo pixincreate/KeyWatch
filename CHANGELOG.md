@@ -51,6 +51,10 @@ All notable changes to this project will be documented in this file.
 - `GenericKeyValueDetector` and `RandomString` no longer flag code identifiers (`let payment_method_token = card_token`, snake_case serde attributes)
 - `PasswordDetector` no longer flags `$PWD:`
 - `GenericKeyValueDetector` no longer flags bare CamelCase type paths (`token: PaymentTokenData,`)
+- Custom rules in `.keywatch.toml` support `allowlist`, `keywords`, `entropy` and `validate`, matching built-in detector definitions
+- Pre-push repository filters fail closed on Windows drive-path remotes instead of misparsing the drive letter as a host
+- Chunked streaming scans no longer duplicate multiline matches that land inside the window overlap
+- Files with invalid UTF-8 are decoded lossily and scanned instead of silently skipped; NUL-containing files are reported as `unscannable`
 - `--baseline` naming a missing file is an error instead of silently scanning with an empty baseline
 - Baseline files with an unknown format version are rejected instead of silently accepted
 - `--update-baseline` refreshes the recorded line numbers of entries it already knows, and saved baselines end with a newline
@@ -60,6 +64,7 @@ All notable changes to this project will be documented in this file.
 ### Performance
 
 - Keyword matching uses a single Aho-Corasick pass per line: ~3x faster file scans, ~9x faster streams
+- File scans stream line by line instead of reading whole files into memory
 
 ## [2.0.1] - 2026-08-02
 

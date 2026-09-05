@@ -25,6 +25,11 @@ normalize_repository_url() {
     elif [[ "$lowercase_repository" == ssh://* ]]; then
         scheme="ssh"
         repository_after_scheme="${repository:6}"
+    elif [[ "$repository" =~ ^[A-Za-z]:[/\\] ]]; then
+        # A Windows drive path (C:\repo or C:/repo) is not a URL; refusing
+        # to normalize it fails the policy check closed instead of parsing
+        # the drive letter as an scp host.
+        return 1
     elif [[ "$repository" == *:* && "${repository%%:*}" != */* ]]; then
         scheme="scp"
         authority="${repository%%:*}"

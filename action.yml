@@ -12,7 +12,7 @@ inputs:
     required: false
     default: '.'
   args:
-    description: 'Additional CLI arguments to pass to key-watch'
+    description: 'Additional CLI arguments to pass to key-watch (space-separated; values cannot contain spaces or quotes)'
     required: false
     default: ''
   exit-mode:
