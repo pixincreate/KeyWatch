@@ -174,8 +174,6 @@ pub struct CustomRule {
     pub entropy: Option<f64>,
     /// Extra structural check applied to each match, e.g. `validate = "luhn"`.
     pub validate: Option<String>,
-    #[allow(dead_code)]
-    pub description: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]

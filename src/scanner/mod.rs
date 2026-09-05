@@ -19,7 +19,7 @@ mod staged;
 pub use error::ScannerError;
 
 use files::{
-    baseline_exclusion, collect_files, compile_exclude_patterns, is_baseline_file,
+    ScanTarget, baseline_exclusion, collect_files, compile_exclude_patterns, is_baseline_file,
     is_default_excluded_file, matches_exclude_patterns, path_has_git_dir,
 };
 use lines::{LineScanContext, scan_file_stream, scan_stream};
@@ -193,7 +193,7 @@ pub fn run_scan(
         return Ok((findings, metadata));
     }
 
-    let mut target_paths = Vec::new();
+    let mut target_paths: Vec<ScanTarget> = Vec::new();
 
     for path_str in &args.paths {
         let path = Path::new(path_str);
@@ -205,17 +205,20 @@ pub fn run_scan(
             continue;
         }
         if file_type.is_file() {
-            target_paths.push((path_str.clone(), None));
+            target_paths.push(ScanTarget {
+                path: path_str.clone(),
+                root: None,
+            });
         } else if file_type.is_dir() {
             collect_files(path_str, &mut target_paths, path_str);
         }
     }
 
-    target_paths.sort_by(|a, b| a.0.cmp(&b.0));
+    target_paths.sort_by(|a, b| a.path.cmp(&b.path));
 
     let mut unique_paths: std::collections::BTreeMap<String, Vec<Option<String>>> =
         std::collections::BTreeMap::new();
-    for (path, root) in target_paths {
+    for ScanTarget { path, root } in target_paths {
         let roots = unique_paths.entry(path).or_default();
         if !roots.contains(&root) {
             roots.push(root);

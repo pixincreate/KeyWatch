@@ -1,3 +1,4 @@
+use std::io::{Result, Write};
 use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 
@@ -41,8 +42,6 @@ pub fn display_path(path: &Path) -> String {
         None => path.display().to_string(),
     }
 }
-
-use std::io::{Result, Write};
 
 /// Writes a report file readable only by its owner.
 ///

@@ -230,6 +230,14 @@ pub(super) fn scan_content(
 const CHUNK_SIZE: usize = 1000;
 const OVERLAP_LINES: usize = 50;
 
+/// How a streaming scan treats NUL bytes: stdin is scanned through, while
+/// a filesystem file containing one is binary and stops the scan.
+#[derive(Clone, Copy)]
+enum BinaryHandling {
+    ScanThrough,
+    StopAtNul,
+}
+
 /// Outcome of a streaming scan.
 pub(super) struct StreamScan {
     pub(super) findings: Vec<Finding>,
@@ -252,7 +260,7 @@ fn scan_lines<R: BufRead>(
     path: &str,
     multiline_detectors: &[&Detector],
     context: &LineScanContext,
-    binary_detection: bool,
+    binary_handling: BinaryHandling,
 ) -> Result<StreamScan, ScannerError> {
     let mut findings = Vec::new();
     let mut reported: HashSet<(usize, usize, String)> = HashSet::new();
@@ -284,7 +292,7 @@ fn scan_lines<R: BufRead>(
         if raw_line.last() == Some(&b'\r') {
             raw_line.pop();
         }
-        if binary_detection && raw_line.contains(&0) {
+        if matches!(binary_handling, BinaryHandling::StopAtNul) && raw_line.contains(&0) {
             binary = true;
             break;
         }
@@ -341,7 +349,13 @@ pub(super) fn scan_stream<ReaderType: BufRead>(
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, usize), ScannerError> {
     let context = LineScanContext::new(line_detectors);
-    let scanned = scan_lines(&mut reader, path, multiline_detectors, &context, false)?;
+    let scanned = scan_lines(
+        &mut reader,
+        path,
+        multiline_detectors,
+        &context,
+        BinaryHandling::ScanThrough,
+    )?;
     Ok((scanned.findings, scanned.total_lines))
 }
 
@@ -354,7 +368,13 @@ pub(super) fn scan_file_stream<ReaderType: BufRead>(
     multiline_detectors: &[&Detector],
     context: &LineScanContext,
 ) -> Result<StreamScan, ScannerError> {
-    scan_lines(reader, path, multiline_detectors, context, true)
+    scan_lines(
+        reader,
+        path,
+        multiline_detectors,
+        context,
+        BinaryHandling::StopAtNul,
+    )
 }
 
 #[cfg(test)]

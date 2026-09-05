@@ -58,7 +58,7 @@ pub enum Command {
     VerifyIntegrity,
 }
 
-#[derive(Args, Debug, Clone)]
+#[derive(Args, Debug, Clone, Default)]
 pub struct ScanArgs {
     /// Paths to scan (files or directories)
     pub paths: Vec<String>,
@@ -128,29 +128,6 @@ pub struct ScanArgs {
     /// Output format for the report (json or sarif)
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     pub format: OutputFormat,
-}
-
-impl Default for ScanArgs {
-    fn default() -> Self {
-        Self {
-            paths: Vec::new(),
-            stdin: false,
-            git_history: false,
-            staged: false,
-            output: None,
-            verbose: false,
-            show_secrets: false,
-            exclude: None,
-            exit_mode: ExitMode::Strict,
-            baseline: None,
-            no_baseline_discovery: false,
-            update_baseline: false,
-            prune_baseline: false,
-            config: None,
-            no_config_discovery: false,
-            format: OutputFormat::Json,
-        }
-    }
 }
 
 impl ScanArgs {
@@ -273,15 +250,17 @@ pub enum Shell {
     Posix,
 }
 
-#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+#[derive(ValueEnum, Clone, Debug, Default, PartialEq, Eq)]
 pub enum ExitMode {
     Always,
     Critical,
+    #[default]
     Strict,
 }
 
-#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+#[derive(ValueEnum, Clone, Debug, Default, PartialEq, Eq)]
 pub enum OutputFormat {
+    #[default]
     Json,
     Sarif,
 }

@@ -1,6 +1,8 @@
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
+use std::{fmt, str::FromStr};
 use thiserror::Error;
+mod sarif;
 
 /// Characters of a match kept visible in a redacted report.
 const VISIBLE_PREFIX_CHARS: usize = 4;
@@ -19,8 +21,6 @@ pub fn redact(matched: &str) -> String {
     let visible: String = matched.chars().take(VISIBLE_PREFIX_CHARS).collect();
     format!("{visible}... ({length} chars, redacted)")
 }
-use std::{fmt, str::FromStr};
-mod sarif;
 
 pub use sarif::create_sarif_report;
 
