@@ -377,3 +377,104 @@ fn test_high_entropy_hex_needs_credential_context() {
         "a bare hex digest is indistinguishable from a hash and must not fire"
     );
 }
+
+#[test]
+fn test_aws_example_key_is_allowlisted_but_real_keys_report() {
+    // The AWS documentation example key/secret appear in READMEs everywhere.
+    assert!(
+        !reported_by("aws_access_key_id = AKIAIOSFODNN7EXAMPLE")
+            .contains(&"AWSKeyDetector".to_string())
+    );
+    assert!(
+        !reported_by("secret = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
+            .iter()
+            .any(|name| name == "Base64Detector" || name == "AWSKeyDetector")
+    );
+    assert!(
+        reported_by("aws_access_key_id = AKIA1234567890ABCDEF")
+            .contains(&"AWSKeyDetector".to_string()),
+        "any other AKIA key must still be reported"
+    );
+}
+
+#[test]
+fn test_placeholder_values_are_allowlisted_in_both_detectors() {
+    let placeholders = [
+        "API_KEY=your-api-key-here",
+        "DATABASE_PASSWORD=changeme",
+        "SECRET_KEY=replace-me-please",
+        "PASSWORD: changeme",
+        "TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxx",
+    ];
+    for line in &placeholders {
+        let names = reported_by(line);
+        assert!(
+            !names.contains(&"GenericKeyValueDetector".to_string())
+                && !names.contains(&"PasswordDetector".to_string()),
+            "{line} must not report, got {names:?}"
+        );
+    }
+
+    // Mixed-case or digit-carrying values do not match the placeholder
+    // shapes and stay reported.
+    for line in [
+        "password = 'mySecretPassword'",
+        "token = YourSpecialToken123",
+        "pwd: ReplaceThisRealSecret123",
+        "api_key = \"sk_live_51abcdefghij\"",
+    ] {
+        let names = reported_by(line);
+        assert!(
+            names.contains(&"GenericKeyValueDetector".to_string())
+                || names.contains(&"PasswordDetector".to_string()),
+            "{line} must still be reported, got {names:?}"
+        );
+    }
+}
+
+#[test]
+fn test_email_allowlists_documentation_domains_but_not_real_ones() {
+    for email in [
+        "contact: support@example.com",
+        "alice@example.org",
+        "reply-to: noreply@github.com",
+        "author: 12345+user@users.noreply.github.com",
+    ] {
+        assert!(
+            !reported_by(email).contains(&"EmailDetector".to_string()),
+            "{email} must not report"
+        );
+    }
+    assert!(
+        reported_by("owner: bob.smith@company.io").contains(&"EmailDetector".to_string()),
+        "a real-looking address is still reported"
+    );
+}
+
+#[test]
+fn test_fictional_555_numbers_are_allowlisted() {
+    for phone in ["call 555-123-4567", "(212) 555-0123", "fax 555 123 4567"] {
+        assert!(
+            !reported_by(phone).contains(&"PhoneNumberDetector".to_string()),
+            "{phone} must not report"
+        );
+    }
+    assert!(
+        reported_by("call 415-123-4567").contains(&"PhoneNumberDetector".to_string()),
+        "a real-shaped number is still reported"
+    );
+}
+
+#[test]
+fn test_checksum_prefix_is_allowlisted_in_random_string() {
+    let line = r#"integrity = "sha512-abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG""#;
+    assert!(
+        !reported_by(line).contains(&"RandomString".to_string()),
+        "sha-prefixed checksums must not report"
+    );
+    assert!(
+        reported_by(r#"token = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd""#)
+            .contains(&"RandomString".to_string()),
+        "a quoted random string without a checksum prefix still reports"
+    );
+}

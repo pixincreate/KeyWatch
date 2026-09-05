@@ -917,6 +917,139 @@
       "finding_type": "AWS Access Key",
       "matched_content_hash": "3f733150de7916d4778298d7f90493889c38b76876b80c058e439851ce60cb2b",
       "plugin_name": "AWSKeyDetector"
+    },
+    {
+      "file_path": "./src/detector.rs",
+      "line_number": 147,
+      "finding_type": "Aadhaar Card Number",
+      "matched_content_hash": "0476e6cf99db1c000b7e0a433ff83591ffe0472f3156c9ebac7b11d0862f3429",
+      "plugin_name": "AadhaarCardDetector"
+    },
+    {
+      "file_path": "./src/detector.rs",
+      "line_number": 148,
+      "finding_type": "Aadhaar Card Number",
+      "matched_content_hash": "a1de1619345526170197aa72dd7bcb7e805e4c694270d74c752c317afd4a625e",
+      "plugin_name": "AadhaarCardDetector"
+    },
+    {
+      "file_path": "./src/detector.rs",
+      "line_number": 520,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "4541206d542811878a9374508fe296fa321a8b56c2902736a02f388836f6e108",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./src/detector.rs",
+      "line_number": 521,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "13ae894eedbfba2dbd06400ba5b215ffd661885646ab86e050fb1a0d192c1c5b",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./src/detector.rs",
+      "line_number": 522,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "0d30829f4cbd240de78f8dc72d0a5ed0a77887656aa572ee8fb1392cf9ae34a1",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./src/detector.rs",
+      "line_number": 537,
+      "finding_type": "Random String",
+      "matched_content_hash": "e51298df0e431de2bfdf6180e3a7b9f3f092c3e9a912facd350e8c7179936e75",
+      "plugin_name": "RandomString"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 389,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "6daabe7b8b2ca9ca4362fee06c2d25e32e59004c5834d23a755f774b02a054c1",
+      "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 394,
+      "finding_type": "AWS Access Key",
+      "matched_content_hash": "0cbae582394e61dc81d9946ed87ec44f4c83cf1167181f62cd1454eb5e2e5469",
+      "plugin_name": "AWSKeyDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 421,
+      "finding_type": "Password",
+      "matched_content_hash": "f6bd37622d846ac435a7b7dcbde2347d59494dfd3c3a787604e8b91491a39c95",
+      "plugin_name": "PasswordDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 421,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "f6bd37622d846ac435a7b7dcbde2347d59494dfd3c3a787604e8b91491a39c95",
+      "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 422,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "c98bc65cd589366ec37fedb07e874646469d675fc56078e5b8a3e18d2a70e51e",
+      "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 423,
+      "finding_type": "Password",
+      "matched_content_hash": "af29a321067a1bbd4a7d3f56ba583751c3f0496bd204f642e1e5764766fe9a8c",
+      "plugin_name": "PasswordDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 449,
+      "finding_type": "Email Address",
+      "matched_content_hash": "ebe162e5d3cc06b42201b0bfe39fde3379a3fe97c9836631f1750f21db142808",
+      "plugin_name": "EmailDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 470,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "097eda6585aa25d794c938beab55a00e7f2e7471a39375a3356535aa2e76efa6",
+      "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 476,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "c9bff1b4953e132d00a1d95477c81e7e73f15847b0e7d538c5a3a9c022858899",
+      "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 476,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "a011d6c6ecfe7ed080c7c4bfcc08efc5a3744a7be7a117c466d2536c2ee30a9b",
+      "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 476,
+      "finding_type": "Random String",
+      "matched_content_hash": "f56884431ad6ea3a4fb741ca53cae314b4d3202d6f14bf69aafe86440f799403",
+      "plugin_name": "RandomString"
+    },
+    {
+      "file_path": "./tests/fixtures/fp_corpus/README.md",
+      "line_number": 3,
+      "finding_type": "Email Address",
+      "matched_content_hash": "ebe162e5d3cc06b42201b0bfe39fde3379a3fe97c9836631f1750f21db142808",
+      "plugin_name": "EmailDetector"
+    },
+    {
+      "file_path": "./tests/fixtures/fp_corpus/package.json",
+      "line_number": 3,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "097eda6585aa25d794c938beab55a00e7f2e7471a39375a3356535aa2e76efa6",
+      "plugin_name": "Base64Detector"
     }
   ]
 }

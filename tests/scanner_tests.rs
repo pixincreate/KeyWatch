@@ -2228,3 +2228,86 @@ fn test_non_utf8_file_with_secret_is_still_scanned() -> Result<(), String> {
     let _ = fs::remove_dir_all(&dir);
     Ok(())
 }
+
+#[test]
+fn test_git_history_survives_hostile_git_config() -> Result<(), String> {
+    require_git();
+
+    // The history invocation shares GIT_DIFF_FRAMING_ARGS with --staged;
+    // this pins that the shared constant actually covers the log command.
+    let repo_dir = unique_temp_dir("history_hostile_git_config");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    for (key, value) in [
+        ("color.ui", "always"),
+        ("diff.mnemonicPrefix", "true"),
+        ("diff.noprefix", "true"),
+        ("core.quotePath", "true"),
+        ("diff.relative", "true"),
+    ] {
+        let status = Command::new("git")
+            .args(["config", key, value])
+            .current_dir(&repo_dir)
+            .status()
+            .map_err(|e| e.to_string())?;
+        assert!(status.success(), "git config {key} failed");
+    }
+    commit_file(
+        &repo_dir,
+        "config.txt",
+        "one\ntwo\naws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
+        "add secret",
+    )?;
+
+    let output = run_git_history_scan(&repo_dir, &["--verbose", "--no-baseline-discovery"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert_eq!(output.status.code(), Some(1), "stdout:\n{stdout}");
+    assert!(
+        stdout.contains("\"file_path\": \"config.txt\""),
+        "path attribution must survive hostile config, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("\"line_number\": 3"),
+        "line attribution must survive hostile config, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[test]
+fn test_stdin_with_nul_bytes_scans_through() -> Result<(), String> {
+    // stdin scans through NUL bytes (no binary bail-out): a secret after a
+    // NUL-containing line is still found.
+    use std::io::Write;
+
+    let dir = unique_temp_dir("stdin_nul");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "--stdin", "--no-baseline-discovery"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .stdin(std::process::Stdio::piped())
+        .current_dir(&dir)
+        .spawn()
+        .expect("run key-watch");
+    {
+        // A failed write surfaces as a missing finding below; the child is
+        // always waited on regardless.
+        let stdin = child.stdin.as_mut().expect("piped stdin");
+        let _ = stdin.write_all(b"binary\x00line\naws_access_key_id = AKIA1234567890ABCDEF\n");
+    } // stdin dropped: EOF sent before waiting.
+    let output = child.wait_with_output().expect("wait for scan");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "the secret after the NUL line must be found, got:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}

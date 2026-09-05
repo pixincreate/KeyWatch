@@ -107,7 +107,7 @@ pub enum ScanStatus {
     Fail,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Finding {
     pub file_path: String,
     pub line_number: usize,
@@ -118,7 +118,7 @@ pub struct Finding {
     /// detectors; the wire format keeps the historical `plugin_name` key
     /// (with an alias on deserialize) so existing report consumers are
     /// unaffected.
-    #[serde(rename = "plugin_name", alias = "plugin_name")]
+    #[serde(rename = "plugin_name", alias = "detector_name")]
     pub detector_name: String,
 }
 
