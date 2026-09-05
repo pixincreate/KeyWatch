@@ -47,6 +47,9 @@ pub enum ContentValidator {
     /// digit pattern matches every commit hash fragment, timestamp and
     /// numeric id in a codebase.
     Luhn,
+    /// Aadhaar numbers carry a Verhoeff check digit. Without it, every
+    /// 12-digit run (the tail of a UUID, a numeric id) reports HIGH.
+    Verhoeff,
 }
 
 impl FromStr for ContentValidator {
@@ -55,6 +58,7 @@ impl FromStr for ContentValidator {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.trim().to_lowercase().as_str() {
             "luhn" => Ok(Self::Luhn),
+            "verhoeff" => Ok(Self::Verhoeff),
             other => Err(ParseValidatorError {
                 value: other.to_string(),
             }),
@@ -66,6 +70,76 @@ impl FromStr for ContentValidator {
 #[error("unknown validator '{value}'")]
 pub struct ParseValidatorError {
     value: String,
+}
+
+/// Verhoeff check tables (the dihedral group D5 permutation). Aadhaar
+/// numbers are the common real-world user.
+const VERHOEFF_D: [[u8; 10]; 10] = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 2, 3, 4, 0, 6, 7, 8, 9, 5],
+    [2, 3, 4, 0, 1, 7, 8, 9, 5, 6],
+    [3, 4, 0, 1, 2, 8, 9, 5, 6, 7],
+    [4, 0, 1, 2, 3, 9, 5, 6, 7, 8],
+    [5, 9, 8, 7, 6, 0, 4, 3, 2, 1],
+    [6, 5, 9, 8, 7, 1, 0, 4, 3, 2],
+    [7, 6, 5, 9, 8, 2, 1, 0, 4, 3],
+    [8, 7, 6, 5, 9, 3, 2, 1, 0, 4],
+    [9, 8, 7, 6, 5, 4, 3, 2, 1, 0],
+];
+const VERHOEFF_P: [[usize; 10]; 8] = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    [1, 5, 7, 6, 2, 8, 3, 0, 9, 4],
+    [5, 8, 0, 3, 7, 9, 6, 1, 4, 2],
+    [8, 9, 1, 6, 0, 4, 3, 5, 2, 7],
+    [9, 4, 5, 3, 1, 2, 6, 8, 7, 0],
+    [4, 2, 8, 6, 5, 7, 3, 9, 0, 1],
+    [2, 7, 9, 3, 8, 0, 6, 4, 1, 5],
+    [7, 0, 4, 6, 9, 1, 3, 2, 5, 8],
+];
+
+/// Verhoeff checksum, ignoring embedded separators. Only the check digit
+/// satisfies the scheme, so random 12-digit runs are rejected ~90% of the
+/// time — and a run embedded in a longer id almost always fails outright.
+fn passes_verhoeff(matched: &str) -> bool {
+    let digits: Vec<u8> = matched
+        .chars()
+        .filter_map(|c| c.to_digit(10).map(|d| d as u8))
+        .collect();
+    if digits.is_empty() {
+        return false;
+    }
+    let mut check = 0u8;
+    for (index, digit) in digits.iter().rev().enumerate() {
+        check = VERHOEFF_D[check as usize][VERHOEFF_P[index % 8][*digit as usize]];
+    }
+    check == 0
+}
+
+/// Luhn checksum, ignoring embedded separators.
+#[cfg(test)]
+mod verhoeff_tests {
+    use super::passes_verhoeff;
+    use crate::detector::ContentValidator;
+    use std::str::FromStr;
+
+    #[test]
+    fn verhoeff_accepts_the_canonical_examples() {
+        // Wikipedia: 2363 passes, 2362 does not; the check digit for 236 is 3.
+        assert!(passes_verhoeff("2363"));
+        assert!(!passes_verhoeff("2362"));
+        assert_eq!(
+            ContentValidator::from_str("verhoeff").unwrap(),
+            ContentValidator::Verhoeff
+        );
+    }
+
+    #[test]
+    fn verhoeff_rejects_embedded_id_runs() {
+        // The false positive this validator exists for: the tail of a UUID.
+        assert!(!passes_verhoeff("123456789012"));
+        assert!(!passes_verhoeff("446655440000"));
+        assert!(passes_verhoeff("100000000004"));
+    }
 }
 
 /// Luhn checksum, ignoring embedded separators.
@@ -155,6 +229,7 @@ impl Detector {
     pub fn passes_validation(&self, matched: &str) -> bool {
         match self.validator {
             Some(ContentValidator::Luhn) => passes_luhn(matched),
+            Some(ContentValidator::Verhoeff) => passes_verhoeff(matched),
             None => true,
         }
     }
@@ -200,15 +275,23 @@ impl Detector {
 }
 
 fn shannon_entropy(input: &str) -> f64 {
-    if input.is_empty() {
+    // Byte-histogram in a fixed array: no allocation per candidate match,
+    // and for the ASCII secret shapes the thresholds target, identical to a
+    // char-based count.
+    let mut counts = [0u32; 256];
+    let mut length = 0usize;
+    for byte in input.bytes() {
+        counts[byte as usize] += 1;
+        length += 1;
+    }
+    if length == 0 {
         return 0.0;
     }
-    let mut counts = std::collections::HashMap::new();
-    for character in input.chars() {
-        *counts.entry(character).or_insert(0) += 1;
-    }
-    let input_length = input.len() as f64;
-    counts.values().fold(0.0, |entropy, &count| {
+    let input_length = length as f64;
+    counts.iter().fold(0.0, |entropy, &count| {
+        if count == 0 {
+            return entropy;
+        }
         let probability = count as f64 / input_length;
         entropy - probability * probability.log2()
     })

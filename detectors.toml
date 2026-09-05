@@ -4,6 +4,9 @@ pattern = "\\bAKIA[0-9A-Z]{16}\\b"
 finding_type = "AWS Access Key"
 severity = "HIGH"
 keywords = ["AKIA"]
+# AWS's own documentation example key appears in READMEs everywhere and is
+# never a real credential; exact-match allowlist so nothing else is lost.
+allowlist = ["^AKIAIOSFODNN7EXAMPLE$"]
 
 [[detectors]]
 name = "GoogleAPIKeyDetector"
@@ -55,13 +58,27 @@ severity = "HIGH"
 keywords = ["password", "passwd", "pwd"]
 # $PWD is the shell working-directory variable (docker --volume "$PWD:...",
 # Makefiles), never a password literal.
-allowlist = ["^\\$?PWD:"]
+allowlist = [
+  "^\\$?PWD:",
+  # Placeholder values in templates and .env.example files. Case-sensitive
+  # (placeholders are lowercase by convention) and shape-checked: a mixed
+  # value like "ReplaceThisRealSecret123" does not match and stays reported.
+  "[=:\"]?\\s*(changeme|changeit|your(-[a-z0-9]+)+|replace(-[a-z0-9]+)+|placeholder|dummy|xxxxx+)",
+]
 
 [[detectors]]
 name = "EmailDetector"
 pattern = "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b"
 finding_type = "Email Address"
 severity = "LOW"
+# Emails are rarely secrets; the noisiest matches are documentation
+# addresses on the RFC 2606 reserved domains and noreply conventions.
+allowlist = [
+  "@example\\.(com|org|net)",
+  "^noreply@",
+  "^no-reply@",
+  "@users\\.noreply\\.github\\.com$",
+]
 
 [[detectors]]
 name = "IPAddressDetector"
@@ -76,6 +93,9 @@ name = "PhoneNumberDetector"
 pattern = "(?:\\+1[-.\\s]?)?(?:\\(\\d{3}\\)[-.\\s]*|\\b\\d{3}[-.\\s])\\d{3}[-.\\s]?\\d{4}\\b"
 finding_type = "Phone Number"
 severity = "LOW"
+# The 555 exchange is reserved for fictional use; documentation phone
+# numbers are the detector's dominant match.
+allowlist = ["555"]
 
 [[detectors]]
 name = "CreditCardDetector"
@@ -113,6 +133,9 @@ entropy = 2.5
 allowlist = [
   "[:=]\\s*[a-z]+(?:_[a-z]+)+$",
   "[:=]\\s*[A-Z][a-z]+(?:[A-Z][a-z]*)*$",
+  # Placeholder values in templates and .env.example files (case-sensitive:
+  # mixed-case shapes are plausibly real weak credentials).
+  "[=:]\\s*[\"']?(changeme|changeit|your(-[a-z0-9]+)+|replace(-[a-z0-9]+)+|placeholder|dummy|xxxxx+)",
 ]
 
 [[detectors]]
@@ -142,6 +165,8 @@ pattern = "\\b[A-Za-z0-9+/]{28,}[=]{0,2}\\b"
 finding_type = "Base64 Encoded String"
 severity = "LOW"
 entropy = 4.2
+# The AWS documentation example secret pairs with the example access key.
+allowlist = ["^wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY$"]
 
 [[detectors]]
 name = "HighEntropyDetector"
@@ -188,7 +213,12 @@ entropy = 3.5
 # Long all-lowercase snake_case string literals are identifiers — serde
 # attributes, config keys, enum names — not random values. A generated secret
 # of this length carries digits or capitals.
-allowlist = ["^\"[a-z]+(?:_[a-z]+)+\"$"]
+allowlist = [
+  "^\"[a-z]+(?:_[a-z]+)+\"$",
+  # npm/shield-style checksum strings carry their algorithm prefix inside
+  # the quotes, so the prefix is visible in the match.
+  "^\"sha(256|384|512)-",
+]
 
 
 [[detectors]]
@@ -323,6 +353,9 @@ name = "AadhaarCardDetector"
 pattern = "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b"
 finding_type = "Aadhaar Card Number"
 severity = "HIGH"
+# Real Aadhaar numbers satisfy the Verhoeff checksum; without it, any
+# 12-digit run (UUID tails, numeric ids) reports HIGH.
+validate = "verhoeff"
 
 [[detectors]]
 name = "VoterIDDetector"

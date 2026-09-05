@@ -332,7 +332,7 @@ fn test_credit_card_requires_issuer_prefix_and_luhn() {
 
 #[test]
 fn test_phone_number_requires_separator_or_country_code() {
-    for phone in ["call 555-123-4567", "(555) 123-4567", "+1 555 123 4567"] {
+    for phone in ["call 415-123-4567", "(415) 123-4567", "+1 415 123 4567"] {
         assert!(
             reported_by(phone).contains(&"PhoneNumberDetector".to_string()),
             "should detect phone: {phone}"
@@ -341,6 +341,10 @@ fn test_phone_number_requires_separator_or_country_code() {
     assert!(
         !reported_by("ts 1700000000").contains(&"PhoneNumberDetector".to_string()),
         "a bare 10-digit run is a timestamp, not a phone number"
+    );
+    assert!(
+        !reported_by("call 555-123-4567").contains(&"PhoneNumberDetector".to_string()),
+        "the fictional 555 exchange is allowlisted"
     );
 }
 

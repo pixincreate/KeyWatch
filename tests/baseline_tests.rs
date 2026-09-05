@@ -20,7 +20,7 @@ fn test_baseline_filters_known_findings() {
         "test.txt",
         5,
         "AWS Key",
-        "AKIAIOSFODNN7EXAMPLE",
+        "AKIAABCDEFGHIJKLMNOP",
         "AWSAccessKeyDetector",
     );
     let baseline = Baseline::from_findings(std::slice::from_ref(&known_finding));
@@ -47,7 +47,7 @@ fn test_baseline_filters_moved_finding_in_same_file() {
         "test.txt",
         5,
         "AWS Key",
-        "AKIAIOSFODNN7EXAMPLE",
+        "AKIAABCDEFGHIJKLMNOP",
         "AWSAccessKeyDetector",
     );
     let baseline = Baseline::from_findings(std::slice::from_ref(&known_finding));
@@ -56,7 +56,7 @@ fn test_baseline_filters_moved_finding_in_same_file() {
         "test.txt",
         42,
         "AWS Key",
-        "AKIAIOSFODNN7EXAMPLE",
+        "AKIAABCDEFGHIJKLMNOP",
         "AWSAccessKeyDetector",
     )];
 
@@ -70,7 +70,7 @@ fn test_baseline_keeps_same_finding_in_different_file() {
         "test.txt",
         5,
         "AWS Key",
-        "AKIAIOSFODNN7EXAMPLE",
+        "AKIAABCDEFGHIJKLMNOP",
         "AWSAccessKeyDetector",
     );
     let baseline = Baseline::from_findings(std::slice::from_ref(&known_finding));
@@ -79,7 +79,7 @@ fn test_baseline_keeps_same_finding_in_different_file() {
         "other.txt",
         42,
         "AWS Key",
-        "AKIAIOSFODNN7EXAMPLE",
+        "AKIAABCDEFGHIJKLMNOP",
         "AWSAccessKeyDetector",
     )];
 

@@ -6,7 +6,7 @@ fn test_scan_stdin_with_path_exits_two_with_validation_error() {
     let temp_dir = tempfile::tempdir().expect("Create test dir");
     fs::write(
         temp_dir.path().join("secret.txt"),
-        "AWS_KEY=AKIAIOSFODNN7EXAMPLE",
+        "AWS_KEY=AKIAABCDEFGHIJKLMNOP",
     )
     .expect("Write test file");
 
