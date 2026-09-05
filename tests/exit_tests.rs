@@ -29,7 +29,7 @@ fn setup_scan_dir(name: &str, include_detectors: bool) -> PathBuf {
 fn test_exit_code_on_secrets() {
     let test_dir = setup_scan_dir("exit_secrets", true);
     let temp_file = test_dir.join("secret.txt");
-    fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+    fs::write(&temp_file, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file");
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
@@ -74,7 +74,7 @@ fn test_runtime_errors_exit_with_code_two() {
     let test_dir = setup_scan_dir("exit_runtime_error", false);
     let temp_file = test_dir.join("secret.txt");
     let invalid_detectors = test_dir.join("invalid-detectors.toml");
-    fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+    fs::write(&temp_file, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file");
     fs::write(&invalid_detectors, "[[detectors]").expect("Write invalid detector config");
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
@@ -95,7 +95,7 @@ fn test_embedded_detectors_enable_standalone_scan() {
     // Given a standalone binary with no detector configuration on disk.
     let test_dir = setup_scan_dir("embedded_detectors", false);
     let temp_file = test_dir.join("secret.txt");
-    fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+    fs::write(&temp_file, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file");
 
     // When the binary scans a file containing a built-in detector match.
     let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
@@ -122,7 +122,7 @@ fn test_embedded_detectors_enable_standalone_scan() {
 fn test_exit_mode_always() {
     let test_dir = setup_scan_dir("exit_always", true);
     let temp_file = test_dir.join("secret.txt");
-    fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+    fs::write(&temp_file, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file");
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
@@ -187,8 +187,8 @@ fn test_scan_multiple_paths() {
     let test_dir = setup_scan_dir("scan_multi_paths", true);
     let file1 = test_dir.join("secret1.txt");
     let file2 = test_dir.join("secret2.txt");
-    fs::write(&file1, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file 1");
-    fs::write(&file2, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file 2");
+    fs::write(&file1, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file 1");
+    fs::write(&file2, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file 2");
 
     let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
@@ -211,7 +211,7 @@ fn test_scan_multiple_paths() {
 fn test_scan_output_file() {
     let test_dir = setup_scan_dir("scan_output_file", true);
     let temp_file = test_dir.join("secret.txt");
-    fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+    fs::write(&temp_file, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file");
 
     let out_file = test_dir.join("report.json");
 
@@ -277,7 +277,7 @@ fn test_scan_output_file_when_no_secrets_reports_pass() {
 fn test_scan_verbose_output() {
     let test_dir = setup_scan_dir("scan_verbose_output", true);
     let temp_file = test_dir.join("secret.txt");
-    fs::write(&temp_file, "AWS_KEY=AKIAIOSFODNN7EXAMPLE").expect("Write test file");
+    fs::write(&temp_file, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file");
 
     let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .current_dir(&test_dir)
@@ -295,7 +295,7 @@ fn test_scan_verbose_output() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
-        !stdout.contains("AKIAIOSFODNN7EXAMPLE"),
+        !stdout.contains("AKIAABCDEFGHIJKLMNOP"),
         "reports must redact matched text by default, got:\n{stdout}"
     );
     assert!(
@@ -353,7 +353,7 @@ fn test_init_command() {
 fn test_show_secrets_opts_into_raw_matched_content() {
     let dir = setup_scan_dir("show_secrets", true);
     let file = dir.join("leak.txt");
-    fs::write(&file, "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n").expect("write");
+    fs::write(&file, "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n").expect("write");
 
     let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .args(["scan"])
@@ -364,7 +364,7 @@ fn test_show_secrets_opts_into_raw_matched_content() {
     let stdout = String::from_utf8_lossy(&output.stdout);
 
     assert!(
-        stdout.contains("AKIAIOSFODNN7EXAMPLE"),
+        stdout.contains("AKIAABCDEFGHIJKLMNOP"),
         "--show-secrets must include raw matched text, got:\n{stdout}"
     );
 

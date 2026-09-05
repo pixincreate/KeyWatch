@@ -57,6 +57,7 @@ All notable changes to this project will be documented in this file.
 - Files with invalid UTF-8 are decoded lossily and scanned instead of silently skipped; NUL-containing files are reported as `unscannable`
 - `Finding`'s `plugin_name` field is now `detector_name` in the code; the JSON report and baseline schema still emit/accept `plugin_name`
 - `CustomRule.description` was parsed but never surfaced and has been dropped (configs carrying it keep parsing)
+- False-positive reductions in the built-in detectors: AWS's documentation example key, placeholder values (`changeme`, `your-api-key-here`, `replace-me-please`), RFC 2606 example-domain emails and noreply conventions, fictional 555 phone numbers, npm/shield checksum prefixes, and non-Verhoeff 12-digit runs no longer report as Aadhaar
 - `--baseline` naming a missing file is an error instead of silently scanning with an empty baseline
 - Baseline files with an unknown format version are rejected instead of silently accepted
 - `--update-baseline` refreshes the recorded line numbers of entries it already knows, and saved baselines end with a newline

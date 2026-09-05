@@ -157,7 +157,7 @@ fn test_find_cloud_credentials() {
 
     let content = "\
 AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP\n\
-AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n\
+AWS_SECRET_ACCESS_KEY=xJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY42\n\
 GCP_API_KEY=AIzaSyC93k4n4BxvV_XYZ1234567890abcdefghijk\n\
 AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
 ";
@@ -206,7 +206,7 @@ fn test_multiple_detections_in_line() {
     let temp_dir = temp_dir();
     let test_file = temp_dir.join("key_watch_multi.txt");
 
-    let content = "password=secret email=user@example.com key=AKIATESTKEY123";
+    let content = "password=secret email=user@sampledomain.dev key=AKIATESTKEY123";
     fs::write(&test_file, content).expect("Unable to write test file");
 
     let options = ScanArgs {
@@ -592,7 +592,7 @@ fn test_detect_aadhaar() {
     let temp_dir = temp_dir();
     let test_file = temp_dir.join("keywatch_aadhaar_test.txt");
 
-    let content = "My Aadhaar: 1234-5678-9012\nBackup: 1234 5678 9012\nNo space: 123456789012";
+    let content = "My Aadhaar: 1000-0000-0004\nBackup: 1000 0000 0004\nNo space: 100000000004";
     fs::write(&test_file, content).expect("Write test file");
 
     let options = ScanArgs {
@@ -692,7 +692,7 @@ fn test_multiple_indian_ids() {
     let test_file = temp_dir.join("keywatch_indian_ids.txt");
 
     let content =
-        "Aadhaar: 9999-8888-7777\nVoter ID: ABC1234567\nPAN: XYZZU1234A\nABHA: 1111-2222-3333-44";
+        "Aadhaar: 1000-0000-0004\nVoter ID: ABC1234567\nPAN: XYZZU1234A\nABHA: 1111-2222-3333-44";
     fs::write(&test_file, content).expect("Write test file");
 
     let options = ScanArgs {
@@ -1206,7 +1206,7 @@ fn test_baseline_file_itself_is_never_scanned() {
     fs::create_dir_all(&dir).expect("create temp dir");
     fs::write(
         dir.join("secrets.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .expect("write secret file");
 
@@ -1350,7 +1350,7 @@ fn test_discovered_baseline_file_is_never_scanned() -> Result<(), String> {
     init_git_repo(&repo_dir)?;
     fs::write(
         repo_dir.join("secrets.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .map_err(|e| e.to_string())?;
 
@@ -1400,7 +1400,7 @@ fn test_staged_scan_skips_the_baseline_file() -> Result<(), String> {
     init_git_repo(&repo_dir)?;
     fs::write(
         repo_dir.join("secrets.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .map_err(|e| e.to_string())?;
 
@@ -1452,7 +1452,7 @@ fn test_repo_detectors_toml_cannot_disable_hook_scan() -> Result<(), String> {
     stage_file(
         &repo_dir,
         "leak.txt",
-        "aws_secret_access_key = wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n",
+        "aws_secret_access_key = xJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY42\n",
     )?;
     let status = Command::new("git")
         .args(["add", "detectors.toml"])
@@ -1494,7 +1494,7 @@ fn test_staged_scan_reads_blobs_git_renders_as_binary() -> Result<(), String> {
     stage_file(
         &repo_dir,
         "secrets.env",
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )?;
 
     let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
@@ -1530,7 +1530,7 @@ fn test_baseline_suppression_is_reported() -> Result<(), String> {
     init_git_repo(&repo_dir)?;
     fs::write(
         repo_dir.join("secrets.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .map_err(|e| e.to_string())?;
 
@@ -1570,7 +1570,7 @@ fn test_git_history_attributes_real_paths_and_honours_excludes() -> Result<(), S
     commit_file(
         &repo_dir,
         "leak.txt",
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
         "add",
     )?;
 
@@ -1620,7 +1620,7 @@ fn test_staged_scan_survives_diff_relative_from_subdirectory() -> Result<(), Str
     stage_file(
         &repo_dir,
         "root.txt",
-        "clean\naws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "clean\naws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )?;
 
     let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
@@ -1651,7 +1651,7 @@ fn test_prune_baseline_drops_stale_entries() -> Result<(), String> {
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(
         dir.join("a.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .map_err(|e| e.to_string())?;
     fs::write(
@@ -1732,7 +1732,7 @@ fn test_staged_scan_survives_hostile_git_config() -> Result<(), String> {
     stage_file(
         &repo_dir,
         "config.txt",
-        "one\ntwo\naws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "one\ntwo\naws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )?;
 
     let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
@@ -1795,7 +1795,7 @@ fn test_staged_scan_paths_narrow_the_diff() -> Result<(), String> {
     stage_file(
         &repo_dir,
         "secret.txt",
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )?;
 
     let run = |path: &str| {
@@ -1833,7 +1833,7 @@ fn test_trusted_mode_ignores_env_config_inside_the_scan_target() -> Result<(), S
     init_git_repo(&repo_dir)?;
     fs::write(
         repo_dir.join("leak.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .map_err(|e| e.to_string())?;
     fs::write(
@@ -1890,7 +1890,7 @@ fn test_staged_scan_from_subdirectory_still_skips_the_baseline_file() -> Result<
     commit_file(&repo_dir, "config.txt", "clean line\n", "init")?;
     fs::write(
         repo_dir.join("secret.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .map_err(|e| e.to_string())?;
 
@@ -1988,7 +1988,7 @@ fn test_prune_baseline_warns_when_paths_narrow_the_scan() -> Result<(), String> 
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(
         dir.join("a.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .map_err(|e| e.to_string())?;
     fs::write(
@@ -2132,7 +2132,7 @@ fn test_explicit_baseline_missing_file_errors_unless_creating() -> Result<(), St
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     fs::write(
         dir.join("leak.txt"),
-        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n",
+        "aws_access_key_id = AKIAABCDEFGHIJKLMNOP\n",
     )
     .map_err(|e| e.to_string())?;
 

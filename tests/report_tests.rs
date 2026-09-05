@@ -288,7 +288,7 @@ fn test_redact_shows_no_prefix_for_short_matches() {
     assert_eq!(key_watch::report::redact("abc12"), "(5 chars, redacted)");
     assert_eq!(key_watch::report::redact("abc1234"), "(7 chars, redacted)");
     assert_eq!(
-        key_watch::report::redact("AKIAIOSFODNN7EXAMPLE"),
+        key_watch::report::redact("AKIAABCDEFGHIJKLMNOP"),
         "AKIA... (20 chars, redacted)"
     );
 }
