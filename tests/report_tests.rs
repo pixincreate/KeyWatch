@@ -292,3 +292,41 @@ fn test_redact_shows_no_prefix_for_short_matches() {
         "AKIA... (20 chars, redacted)"
     );
 }
+
+#[test]
+fn test_finding_wire_format_keeps_plugin_name_and_round_trips() {
+    use key_watch::report::{Finding, Severity};
+
+    let finding = Finding {
+        file_path: "a.txt".to_string(),
+        line_number: 7,
+        finding_type: "AWS Key".to_string(),
+        severity: Severity::High,
+        matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
+        detector_name: "AWSKeyDetector".to_string(),
+    };
+
+    // The JSON wire format keeps the historical plugin_name key.
+    let json = serde_json::to_value(&finding).expect("serialize");
+    assert_eq!(json["plugin_name"], "AWSKeyDetector");
+    assert!(json.get("detector_name").is_none(), "no duplicate key");
+
+    // Deserialization accepts the historical key and the new one (alias).
+    let from_historical: Finding =
+        serde_json::from_value(json.clone()).expect("plugin_name must deserialize");
+    assert_eq!(from_historical.detector_name, "AWSKeyDetector");
+
+    let aliased = json;
+    let mut with_new_key = serde_json::Map::new();
+    for (key, value) in aliased.as_object().expect("object") {
+        let key = if key == "plugin_name" {
+            "detector_name".to_string()
+        } else {
+            key.clone()
+        };
+        with_new_key.insert(key, value.clone());
+    }
+    let from_new: Finding =
+        serde_json::from_value(with_new_key.into()).expect("alias must deserialize");
+    assert_eq!(from_new.detector_name, "AWSKeyDetector");
+}

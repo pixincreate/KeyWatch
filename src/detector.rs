@@ -140,6 +140,28 @@ mod verhoeff_tests {
         assert!(!passes_verhoeff("446655440000"));
         assert!(passes_verhoeff("100000000004"));
     }
+
+    #[test]
+    fn verhoeff_handles_separators_and_partial_digits() {
+        // Separators are ignored: a real-world spelled number passes.
+        assert!(passes_verhoeff("2341 2341 2346"));
+        assert!(passes_verhoeff("2341-2341-2346"));
+        // Non-digit characters are filtered, so the digit suffix decides.
+        assert!(passes_verhoeff("id: 2363!"));
+        assert!(!passes_verhoeff("id: 2362!"));
+    }
+
+    #[test]
+    fn verhoeff_rejects_degenerate_inputs() {
+        assert!(!passes_verhoeff(""));
+        assert!(!passes_verhoeff("no digits here"));
+        // The p-permutation breaks the all-zeros identity chain, so the
+        // classic dummy number does NOT validate: good for a secret scanner.
+        assert!(!passes_verhoeff("000000000000"));
+        // Single digit: 0 is its own inverse, so "0" validates.
+        assert!(passes_verhoeff("0"));
+        assert!(!passes_verhoeff("1"));
+    }
 }
 
 /// Luhn checksum, ignoring embedded separators.
@@ -259,11 +281,35 @@ impl Detector {
     }
 
     /// Whether the pattern carries the dot-matches-newline flag anywhere —
-    /// `(?s)` or the grouped `(?s:...)` form — and must therefore run per
-    /// chunk instead of per line, or multiline secrets slip past it. Single
-    /// source for the production partition and the tests.
+    /// `(?s)`, a combined group like `(?is)`, or the scoped `(?s:...)` form —
+    /// and must therefore run per chunk instead of per line, or multiline
+    /// secrets slip past it. Single source for the production partition and
+    /// the tests.
     pub fn is_multiline(&self) -> bool {
-        self.regex.as_str().contains("(?s")
+        let pattern = self.regex.as_str();
+        let bytes = pattern.as_bytes();
+        let mut i = 0;
+        while i + 1 < bytes.len() {
+            if bytes[i] == b'(' && bytes[i + 1] == b'?' && (i == 0 || bytes[i - 1] != b'\\') {
+                // A flag group: scan its flag characters up to the closing
+                // paren or the group separator.
+                let mut j = i + 2;
+                let mut saw_s = false;
+                while j < bytes.len() && bytes[j] != b')' && bytes[j] != b':' {
+                    if bytes[j] == b's' {
+                        saw_s = true;
+                    }
+                    j += 1;
+                }
+                if saw_s {
+                    return true;
+                }
+                i = j;
+            } else {
+                i += 1;
+            }
+        }
+        false
     }
 
     pub fn has_sufficient_entropy(&self, matched: &str) -> bool {
@@ -458,4 +504,59 @@ fn initialize_detectors_from_config(
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(|source| DetectorInitError::InvalidDetector { source })
+}
+
+#[cfg(test)]
+mod accept_unit_tests {
+    use super::{Detector, passes_luhn, shannon_entropy};
+
+    fn detector(pattern: &str, keywords: &[&str]) -> Detector {
+        let keywords: Vec<String> = keywords.iter().map(|k| k.to_string()).collect();
+        Detector::new("T", pattern, "T", "LOW", &[], &keywords, None).expect("valid detector")
+    }
+
+    #[test]
+    fn luhn_accepts_known_cards_and_separators() {
+        assert!(passes_luhn("4111111111111111"));
+        assert!(passes_luhn("4111-1111-1111-1111"));
+        assert!(passes_luhn("4111 1111 1111 1111"));
+        assert!(!passes_luhn("4111111111111112"));
+        assert!(!passes_luhn(""));
+        assert!(!passes_luhn("no digits"));
+        // Below the 13-digit floor.
+        assert!(!passes_luhn("41111111111"));
+    }
+
+    #[test]
+    fn shannon_entropy_matches_information_theory() {
+        assert_eq!(shannon_entropy(""), 0.0);
+        assert_eq!(shannon_entropy("aaaa"), 0.0);
+        assert!((shannon_entropy("ab") - 1.0).abs() < 1e-9);
+        assert!((shannon_entropy("abab") - 1.0).abs() < 1e-9);
+        // 64-char hex: near but under the 4.0 ceiling.
+        let hex = "8b0e7153bf7c3706d85c524e440066559a6656c90bd5482a90a29b9fa5ff5180";
+        let entropy = shannon_entropy(hex);
+        assert!(entropy > 3.5 && entropy < 4.0, "hex entropy was {entropy}");
+        // Multi-byte UTF-8 counts bytes.
+        assert!(shannon_entropy("\u{1F600}") > 0.0);
+    }
+
+    #[test]
+    fn is_multiline_matches_only_the_dotall_flag() {
+        assert!(detector(r"(?s)BEGIN.*END", &[]).is_multiline());
+        assert!(detector(r"(?s:BEGIN.*END)", &[]).is_multiline());
+        assert!(detector(r"(?is)BEGIN.*END", &[]).is_multiline());
+        assert!(!detector(r"SECRET_\w+", &[]).is_multiline());
+        assert!(!detector(r"(?i)secret", &[]).is_multiline());
+    }
+
+    #[test]
+    fn keywords_are_lowercased_for_the_prefilter() {
+        // Contract: callers lowercase content once per line; stored keywords
+        // are lowercased at construction.
+        let detector = detector(r"SECRET_\w+", &["ApiKey", "SECRET"]);
+        assert!(detector.has_keywords("set the apikey value"));
+        assert!(detector.has_keywords(&"THE SECRET VALUE".to_lowercase()));
+        assert!(!detector.has_keywords("nothing relevant"));
+    }
 }
