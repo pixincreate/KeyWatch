@@ -1,5 +1,6 @@
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
+use thiserror::Error;
 
 /// Keeps enough to identify a finding without reproducing the credential:
 /// the first four characters and the length. Short matches show the length
@@ -40,22 +41,11 @@ impl Severity {
 }
 
 /// Error returned when a string cannot be parsed as a [`Severity`].
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Error, PartialEq)]
+#[error("invalid severity '{input}': expected one of CRITICAL, HIGH, MEDIUM, LOW")]
 pub struct ParseSeverityError {
     pub input: String,
 }
-
-impl fmt::Display for ParseSeverityError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "invalid severity '{}': expected one of CRITICAL, HIGH, MEDIUM, LOW",
-            self.input
-        )
-    }
-}
-
-impl std::error::Error for ParseSeverityError {}
 
 impl FromStr for Severity {
     type Err = ParseSeverityError;

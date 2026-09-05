@@ -2174,3 +2174,57 @@ fn test_explicit_baseline_missing_file_errors_unless_creating() -> Result<(), St
     let _ = fs::remove_dir_all(&dir);
     Ok(())
 }
+
+#[test]
+fn test_binary_file_is_reported_as_unscannable() -> Result<(), String> {
+    // A NUL-containing file was silently skipped before — neither scanned
+    // nor reported. It now surfaces as unscannable so the gap is visible.
+    let dir = unique_temp_dir("binary_unscannable");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join("blob.bin"), b"text tail\x00binary").map_err(|e| e.to_string())?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", ".", "--verbose", "--no-baseline-discovery"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .current_dir(&dir)
+        .output()
+        .expect("run key-watch");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(
+        stdout.contains("\"unscannable\": {\n    \"count\": 1"),
+        "the binary file must be reported as unscannable, got:\n{stdout}"
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[test]
+fn test_non_utf8_file_with_secret_is_still_scanned() -> Result<(), String> {
+    // Invalid UTF-8 used to make whole-file mode skip the file silently; it
+    // is now decoded lossily so the secret on it is still found.
+    let dir = unique_temp_dir("non_utf8_secret");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    fs::write(dir.join("legacy.conf"), b"password = 's\xFFcret'\n").map_err(|e| e.to_string())?;
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", ".", "--no-baseline-discovery"])
+        .env("KEYWATCH_CONFIG_PATH", detectors_config_path())
+        .current_dir(&dir)
+        .output()
+        .expect("run key-watch");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "the lossy-decoded secret must be reported, got:\n{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}

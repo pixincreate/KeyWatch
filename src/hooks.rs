@@ -263,12 +263,18 @@ fn resolve_hook_uninstall_target(
         )?,
     };
 
-    Ok(HookInstallTarget {
+    Ok(global_uninstall_target(hooks_dir, hook_type))
+}
+
+/// Pure construction of the global uninstall target, split out so the test
+/// does not depend on the machine's `core.hooksPath`.
+fn global_uninstall_target(hooks_dir: PathBuf, hook_type: &'static str) -> HookInstallTarget {
+    HookInstallTarget {
         path: hooks_dir.join(hook_type),
         hooks_dir,
         is_global: true,
         configured_global_path: false,
-    })
+    }
 }
 
 fn resolve_local_hooks_dir() -> Result<PathBuf, HookError> {
@@ -407,7 +413,7 @@ fn ensure_hook_target_is_keywatch_managed(
 mod tests {
     use super::{
         HookError, ensure_global_hook_target_is_safe, ensure_local_hook_target_is_safe_to_create,
-        managed_global_hooks_dir, resolve_hook_uninstall_target, resolve_local_hooks_dir_from,
+        global_uninstall_target, managed_global_hooks_dir, resolve_local_hooks_dir_from,
     };
     use std::env;
     use std::fs;
@@ -550,9 +556,9 @@ mod tests {
 
     #[test]
     fn test_global_uninstall_target_does_not_configure_missing_hooks_path() {
-        let install_target = resolve_hook_uninstall_target("pre-commit", true)
-            .expect("global uninstall target should resolve");
-        let expected_hooks_dir = managed_global_hooks_dir(
+        // Built through the pure constructor: a machine with its own global
+        // core.hooksPath must not change what this test asserts.
+        let hooks_dir = managed_global_hooks_dir(
             env::var_os("XDG_CONFIG_HOME"),
             env::var_os("HOME"),
             env::var_os("APPDATA"),
@@ -560,10 +566,12 @@ mod tests {
         )
         .expect("managed hooks dir should resolve");
 
+        let install_target = global_uninstall_target(hooks_dir.clone(), "pre-commit");
+
         assert!(install_target.is_global);
         assert!(!install_target.configured_global_path);
-        assert_eq!(install_target.hooks_dir, expected_hooks_dir);
-        assert_eq!(install_target.path, expected_hooks_dir.join("pre-commit"));
+        assert_eq!(install_target.hooks_dir, hooks_dir);
+        assert_eq!(install_target.path, hooks_dir.join("pre-commit"));
     }
 
     #[test]

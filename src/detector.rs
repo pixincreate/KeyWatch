@@ -5,75 +5,33 @@ pub use error::DetectorInitError;
 use crate::report::{ParseSeverityError, Severity};
 use regex::Regex;
 use serde::Deserialize;
-use std::{borrow::Cow, fmt, fs, str::FromStr};
+use std::{borrow::Cow, fs, str::FromStr};
+use thiserror::Error;
 
 const EMBEDDED_DETECTORS_CONFIG: &str = include_str!("../detectors.toml");
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum DetectorError {
+    #[error("invalid pattern in detector '{detector}': {source}")]
     InvalidPattern {
         detector: String,
         source: regex::Error,
     },
+    #[error("invalid allowlist pattern in detector '{detector}': {source}")]
     InvalidAllowlistPattern {
         detector: String,
         source: regex::Error,
     },
+    #[error("invalid severity in detector '{detector}': {source}")]
     InvalidSeverity {
         detector: String,
         source: ParseSeverityError,
     },
+    #[error("invalid validator in detector '{detector}': {source}")]
     InvalidValidator {
         detector: String,
         source: ParseValidatorError,
     },
-}
-
-impl fmt::Display for DetectorError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DetectorError::InvalidPattern { detector, source } => {
-                write!(
-                    formatter,
-                    "invalid pattern in detector '{}': {}",
-                    detector, source
-                )
-            }
-            DetectorError::InvalidAllowlistPattern { detector, source } => {
-                write!(
-                    formatter,
-                    "invalid allowlist pattern in detector '{}': {}",
-                    detector, source
-                )
-            }
-            DetectorError::InvalidSeverity { detector, source } => {
-                write!(
-                    formatter,
-                    "invalid severity in detector '{}': {}",
-                    detector, source
-                )
-            }
-            DetectorError::InvalidValidator { detector, source } => {
-                write!(
-                    formatter,
-                    "invalid validator in detector '{}': {}",
-                    detector, source
-                )
-            }
-        }
-    }
-}
-
-impl std::error::Error for DetectorError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::InvalidPattern { source, .. } | Self::InvalidAllowlistPattern { source, .. } => {
-                Some(source)
-            }
-            Self::InvalidSeverity { source, .. } => Some(source),
-            Self::InvalidValidator { source, .. } => Some(source),
-        }
-    }
 }
 
 /// Extra structural check a detector can require of its matches, for
@@ -99,18 +57,11 @@ impl FromStr for ContentValidator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
+#[error("unknown validator '{value}'")]
 pub struct ParseValidatorError {
     value: String,
 }
-
-impl fmt::Display for ParseValidatorError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(formatter, "unknown validator '{}'", self.value)
-    }
-}
-
-impl std::error::Error for ParseValidatorError {}
 
 /// Luhn checksum, ignoring embedded separators.
 fn passes_luhn(matched: &str) -> bool {

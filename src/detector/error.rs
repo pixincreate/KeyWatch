@@ -1,43 +1,19 @@
 use super::DetectorError;
-use std::{fmt, io, path::PathBuf};
+use std::io;
+use std::path::PathBuf;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum DetectorInitError {
+    #[error("Failed to locate detectors.toml")]
     ConfigNotFound,
+    #[error("Failed to read {}: {source}", path.display())]
     ReadConfig { path: PathBuf, source: io::Error },
+    #[error("Failed to parse detectors.toml: {source}")]
     ParseConfig { source: toml::de::Error },
+    #[error("duplicate detector name '{detector}'")]
     DuplicateName { detector: String },
+    #[error("{source}")]
     InvalidDetector { source: DetectorError },
-}
-
-impl fmt::Display for DetectorInitError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DetectorInitError::ConfigNotFound => {
-                write!(formatter, "Failed to locate detectors.toml")
-            }
-            DetectorInitError::ReadConfig { path, source } => {
-                write!(formatter, "Failed to read {}: {}", path.display(), source)
-            }
-            DetectorInitError::ParseConfig { source } => {
-                write!(formatter, "Failed to parse detectors.toml: {}", source)
-            }
-            DetectorInitError::DuplicateName { detector } => {
-                write!(formatter, "duplicate detector name '{}'", detector)
-            }
-            DetectorInitError::InvalidDetector { source } => write!(formatter, "{}", source),
-        }
-    }
-}
-
-impl std::error::Error for DetectorInitError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            DetectorInitError::ConfigNotFound | DetectorInitError::DuplicateName { .. } => None,
-            DetectorInitError::ReadConfig { source, .. } => Some(source),
-            DetectorInitError::ParseConfig { source } => Some(source),
-            DetectorInitError::InvalidDetector { source } => Some(source),
-        }
-    }
 }

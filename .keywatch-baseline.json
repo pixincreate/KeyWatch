@@ -945,6 +945,76 @@
       "finding_type": "AWS Access Key",
       "matched_content_hash": "0cbae582394e61dc81d9946ed87ec44f4c83cf1167181f62cd1454eb5e2e5469",
       "plugin_name": "AWSKeyDetector"
+    },
+    {
+      "file_path": "./src/config/tests/application.rs",
+      "line_number": 298,
+      "finding_type": "Credit Card Number",
+      "matched_content_hash": "4541206d542811878a9374508fe296fa321a8b56c2902736a02f388836f6e108",
+      "plugin_name": "CreditCardDetector"
+    },
+    {
+      "file_path": "./src/scanner/lines.rs",
+      "line_number": 368,
+      "finding_type": "AWS Access Key",
+      "matched_content_hash": "3f733150de7916d4778298d7f90493889c38b76876b80c058e439851ce60cb2b",
+      "plugin_name": "AWSKeyDetector"
+    },
+    {
+      "file_path": "./src/scanner/lines.rs",
+      "line_number": 368,
+      "finding_type": "Password",
+      "matched_content_hash": "f6bd37622d846ac435a7b7dcbde2347d59494dfd3c3a787604e8b91491a39c95",
+      "plugin_name": "PasswordDetector"
+    },
+    {
+      "file_path": "./src/scanner/lines.rs",
+      "line_number": 368,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "f6bd37622d846ac435a7b7dcbde2347d59494dfd3c3a787604e8b91491a39c95",
+      "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./src/scanner/lines.rs",
+      "line_number": 424,
+      "finding_type": "SSH Private Key",
+      "matched_content_hash": "678a65e8968aabff441076ae306e13d4fc85b1d36d8036a10d2100c1dc40d251",
+      "plugin_name": "SSHPrivateKeyDetector"
+    },
+    {
+      "file_path": "./src/scanner/lines.rs",
+      "line_number": 424,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "3dde06bf268892d4210f4b0bf1402ecc6a8ad1e015f8204cdc31667762572ef5",
+      "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "./src/scanner/lines.rs",
+      "line_number": 424,
+      "finding_type": "Private Key Content",
+      "matched_content_hash": "f91082d1cbd2032b5ea19f2bbf6b3f88e02c12ae320fc9e08e6dc0f73d82bdd1",
+      "plugin_name": "PrivateKeyDetector"
+    },
+    {
+      "file_path": "./src/scanner/lines.rs",
+      "line_number": 424,
+      "finding_type": "Private Key Content",
+      "matched_content_hash": "f91082d1cbd2032b5ea19f2bbf6b3f88e02c12ae320fc9e08e6dc0f73d82bdd1",
+      "plugin_name": "PrivateKeyContentDetector"
+    },
+    {
+      "file_path": "./src/scanner/lines.rs",
+      "line_number": 447,
+      "finding_type": "Password",
+      "matched_content_hash": "f260ab98a91b6cf1495f7d0048606e54f4ea955195e06f0523068b49a9611b44",
+      "plugin_name": "PasswordDetector"
+    },
+    {
+      "file_path": "./tests/scanner_tests.rs",
+      "line_number": 2212,
+      "finding_type": "Password",
+      "matched_content_hash": "6121378fbc25183476235d474ee367f7dbd0bbe3d96642daaeb483b5e9108cdb",
+      "plugin_name": "PasswordDetector"
     }
   ]
 }
