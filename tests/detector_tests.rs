@@ -283,6 +283,45 @@ fn test_generic_key_value_ignores_unquoted_identifier_assignments() {
     }
 }
 
+#[test]
+fn test_password_detector_ignores_rust_expressions() {
+    let detectors = key_watch::detector::initialize_detectors().expect("load detectors");
+    let password_detector = detectors
+        .iter()
+        .find(|d| d.name == "PasswordDetector")
+        .expect("PasswordDetector should exist");
+
+    let is_reported = |line: &str| {
+        password_detector
+            .regex
+            .find_iter(line)
+            .any(|m| password_detector.accepts_match(m.as_str()))
+    };
+
+    // Rust expressions are plumbing, not credentials.
+    for code in [
+        "password: Secret<String>,",
+        "password: password.to_owned(),",
+        "password: config.db_password.clone(),",
+        "password: Some(hyperswitch_masking::Secret::new(value)),",
+        "password: String,",
+    ] {
+        assert!(
+            !is_reported(code),
+            "should not flag Rust expression: {code}"
+        );
+    }
+
+    // Quoted literals and bare values stay reported.
+    for secret in [
+        "password = \"hunter2hunter2\"",
+        "PASSWORD=abc123def456",
+        "pwd = Swordfish2",
+    ] {
+        assert!(is_reported(secret), "should flag credential: {secret}");
+    }
+}
+
 /// Helper: does any built-in detector report this line?
 fn reported_by(line: &str) -> Vec<String> {
     let detectors = key_watch::detector::initialize_detectors().expect("load detectors");

@@ -51,6 +51,8 @@ All notable changes to this project will be documented in this file.
 - `GenericKeyValueDetector` and `RandomString` no longer flag code identifiers (`let payment_method_token = card_token`, snake_case serde attributes)
 - `PasswordDetector` no longer flags `$PWD:`
 - `GenericKeyValueDetector` no longer flags bare CamelCase type paths (`token: PaymentTokenData,`)
+- `PasswordDetector` no longer flags Rust expressions (`password: Secret<String>`, `password: config.password.clone()`, `Some(Secret::new(...))`) as credentials
+- A failed `git cat-file` during a staged scan reports itself instead of claiming `git diff` failed
 - Custom rules in `.keywatch.toml` support `allowlist`, `keywords`, `entropy` and `validate`, matching built-in detector definitions
 - Pre-push repository filters fail closed on Windows drive-path remotes instead of misparsing the drive letter as a host
 - Chunked streaming scans no longer duplicate multiline matches that land inside the window overlap
