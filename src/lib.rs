@@ -167,7 +167,11 @@ fn run_scan_command(args: &ScanArgs) -> Result<(), RunCliError> {
         0 => "No secrets found.".to_string(),
         count => format!(
             "WARNING: {} potential secret(s) detected (CRITICAL: {}, HIGH: {}, MEDIUM: {}, LOW: {})",
-            count, severity_counts.0, severity_counts.1, severity_counts.2, severity_counts.3
+            count,
+            severity_counts.critical,
+            severity_counts.high,
+            severity_counts.medium,
+            severity_counts.low
         ),
     };
     emit(&summary)?;

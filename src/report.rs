@@ -135,9 +135,6 @@ pub struct ScanMetadata {
 }
 
 /// How many paths an exclusion removed, and a bounded sample of them.
-///
-/// The full list is not reported: excluding `target/**` in a Rust repository
-/// produced 46,310 entries and a 4.6 MB report for 61 scanned files.
 #[derive(Serialize, Clone, Default)]
 pub struct ExcludedSummary {
     pub count: usize,
@@ -207,15 +204,23 @@ pub fn create_report(
     serde_json::to_string_pretty(&report)
 }
 
-pub fn get_severity_counts(findings: &[Finding]) -> (usize, usize, usize, usize) {
-    let mut counts = (0, 0, 0, 0);
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct SeverityCounts {
+    pub critical: usize,
+    pub high: usize,
+    pub medium: usize,
+    pub low: usize,
+}
+
+pub fn get_severity_counts(findings: &[Finding]) -> SeverityCounts {
+    let mut counts = SeverityCounts::default();
     for finding in findings {
-        counts = match finding.severity {
-            Severity::Critical => (counts.0 + 1, counts.1, counts.2, counts.3),
-            Severity::High => (counts.0, counts.1 + 1, counts.2, counts.3),
-            Severity::Medium => (counts.0, counts.1, counts.2 + 1, counts.3),
-            Severity::Low => (counts.0, counts.1, counts.2, counts.3 + 1),
-        };
+        match finding.severity {
+            Severity::Critical => counts.critical += 1,
+            Severity::High => counts.high += 1,
+            Severity::Medium => counts.medium += 1,
+            Severity::Low => counts.low += 1,
+        }
     }
     counts
 }
