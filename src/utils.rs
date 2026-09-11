@@ -15,8 +15,6 @@ static HOME_DIR: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
 /// is piped (`key-watch hook install | head`). A closed pipe is a normal way
 /// for a reader to stop listening, so it is reported as success.
 pub fn emit_line(line: &str) -> std::io::Result<()> {
-    use std::io::Write;
-
     let mut stdout = std::io::stdout().lock();
     match writeln!(stdout, "{line}") {
         Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
