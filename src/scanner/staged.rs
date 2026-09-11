@@ -348,7 +348,7 @@ pub(super) fn scan_index_blobs(
         let output = std::process::Command::new("git")
             .args(["cat-file", "blob", &format!(":{path}")])
             .output()
-            .map_err(|source| ScannerError::RunGitDiff { source })?;
+            .map_err(|source| ScannerError::RunGitCatFile { source })?;
         if !output.status.success() {
             skipped.push(path.clone());
             continue;
