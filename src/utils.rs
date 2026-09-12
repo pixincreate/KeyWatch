@@ -29,6 +29,23 @@ pub fn home_dir() -> Option<&'static PathBuf> {
     HOME_DIR.as_ref()
 }
 
+/// Whether `path` is writable by every user.
+///
+/// A world-writable directory or file is not a trust boundary: on a shared
+/// host any user can replace configuration that a scan is about to trust.
+#[cfg(unix)]
+pub fn is_world_writable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path)
+        .map(|metadata| metadata.permissions().mode() & 0o002 != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+pub fn is_world_writable(_path: &Path) -> bool {
+    false
+}
+
 /// Renders a path for terminal output, abbreviating the home directory as `~`.
 pub fn display_path(path: &Path) -> String {
     match HOME_DIR

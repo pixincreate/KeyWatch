@@ -176,7 +176,13 @@ fn emit_scan_result(
     let scan_time = format_scan_time(start.elapsed());
     let suppressed = scan_metadata.suppressed_by_baseline;
     let severity_counts = report::get_severity_counts(&findings);
-    let exit_code = calculate_exit_code(&findings, &args.exit_mode);
+    let mut exit_code = calculate_exit_code(&findings, &args.exit_mode);
+    if args.fail_on_unscannable
+        && matches!(args.exit_mode, ExitMode::Strict)
+        && !scan_metadata.unscannable_files.is_empty()
+    {
+        exit_code = 1;
+    }
     let findings_count = findings.len();
     let report_out = match args.format {
         OutputFormat::Json => {

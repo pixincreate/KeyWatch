@@ -415,6 +415,7 @@ fn find_detectors_config(
                 || untrusted_roots.is_empty()
                 || !untrusted_roots.iter().any(|root| is_within(path, root))
         })
+        .filter(|path| !crate::utils::is_world_writable(path))
         .or_else(|| {
             if !include_repository_config {
                 return None;
@@ -423,12 +424,25 @@ fn find_detectors_config(
             let repository_config = std::path::PathBuf::from(DETECTORS_FILE_NAME);
             repository_config.exists().then_some(repository_config)
         })
+        // Trusted mode uses the embedded detector set. A repository can
+        // redirect HOME or XDG_CONFIG_HOME (.envrc, devcontainer) and drop a
+        // detectors.toml into the redirected location, which would silently
+        // disable the hook; the binary directory is skipped for the same
+        // reason. KEYWATCH_CONFIG_PATH above remains the operator channel.
         .or_else(|| {
+            if !include_repository_config {
+                return None;
+            }
+
             dirs::config_dir()
                 .map(|config_directory| config_directory.join("keywatch").join(DETECTORS_FILE_NAME))
                 .filter(|path| path.exists())
         })
         .or_else(|| {
+            if !include_repository_config {
+                return None;
+            }
+
             std::env::current_exe()
                 .ok()
                 .and_then(|executable_path| {
