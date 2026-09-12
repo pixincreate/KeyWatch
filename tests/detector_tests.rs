@@ -284,6 +284,84 @@ fn test_generic_key_value_ignores_unquoted_identifier_assignments() {
 }
 
 #[test]
+fn test_generic_key_value_entropy_gates_the_captured_value() {
+    let detectors = key_watch::detector::initialize_detectors().expect("load detectors");
+    let generic = detectors
+        .iter()
+        .find(|d| d.name == "GenericKeyValueDetector")
+        .expect("GenericKeyValueDetector should exist");
+
+    let is_reported = |line: &str| {
+        generic
+            .regex
+            .captures_iter(line)
+            .any(|captures| generic.accepts_captures(&captures))
+    };
+
+    // The whole match clears the 2.5 threshold only because the key name
+    // contributes entropy; the captured value is one repeated character and
+    // must gate the match out.
+    assert!(
+        !is_reported("api_key = \"aaaaaaaaaa\""),
+        "a repeated-character value must not report"
+    );
+    assert!(
+        is_reported("api_key = \"aB3xK9mQ2pR7\""),
+        "a real-looking value must still report"
+    );
+}
+
+#[test]
+fn test_accepts_captures_falls_back_to_the_whole_match() -> Result<(), DetectorError> {
+    let is_reported = |detector: &Detector, line: &str| {
+        detector
+            .regex
+            .captures_iter(line)
+            .any(|captures| detector.accepts_captures(&captures))
+    };
+
+    // No capture group: entropy sees the whole match, as accepts_match does.
+    let plain = Detector::new(
+        "NoCaptureGroup",
+        r"\bsecret_[a-z0-9]+\b",
+        "Test Secret",
+        "HIGH",
+        &[],
+        &[],
+        Some(3.0),
+    )?;
+    assert!(
+        !is_reported(&plain, "secret_aaaaaaaa"),
+        "whole-match entropy below the threshold must reject"
+    );
+    assert!(
+        is_reported(&plain, "secret_a1b2c3d4e5"),
+        "whole-match entropy above the threshold must accept"
+    );
+
+    // A group that did not participate in the match also falls back to the
+    // whole match; the participating group gates on its own value.
+    let alternate = Detector::new(
+        "AlternateGroup",
+        r"alpha|beta([a-z]+)",
+        "Test Secret",
+        "HIGH",
+        &[],
+        &[],
+        Some(1.5),
+    )?;
+    assert!(
+        is_reported(&alternate, "alpha"),
+        "a non-participating group must fall back to the whole match"
+    );
+    assert!(
+        !is_reported(&alternate, "betaaaaaaaaaaa"),
+        "the participating group's value must gate the match"
+    );
+    Ok(())
+}
+
+#[test]
 fn test_password_detector_ignores_rust_expressions() {
     let detectors = key_watch::detector::initialize_detectors().expect("load detectors");
     let password_detector = detectors
@@ -382,8 +460,8 @@ fn test_phone_number_requires_separator_or_country_code() {
         "a bare 10-digit run is a timestamp, not a phone number"
     );
     assert!(
-        !reported_by("call 555-123-4567").contains(&"PhoneNumberDetector".to_string()),
-        "the fictional 555 exchange is allowlisted"
+        reported_by("call 555-123-4567").contains(&"PhoneNumberDetector".to_string()),
+        "only the 555-0100..555-0199 reserved range is fictional; 555-123-4567 is not"
     );
 }
 
@@ -488,14 +566,28 @@ fn test_email_allowlists_documentation_domains_but_not_real_ones() {
         reported_by("owner: bob.smith@company.io").contains(&"EmailDetector".to_string()),
         "a real-looking address is still reported"
     );
+    assert!(
+        reported_by("owner: user@example.com.attacker.io").contains(&"EmailDetector".to_string()),
+        "the documentation-domain allowlist is anchored and must not suppress lookalikes"
+    );
 }
 
 #[test]
 fn test_fictional_555_numbers_are_allowlisted() {
-    for phone in ["call 555-123-4567", "(212) 555-0123", "fax 555 123 4567"] {
+    for phone in [
+        "call (212) 555-0100",
+        "(415) 555-0199",
+        "fax (646) 555-0123",
+    ] {
         assert!(
             !reported_by(phone).contains(&"PhoneNumberDetector".to_string()),
-            "{phone} must not report"
+            "{phone} is in the reserved 555-01xx range and must not report"
+        );
+    }
+    for phone in ["call 555-123-4567", "call (212) 555-0200"] {
+        assert!(
+            reported_by(phone).contains(&"PhoneNumberDetector".to_string()),
+            "{phone} is outside the reserved 555-01xx range and must report"
         );
     }
     assert!(
@@ -516,4 +608,286 @@ fn test_checksum_prefix_is_allowlisted_in_random_string() {
             .contains(&"RandomString".to_string()),
         "a quoted random string without a checksum prefix still reports"
     );
+}
+
+#[test]
+fn test_supabase_service_role_key_requires_service_role_claim() {
+    // Real service-role JWTs carry the base64url `service_role` claim in the
+    // payload segment; the old pattern embedded one fixture's exact payload.
+    let header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+    let service_role = "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3AiLCJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjIwMDAwMDAwMDB9";
+    let anon = "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3AiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoyMDAwMDAwMDAwfQ";
+    let signature = "sIGf0pXe9Bq8wZ1k3nR7vL5cQ2dY4uM6aJ0hT8eWxN";
+
+    assert!(
+        reported_by(&format!(
+            "SUPABASE_SERVICE_ROLE_KEY={header}.{service_role}.{signature}"
+        ))
+        .contains(&"SupabaseServiceRoleKeyDetector".to_string()),
+        "a service_role claim in the payload must report"
+    );
+    assert!(
+        !reported_by(&format!("SUPABASE_ANON_KEY={header}.{anon}.{signature}"))
+            .contains(&"SupabaseServiceRoleKeyDetector".to_string()),
+        "an anon-role JWT must not report as a service-role key"
+    );
+}
+
+#[test]
+fn test_terraform_cloud_token_shape() {
+    let suffix = "abcdefghij0123456789-abcdefghij0123456789_abcdefghij0123456789ab";
+    assert_eq!(suffix.len(), 64);
+
+    assert!(
+        reported_by(&format!(
+            "terraform_cloud_token = abcdefghijklmn.atlasv1.{suffix}"
+        ))
+        .contains(&"TerraformCloudTokenDetector".to_string()),
+        "a 14.atlasv1.60-70 token must report"
+    );
+    assert!(
+        !reported_by(&format!(
+            "terraform_cloud_token = abcdefghijklmn.atlasv2.{suffix}"
+        ))
+        .contains(&"TerraformCloudTokenDetector".to_string()),
+        "the atlasv1 literal is required"
+    );
+    assert!(
+        !reported_by(&format!(
+            "terraform_cloud_token = abcdefghijklm.atlasv1.{suffix}"
+        ))
+        .contains(&"TerraformCloudTokenDetector".to_string()),
+        "the prefix before atlasv1 is exactly 14 characters"
+    );
+}
+
+#[test]
+fn test_azure_storage_key_is_86_to_88_base64_chars() {
+    let body_86 =
+        "AbCdEf0123456789+/AbCdEf0123456789+/AbCdEf0123456789+/AbCdEf0123456789+/AbCdEf01234567";
+    let body_84 =
+        "AbCdEf0123456789+/AbCdEf0123456789+/AbCdEf0123456789+/AbCdEf0123456789+/AbCdEf012345";
+    assert_eq!(body_86.len(), 86);
+    assert_eq!(body_84.len(), 84);
+
+    assert!(
+        reported_by(&format!("AccountKey={body_86}=="))
+            .contains(&"AzureStorageKeyDetector".to_string()),
+        "a 512-bit key is 86 base64 chars plus '=='"
+    );
+    assert!(
+        !reported_by(&format!("AccountKey={body_84}=="))
+            .contains(&"AzureStorageKeyDetector".to_string()),
+        "an 84-char body is not a storage key"
+    );
+}
+
+#[test]
+fn test_dockerhub_personal_and_organization_token_shapes() {
+    // Composed at runtime so push-protection scanners do not treat the
+    // fixture as a live credential.
+    let pat = format!("dckr_{}_{}", "pat", "0123456789abcdefghijklmnoAB");
+    let oat = format!("dckr_{}_{}", "oat", "0123456789abcdefghijklmnopqrstuv");
+    assert_eq!(pat.len(), "dckr_pat_".len() + 27);
+    assert_eq!(oat.len(), "dckr_oat_".len() + 32);
+
+    assert!(reported_by(&pat).contains(&"DockerHubTokenDetector".to_string()));
+    assert!(reported_by(&oat).contains(&"DockerHubTokenDetector".to_string()));
+    assert!(
+        !reported_by("dckr_pat_0123456789abcdefghijklmn")
+            .contains(&"DockerHubTokenDetector".to_string()),
+        "a 26-char personal token is not a valid PAT"
+    );
+}
+
+#[test]
+fn test_circleci_v2_token_shape() {
+    let hex = "0123456789abcdef".repeat(2) + "01234567";
+    assert_eq!(hex.len(), 40);
+
+    assert!(
+        reported_by(&format!("circleci_token = CCIPAT_{}_{hex}", "A".repeat(22)))
+            .contains(&"CircleCITokenDetector".to_string()),
+        "a CCIPAT v2 token must report"
+    );
+    assert!(
+        !reported_by(&format!("circleci_token = CCIPRJ_{}_{hex}", "A".repeat(21)))
+            .contains(&"CircleCITokenDetector".to_string()),
+        "the middle segment is exactly 22 alphanumerics"
+    );
+    assert!(
+        !reported_by("circleci_token = CIRCLE_abcdefghijklmnopqrstuvwxyz0123456789ABCDEF")
+            .contains(&"CircleCITokenDetector".to_string()),
+        "the legacy CIRCLE_ shape is not a v2 token"
+    );
+}
+
+#[test]
+fn test_discord_tokens_report_without_keyword_gate() {
+    let classic = format!("{}.{}.{}", "a".repeat(24), "b".repeat(6), "c".repeat(27));
+    let mfa = format!("mfa.{}", "a".repeat(84));
+    let short_tail = format!("{}.{}.{}", "a".repeat(24), "b".repeat(6), "c".repeat(26));
+
+    assert!(
+        reported_by(&classic).contains(&"DiscordTokenDetector".to_string()),
+        "the classic 24.6.27 token must report without a keyword"
+    );
+    assert!(
+        reported_by(&mfa).contains(&"DiscordTokenDetector".to_string()),
+        "the mfa 84-char token must report"
+    );
+    assert!(
+        !reported_by(&short_tail).contains(&"DiscordTokenDetector".to_string()),
+        "a 26-char last segment is not a Discord token"
+    );
+}
+
+#[test]
+fn test_netlify_token_uses_nfp_prefix() {
+    let token = "nfp_0123456789abcdefghijklmnopqrstuvwxyz";
+    assert_eq!(token.len(), "nfp_".len() + 36);
+
+    assert!(
+        reported_by(&format!("netlify_token = {token}"))
+            .contains(&"NetlifyTokenDetector".to_string()),
+        "an nfp_ token must report"
+    );
+    assert!(
+        !reported_by("netlify_token = nf_0123456789abcdefghijklmnopqrstuvwxyz")
+            .contains(&"NetlifyTokenDetector".to_string()),
+        "the old nf_ prefix is not a real token shape"
+    );
+}
+
+#[test]
+fn test_codecov_token_requires_context_and_uuid() {
+    let uuid = "f47ac10b-58cc-4372-a567-0e02b2c3d479";
+    assert!(
+        reported_by(&format!("CODECOV_TOKEN = \"{uuid}\""))
+            .contains(&"CodecovTokenDetector".to_string()),
+        "a UUID next to codecov context must report"
+    );
+    assert!(
+        !reported_by("codecov_token = 8b0e7153bf7c3706d85c524e44006655")
+            .contains(&"CodecovTokenDetector".to_string()),
+        "a bare 32-hex md5 is not a Codecov token"
+    );
+    assert!(
+        !reported_by(&format!("id: {uuid}")).contains(&"CodecovTokenDetector".to_string()),
+        "a UUID without codecov context must not report"
+    );
+}
+
+#[test]
+fn test_adyen_username_and_bare_rzp_prefix_do_not_report() {
+    // The deleted Adyen detector matched the credential username shape, not
+    // the API key.
+    assert!(
+        !reported_by("ADYEN_API_KEY = ws_1234567890@Company.adyen.com")
+            .contains(&"AdyenAPIKeyDetector".to_string())
+    );
+    // `rzp_` without `live`/`test` is not a key; the real shape stays covered.
+    assert!(
+        !reported_by("razorpay_key = rzp_0123456789abcdef")
+            .contains(&"RazorpayKeyDetector".to_string())
+    );
+    assert!(
+        reported_by("razorpay_key = rzp_live_0123456789abcdefghij")
+            .contains(&"RazorpayAPIKeyDetector".to_string())
+    );
+}
+
+#[test]
+fn test_ip_address_validates_every_octet() {
+    for ip in ["10.0.0.1", "192.168.1.1", "255.255.255.255", "0.0.0.0"] {
+        assert!(
+            reported_by(ip).contains(&"IPAddressDetector".to_string()),
+            "valid address must report: {ip}"
+        );
+    }
+    for not_an_ip in [
+        "10.999.999.999",
+        "256.1.1.1",
+        "1.2.3.256",
+        "999.999.999.999",
+    ] {
+        assert!(
+            !reported_by(not_an_ip).contains(&"IPAddressDetector".to_string()),
+            "invalid address must not report: {not_an_ip}"
+        );
+    }
+}
+
+#[test]
+fn test_twilio_api_key_word_boundaries() {
+    let hex32 = "0123456789abcdef".repeat(2);
+    let hex31 = &hex32[..31];
+    assert!(
+        reported_by(&format!("twilio_api_key = SK{hex32}"))
+            .contains(&"TwilioAPIKeyDetector".to_string()),
+        "a 32-hex SK key must report"
+    );
+    assert!(
+        !reported_by(&format!("twilio_api_key = SK{hex31}"))
+            .contains(&"TwilioAPIKeyDetector".to_string()),
+        "31 hex chars is not a Twilio key"
+    );
+    assert!(
+        !reported_by(&format!("prefixSK{hex32}suffix"))
+            .contains(&"TwilioAPIKeyDetector".to_string()),
+        "the SK prefix must sit on a word boundary"
+    );
+}
+
+#[test]
+fn test_mailgun_api_key_word_boundaries() {
+    let hex32 = "0123456789abcdef".repeat(2);
+    let hex31 = &hex32[..31];
+    assert!(
+        reported_by(&format!("mailgun_api_key = key-{hex32}"))
+            .contains(&"MailgunAPIKeyDetector".to_string()),
+        "a 32-char key- value must report"
+    );
+    assert!(
+        !reported_by(&format!("mailgun_api_key = key-{hex31}"))
+            .contains(&"MailgunAPIKeyDetector".to_string()),
+        "31 chars after key- is not a Mailgun key"
+    );
+    assert!(
+        !reported_by(&format!("mailgun_api_key = xkey-{hex32}"))
+            .contains(&"MailgunAPIKeyDetector".to_string()),
+        "the key- prefix must sit on a word boundary"
+    );
+}
+
+#[test]
+fn test_gcp_service_account_requires_private_key() {
+    let with_key = r#"{"type": "service_account", "project_id": "demo", "private_key_id": "abc", "private_key": "-----BEGIN PRIVATE KEY-----"}"#;
+    assert!(
+        reported_by(with_key).contains(&"GCPServiceAccountKeyDetector".to_string()),
+        "service_account with private_key in the same object must report"
+    );
+    assert!(
+        !reported_by(r#"{"type": "service_account", "project_id": "demo"}"#)
+            .contains(&"GCPServiceAccountKeyDetector".to_string()),
+        "the public type marker alone must not report"
+    );
+}
+
+#[test]
+fn test_detector_severities_match_credential_impact() {
+    let detectors = key_watch::detector::initialize_detectors().expect("load detectors");
+    let severity_of = |name: &str| {
+        detectors
+            .iter()
+            .find(|detector| detector.name == name)
+            .unwrap_or_else(|| panic!("{name} should exist"))
+            .severity
+    };
+
+    assert_eq!(severity_of("MasterAPIKeyDetector"), Severity::High);
+    assert_eq!(severity_of("AzureDevOpsPATDetector"), Severity::High);
+    assert_eq!(severity_of("KimiMoonshotAPIKeyDetector"), Severity::High);
+    assert_eq!(severity_of("GCPServiceAccountKeyDetector"), Severity::High);
+    assert_eq!(severity_of("CertificateDetector"), Severity::Low);
 }

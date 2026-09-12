@@ -85,7 +85,9 @@ severity = "LOW"
 # Emails are rarely secrets; the noisiest matches are documentation
 # addresses on the RFC 2606 reserved domains and noreply conventions.
 allowlist = [
-  "@example\\.(com|org|net)",
+  # Anchored: a lookalike host such as example.com.attacker.io must not
+  # borrow the documentation-domain exemption.
+  "^[A-Za-z0-9._%+-]+@example\\.(com|org|net)$",
   "^noreply@",
   "^no-reply@",
   "@users\\.noreply\\.github\\.com$",
@@ -93,7 +95,7 @@ allowlist = [
 
 [[detectors]]
 name = "IPAddressDetector"
-pattern = "\\b(?:[1-9]\\d?|1\\d{2}|2[0-4]\\d|25[0-5])\\.(?:\\d{1,3}\\.){2}\\d{1,3}\\b"
+pattern = "\\b(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\b"
 finding_type = "IP Address"
 severity = "LOW"
 
@@ -104,9 +106,9 @@ name = "PhoneNumberDetector"
 pattern = "(?:\\+1[-.\\s]?)?(?:\\(\\d{3}\\)[-.\\s]*|\\b\\d{3}[-.\\s])\\d{3}[-.\\s]?\\d{4}\\b"
 finding_type = "Phone Number"
 severity = "LOW"
-# The 555 exchange is reserved for fictional use; documentation phone
-# numbers are the detector's dominant match.
-allowlist = ["555"]
+# Only 555-0100 through 555-0199 are reserved for fictional use, so the
+# allowlist matches the whole number rather than just the exchange.
+allowlist = ["^\\(?\\d{3}\\)?[-.\\s]*555-01\\d{2}$"]
 
 [[detectors]]
 name = "CreditCardDetector"
@@ -153,7 +155,7 @@ allowlist = [
 name = "CertificateDetector"
 pattern = "-----BEGIN CERTIFICATE-----"
 finding_type = "Certificate"
-severity = "MEDIUM"
+severity = "LOW"
 keywords = ["BEGIN CERTIFICATE"]
 
 [[detectors]]
@@ -202,13 +204,6 @@ severity = "HIGH"
 keywords = ["sk_test_", "sk_live_", "pk_test_", "pk_live_"]
 
 [[detectors]]
-name = "AdyenAPIKeyDetector"
-pattern = "\\b(?:ws|sk|pk)_[0-9a-zA-Z]{10,}@[a-zA-Z]+\\.[a-zA-Z]+\\b"
-finding_type = "Adyen API Key"
-severity = "HIGH"
-keywords = ["ws_", "sk_", "pk_"]
-
-[[detectors]]
 name = "PaymentGatewayKeyDetector"
 pattern = "\\b(?:api_?key|secret)_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
 finding_type = "Generic Payment Gateway Key"
@@ -234,7 +229,7 @@ allowlist = [
 
 [[detectors]]
 name = "TwilioAPIKeyDetector"
-pattern = "SK[0-9a-fA-F]{32}"
+pattern = "\\bSK[0-9a-fA-F]{32}\\b"
 finding_type = "Twilio API Key"
 severity = "HIGH"
 keywords = ["SK"]
@@ -248,7 +243,7 @@ keywords = ["SG."]
 
 [[detectors]]
 name = "MailgunAPIKeyDetector"
-pattern = "key-[0-9a-zA-Z]{32}"
+pattern = "\\bkey-[0-9a-zA-Z]{32}\\b"
 finding_type = "Mailgun API Key"
 severity = "HIGH"
 keywords = ["key-"]
@@ -279,7 +274,9 @@ name = "DiscordTokenDetector"
 pattern = "(mfa\\.[0-9a-zA-Z_-]{84}|[\\w-]{24}\\.[\\w-]{6}\\.[\\w-]{27})"
 finding_type = "Discord Token"
 severity = "HIGH"
-keywords = ["mfa."]
+# No keyword gate: `mfa.` appears in only one branch, and gating on it made
+# the classic `<24>.<6>.<27>` form unreachable.
+keywords = []
 
 [[detectors]]
 name = "OpenAIAPIKeyDetector"
@@ -326,17 +323,21 @@ keywords = ["BEGIN RSA PRIVATE KEY"]
 
 [[detectors]]
 name = "DockerHubTokenDetector"
-pattern = "dckr_pat_[0-9a-zA-Z_-]{52,56}"
+# `dckr_pat_` is the personal access token (27 chars); `dckr_oat_` is the
+# organization token (32 chars).
+pattern = "\\b(?:dckr_pat_[A-Za-z0-9_-]{27}|dckr_oat_[A-Za-z0-9_-]{32})\\b"
 finding_type = "DockerHub Token"
 severity = "HIGH"
-keywords = ["dckr_pat_"]
+keywords = ["dckr_pat_", "dckr_oat_"]
 
 [[detectors]]
 name = "CircleCITokenDetector"
-pattern = "CIRCLE_[0-9a-zA-Z_-]{40}"
+# Current tokens are `CCIPAT_<22 alnum>_<40 hex>`; the old `CIRCLE_` shape
+# matched neither the v2 nor the legacy format.
+pattern = "\\b(?:CCIPAT|CCIPRJ)_[A-Za-z0-9]{22}_[a-fA-F0-9]{40}\\b"
 finding_type = "CircleCI Token"
 severity = "HIGH"
-keywords = ["CIRCLE_"]
+keywords = ["CCIPAT_", "CCIPRJ_"]
 
 [[detectors]]
 name = "SquareAccessTokenDetector"
@@ -426,7 +427,7 @@ keywords = ["lsv2_pt_", "lsv2_sk_"]
 name = "KimiMoonshotAPIKeyDetector"
 pattern = "\\bsk-[a-zA-Z0-9]{30,}\\b"
 finding_type = "Kimi/Moonshot API Key"
-severity = "MEDIUM"
+severity = "HIGH"
 keywords = ["sk-"]
 
 [[detectors]]
@@ -441,7 +442,7 @@ name = "NetlifyTokenDetector"
 pattern = "\\bnf[a-z]_[a-zA-Z0-9_]{36}\\b"
 finding_type = "Netlify Token"
 severity = "HIGH"
-keywords = ["nf_"]
+keywords = ["nf"]
 
 [[detectors]]
 name = "SupabaseTokenDetector"
@@ -536,7 +537,9 @@ keywords = ["hvs."]
 
 [[detectors]]
 name = "TerraformCloudTokenDetector"
-pattern = "\\b[a-zA-Z0-9]{14}\\.[a-zA-Z0-9]{6}\\.([a-zA-Z0-9]{38}|[a-zA-Z0-9]{46})\\b"
+# `<14 chars>.atlasv1.<60-70 chars>`; the old middle segment and suffix
+# lengths could not match a real token.
+pattern = "(?i)\\b[a-z0-9]{14}\\.(?-i:atlasv1)\\.[a-z0-9\\-_=]{60,70}\\b"
 finding_type = "Terraform Cloud Token"
 severity = "HIGH"
 keywords = ["terraform"]
@@ -589,13 +592,6 @@ pattern = "\\bwhsec_[a-zA-Z0-9]{32,}\\b"
 finding_type = "Stripe Webhook Secret"
 severity = "HIGH"
 keywords = ["whsec_"]
-
-[[detectors]]
-name = "RazorpayKeyDetector"
-pattern = "\\brzp_[a-zA-Z0-9]{14,}\\b"
-finding_type = "Razorpay Key"
-severity = "HIGH"
-keywords = ["rzp_"]
 
 [[detectors]]
 name = "PaystackKeyDetector"
@@ -664,7 +660,7 @@ keywords = ["glrt-"]
 name = "AzureDevOpsPATDetector"
 pattern = "\\b[a-z2-7]{52}\\b"
 finding_type = "Azure DevOps PAT"
-severity = "LOW"
+severity = "HIGH"
 keywords = ["azure"]
 
 [[detectors]]
@@ -676,9 +672,12 @@ keywords = ["bkua_"]
 
 [[detectors]]
 name = "CodecovTokenDetector"
-pattern = "\\b[0-9a-f]{32}\\b"
+# Upload tokens are UUIDs shown next to a `codecov` context; a bare 32-hex
+# md5 is not a Codecov token.
+pattern = "(?i)codecov[a-z0-9_\\-]{0,30}[\"'\\s:=]+[\"']?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
 finding_type = "Codecov Token"
 severity = "LOW"
+keywords = ["codecov"]
 entropy = 3.0
 
 [[detectors]]
@@ -739,7 +738,10 @@ keywords = ["planetscale", "pscale_tkn_"]
 
 [[detectors]]
 name = "SupabaseServiceRoleKeyDetector"
-pattern = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IiIsInJvbGUiOiJzZXJ2aWNlX3JvbGUiLCJpYXQiOjE2OTk5OTk5OTksImV4cCI6MjAxNTU3NTk5OX0\\.[a-zA-Z0-9_-]+"
+# Any HS256 Supabase JWT whose payload segment carries the base64url
+# `service_role` claim (`c2VydmljZV9yb2xl`). The previous pattern embedded
+# one fixture's exact payload and timestamps.
+pattern = "\\beyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\\.[A-Za-z0-9_+/=-]*c2VydmljZV9yb2xl[A-Za-z0-9_+/=-]*\\.[A-Za-z0-9_+/=-]+\\b"
 finding_type = "Supabase Service Role Key"
 severity = "HIGH"
 keywords = ["supabase", "service_role"]
@@ -781,14 +783,16 @@ keywords = ["GOCSPX-"]
 
 [[detectors]]
 name = "GCPServiceAccountKeyDetector"
-pattern = "\"type\"\\s*:\\s*\"service_account\""
+# The public `"type": "service_account"` marker is not a credential on its
+# own; require private key material in the same object.
+pattern = "(?s)\"type\"\\s*:\\s*\"service_account\".{0,2048}?\"private_key\""
 finding_type = "GCP Service Account Key"
 severity = "HIGH"
 keywords = ["service_account"]
 
 [[detectors]]
 name = "AzureStorageKeyDetector"
-pattern = "AccountKey=[A-Za-z0-9+/]{88}=="
+pattern = "AccountKey=[A-Za-z0-9+/]{86,88}=="
 finding_type = "Azure Storage Key"
 severity = "HIGH"
 keywords = ["AccountKey"]
@@ -818,7 +822,7 @@ keywords = ["service_account"]
 name = "MasterAPIKeyDetector"
 pattern = "(?i)master[_\\-]?api[_\\-]?key[\\s'\":=]+[\"']?([a-zA-Z0-9\\-_]{20,})[\"']?"
 finding_type = "Master API Key"
-severity = "CRITICAL"
+severity = "HIGH"
 keywords = ["master"]
 
 [[detectors]]
