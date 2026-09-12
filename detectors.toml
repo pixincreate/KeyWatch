@@ -60,6 +60,17 @@ keywords = ["password", "passwd", "pwd"]
 # Makefiles), never a password literal.
 allowlist = [
   "^\\$?PWD:",
+  # Rust expressions are plumbing, not literals: type paths (`Secret::new`),
+  # generics (`Secret<String>`), constructor calls (`Some(...)`) and field or
+  # method access (`config.password.clone()`). Quoted literals and bare
+  # alphanumeric values stay reported.
+  "[:=]\\s*[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+",
+  "[:=]\\s*[A-Za-z_][A-Za-z0-9_]*<[^\"'\\n]*>",
+  "[:=]\\s*[A-Za-z_][A-Za-z0-9_]*\\([^\"'\\n]*\\)",
+  "[:=]\\s*[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*",
+  # A bare CamelCase value is a Rust type (`password: String,`), matching the
+  # GenericKeyValueDetector rule. Digits or symbols keep it reported.
+  "[:=]\\s*[A-Z][a-z]+(?:[A-Z][a-z]*)*\\b",
   # Placeholder values in templates and .env.example files. Case-sensitive
   # (placeholders are lowercase by convention) and shape-checked: a mixed
   # value like "ReplaceThisRealSecret123" does not match and stays reported.

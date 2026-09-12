@@ -22,7 +22,7 @@ fn is_inline_suppressed(line: &str) -> bool {
 fn to_lowercase_into(src: &str, buf: &mut String) {
     buf.clear();
     if src.is_ascii() {
-        buf.extend(src.chars().map(|c| c.to_ascii_lowercase()));
+        buf.extend(src.bytes().map(|byte| byte.to_ascii_lowercase() as char));
     } else {
         buf.extend(src.chars().flat_map(char::to_lowercase));
     }

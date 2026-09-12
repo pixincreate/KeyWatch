@@ -1050,6 +1050,27 @@
       "finding_type": "Base64 Encoded String",
       "matched_content_hash": "097eda6585aa25d794c938beab55a00e7f2e7471a39375a3356535aa2e76efa6",
       "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 318,
+      "finding_type": "Password",
+      "matched_content_hash": "13fb70e44a6b53c3a0a8676508d5308892a889f22d4b86ca2303956e9298e87c",
+      "plugin_name": "PasswordDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 318,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "13fb70e44a6b53c3a0a8676508d5308892a889f22d4b86ca2303956e9298e87c",
+      "plugin_name": "GenericKeyValueDetector"
+    },
+    {
+      "file_path": "./tests/detector_tests.rs",
+      "line_number": 319,
+      "finding_type": "Password",
+      "matched_content_hash": "eae6619d56847e403082838f0f97ce6a3e0f78f02af93e652147853a5cbe16c8",
+      "plugin_name": "PasswordDetector"
     }
   ]
 }

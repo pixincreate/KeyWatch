@@ -16,6 +16,8 @@ pub enum ScannerError {
     RunGitLog { source: io::Error },
     #[error("Failed to run git diff: {source}")]
     RunGitDiff { source: io::Error },
+    #[error("Failed to run git cat-file: {source}")]
+    RunGitCatFile { source: io::Error },
     #[error("Failed to capture git stdout")]
     CaptureGitStdout,
     #[error("git process error: {source}")]

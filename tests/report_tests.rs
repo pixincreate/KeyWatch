@@ -1,5 +1,6 @@
 use key_watch::report::{
-    Finding, ScanMetadata, Severity, create_report, create_sarif_report, get_severity_counts,
+    Finding, ScanMetadata, Severity, SeverityCounts, create_report, create_sarif_report,
+    get_severity_counts,
 };
 use serde_json::Value;
 
@@ -278,7 +279,15 @@ fn test_get_severity_counts_groups_high_medium_low() {
 
     let counts = get_severity_counts(&findings);
 
-    assert_eq!(counts, (0, 2, 1, 1));
+    assert_eq!(
+        counts,
+        SeverityCounts {
+            critical: 0,
+            high: 2,
+            medium: 1,
+            low: 1,
+        }
+    );
 }
 
 #[test]
