@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file.
 - `scan --staged` scans only the lines a commit adds
 - Baselines are auto-discovered from `.keywatch-baseline.json`; `--no-baseline-discovery` opts out
 - `update-baseline` workflow regenerates the baseline via a pull request
+- `scan --fail-on-unscannable` fails a strict scan when a file could not be read; the pre-commit hook passes it so an unscannable staged file cannot pass silently
 
 ### Changed
 
@@ -65,6 +66,10 @@ All notable changes to this project will be documented in this file.
 - `--update-baseline` refreshes the recorded line numbers of entries it already knows, and saved baselines end with a newline
 - SARIF report property order is deterministic
 - Piping output to a closed reader no longer panics, including `hook install` and `init`; hook commands now report real output failures instead of discarding them
+- Trusted scans (`--no-config-discovery`) no longer read detector configuration from environment-derived locations (`$XDG_CONFIG_HOME`, `$HOME`, the executable directory), so a redirected home directory cannot replace the built-in detector set
+- Staged blobs are resolved to object IDs and read with `git cat-file blob <oid>` instead of `:<path>`, so a file whose name resembles a git stage path (`0:config`) can no longer substitute another file's content
+- `scan --git-history` reads merge commits (`--diff-merges=first-parent`), so a secret introduced while resolving a conflict is reported
+- Files that fail to open or read are counted as `unscannable` instead of being silently skipped
 
 ### Performance
 

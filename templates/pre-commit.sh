@@ -20,7 +20,7 @@ fi
 # secret detection for everyone who clones it. Suppress findings with a
 # committed baseline or an inline keywatch:ignore marker, both of which the
 # hook still honours.
-"$KEYWATCH_BIN" scan --staged --no-config-discovery --exclude "$EXCLUDE_PATTERNS" >/dev/null 2>&1
+"$KEYWATCH_BIN" scan --staged --no-config-discovery --fail-on-unscannable --exclude "$EXCLUDE_PATTERNS" >/dev/null 2>&1
 EXIT_CODE=$?
 case $EXIT_CODE in
     0)
