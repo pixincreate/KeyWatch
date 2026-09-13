@@ -130,12 +130,13 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
         finding_types,
         vec![
             "AWS Access Key",
-            "Password",
+            // PasswordDetector and GenericKeyValueDetector match the same
+            // password line; the overlap collapses to one finding.
             "Generic Key/Secret",
-            "Base64 Encoded String",
             "SendGrid API Key",
             "Base64 Encoded String",
-            "OpenAI API Key",
+            "Base64 Encoded String",
+            // The OpenAI and Kimi detectors match the same sk- token.
             "Kimi/Moonshot API Key",
         ],
         "Should find secrets"
@@ -240,7 +241,8 @@ b3BlbnNzaC1ldi0xLjAAABgQDQD2FGB3V2t4=\n\
             .collect::<Vec<_>>(),
         vec![
             "SSH Private Key",
-            "Private Key Content",
+            // PrivateKeyDetector and PrivateKeyContentDetector report the
+            // same block; the overlap collapses to one finding.
             "Private Key Content",
             "Base64 Encoded String",
             "SSH Private Key",
@@ -462,7 +464,8 @@ fn test_multiple_files_scan() {
             .map(|finding| (finding.file_path.as_str(), finding.finding_type.as_str()))
             .collect::<Vec<_>>(),
         vec![
-            (test_file2.to_str().unwrap(), "Password"),
+            // The password line is matched by both PasswordDetector and
+            // GenericKeyValueDetector; the overlap collapses to one finding.
             (test_file2.to_str().unwrap(), "Generic Key/Secret"),
         ],
         "Should find secrets in multiple files"
@@ -2498,6 +2501,60 @@ fn test_stdin_with_nul_bytes_scans_through() -> Result<(), String> {
     );
 
     let _ = fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+#[test]
+fn test_overlapping_detectors_collapse_to_one_finding() -> Result<(), String> {
+    // StripeWebhookSecretDetector and WebhookSecretDetector both match a
+    // `whsec_` token on the same line with identical matched text. One secret
+    // must collapse to one finding, and the deterministic tie-break keeps the
+    // lexicographically smaller detector name when severities are equal.
+    let dir = unique_temp_dir("dedupe_whsec");
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    // Compose the token at runtime so no push-protection-style literal lands
+    // in the repository; both detectors still see one contiguous token.
+    let token = format!("whsec_{}", "abcdefghijklmnopqrstuvwxyz012345");
+    fs::write(
+        dir.join("webhook.conf"),
+        format!("tokens: {token} and AKIAABCDEFGHIJKLMNOP\n"),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let options = ScanArgs {
+        paths: vec![dir.to_str().ok_or("temp path should be UTF-8")?.to_string()],
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
+
+    let webhook_findings: Vec<_> = findings
+        .iter()
+        .filter(|finding| finding.matched_content == token)
+        .collect();
+    assert_eq!(
+        webhook_findings.len(),
+        1,
+        "two detectors matching the same text must collapse to one finding: {findings:?}"
+    );
+    assert_eq!(
+        webhook_findings[0].detector_name, "StripeWebhookSecretDetector",
+        "on equal severity the lexicographically smaller detector name wins"
+    );
+
+    let aws_findings: Vec<_> = findings
+        .iter()
+        .filter(|finding| finding.matched_content == "AKIAABCDEFGHIJKLMNOP")
+        .collect();
+    assert_eq!(
+        aws_findings.len(),
+        1,
+        "a different secret on the same line must keep its own finding: {findings:?}"
+    );
+
+    fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(())
 }
 

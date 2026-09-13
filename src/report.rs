@@ -24,7 +24,11 @@ pub fn redact(matched: &str) -> String {
 
 pub use sarif::create_sarif_report;
 
-#[derive(Serialize, Clone, PartialEq, Copy, Debug)]
+/// Severity of a finding. The variant order is the severity order: under the
+/// derived `Ord`, `Critical` sorts first and is the most severe, `Low` last
+/// and the least. Findings that differ only in detector keep the smaller
+/// variant, so the most severe report survives deduplication.
+#[derive(Serialize, Clone, PartialEq, Eq, PartialOrd, Ord, Copy, Debug)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Severity {
     Critical,
