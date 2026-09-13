@@ -10,6 +10,8 @@ use crate::detector::{
 use crate::report::{Finding, ScanMetadata};
 use glob::Pattern;
 use rayon::prelude::*;
+use std::collections::BTreeMap;
+use std::collections::btree_map::Entry;
 use std::fs;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
@@ -64,37 +66,39 @@ pub fn run_scan(
     // Resolved once: every scan mode must skip the baseline file itself.
     let excluded_baseline = baseline_exclusion(args);
 
-    if args.git_history {
-        return scan_git_history(
+    let (findings, metadata) = if args.git_history {
+        scan_git_history(
             args,
             config,
             excluded_baseline.as_ref(),
             &multiline_detectors,
             &line_detectors,
-        );
-    }
-
-    if args.staged {
-        return scan_staged(
+        )?
+    } else if args.staged {
+        scan_staged(
             args,
             config,
             excluded_baseline.as_ref(),
             &multiline_detectors,
             &line_detectors,
-        );
-    }
+        )?
+    } else if args.stdin {
+        scan_stdin(&multiline_detectors, &line_detectors)?
+    } else {
+        scan_filesystem(
+            args,
+            config,
+            excluded_baseline.as_ref(),
+            &multiline_detectors,
+            &line_detectors,
+        )?
+    };
 
-    if args.stdin {
-        return scan_stdin(&multiline_detectors, &line_detectors);
-    }
-
-    scan_filesystem(
-        args,
-        config,
-        excluded_baseline.as_ref(),
-        &multiline_detectors,
-        &line_detectors,
-    )
+    // Every mode funnels through here, so deduplication and the canonical
+    // order hold for reports, baselines and exit codes alike.
+    let mut findings = dedupe_findings(findings);
+    sort_findings(&mut findings);
+    Ok((findings, metadata))
 }
 
 /// Builds the detector set for this scan and applies user configuration on
@@ -507,6 +511,35 @@ fn git_repo_root(dir: &Path) -> Option<PathBuf> {
     (!root.is_empty()).then(|| PathBuf::from(root))
 }
 
+/// Collapses findings that share a file, line and matched text: overlapping
+/// detectors match the same secret, and one secret must not be reported once
+/// per detector. On collision the smaller severity wins (under the derived
+/// `Ord`, `Critical` is smallest and most severe); on equal severity the
+/// lexicographically smaller detector name wins, so the pick is deterministic.
+fn dedupe_findings(findings: Vec<Finding>) -> Vec<Finding> {
+    let mut by_site: BTreeMap<(String, usize, String), Finding> = BTreeMap::new();
+    for finding in findings {
+        let key = (
+            finding.file_path.clone(),
+            finding.line_number,
+            finding.matched_content.clone(),
+        );
+        match by_site.entry(key) {
+            Entry::Vacant(slot) => {
+                slot.insert(finding);
+            }
+            Entry::Occupied(mut slot) => {
+                let kept = slot.get();
+                if (finding.severity, &finding.detector_name) < (kept.severity, &kept.detector_name)
+                {
+                    slot.insert(finding);
+                }
+            }
+        }
+    }
+    by_site.into_values().collect()
+}
+
 /// Orders findings by path then line, the stable shape every mode reports.
 fn sort_findings(findings: &mut [Finding]) {
     findings.sort_by(|a, b| {
@@ -527,5 +560,59 @@ pub(crate) mod test_support {
         severity: &str,
     ) -> Detector {
         Detector::new(name, pattern, finding_type, severity, &[], &[], None).unwrap()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dedupe_findings;
+    use crate::report::{Finding, Severity};
+
+    fn finding(detector: &str, severity: Severity, matched: &str, line: usize) -> Finding {
+        Finding {
+            file_path: "src/lib.rs".to_string(),
+            line_number: line,
+            finding_type: "test".to_string(),
+            severity,
+            matched_content: matched.to_string(),
+            detector_name: detector.to_string(),
+        }
+    }
+
+    #[test]
+    fn dedupe_findings_keeps_the_most_severe_detector() {
+        let findings = vec![
+            finding("LowDetector", Severity::Low, "secret", 10),
+            finding("HighDetector", Severity::High, "secret", 10),
+            finding("HighDetector", Severity::High, "other", 10),
+        ];
+
+        let deduped = dedupe_findings(findings);
+
+        assert_eq!(deduped.len(), 2);
+        assert!(
+            deduped
+                .iter()
+                .any(|finding| finding.detector_name == "HighDetector"
+                    && finding.matched_content == "secret")
+        );
+        assert!(
+            !deduped
+                .iter()
+                .any(|finding| finding.severity == Severity::Low)
+        );
+    }
+
+    #[test]
+    fn dedupe_findings_breaks_ties_by_detector_name() {
+        let findings = vec![
+            finding("ZetaDetector", Severity::High, "secret", 10),
+            finding("AlphaDetector", Severity::High, "secret", 10),
+        ];
+
+        let deduped = dedupe_findings(findings);
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].detector_name, "AlphaDetector");
     }
 }

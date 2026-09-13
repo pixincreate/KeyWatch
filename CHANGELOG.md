@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 - Pre-commit hooks scan the staged diff instead of whole files
 - Config discovery searches parent directories up to the repository root
 - Hook messages abbreviate the home directory as `~`
+- Findings for the same file, line and matched text collapse to the highest severity across all scan modes, so overlapping detectors report a secret once
 
 ### Added
 

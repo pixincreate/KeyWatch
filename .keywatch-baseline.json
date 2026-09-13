@@ -983,42 +983,42 @@
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 155,
+      "line_number": 156,
       "finding_type": "Stripe API Key",
       "matched_content_hash": "c371dd8bd98e42a547fdc2378597152357423ba782bbb8ecbbafd0508ec8b825",
       "plugin_name": "StripeAPIKeyDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 185,
+      "line_number": 186,
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "4c8b5530b17fef887a9b327f69a38f1958e4b656f2b1c54b1d426320ead690ff",
       "plugin_name": "GenericKeyValueDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 185,
+      "line_number": 186,
       "finding_type": "Base64 Encoded String",
       "matched_content_hash": "332a14e95304a48a4ef671073cc98f0fc4046c61042ac20287bfa22b37c27d01",
       "plugin_name": "Base64Detector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 186,
+      "line_number": 187,
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "6c6d557cc63eda114745424f991b2019fdfde2844412a1f58fb5527f0e0bef9f",
       "plugin_name": "GenericKeyValueDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 221,
+      "line_number": 222,
       "finding_type": "SSH Private Key",
       "matched_content_hash": "678a65e8968aabff441076ae306e13d4fc85b1d36d8036a10d2100c1dc40d251",
       "plugin_name": "SSHPrivateKeyDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 221,
+      "line_number": 222,
       "finding_type": "Base64 Encoded String",
       "matched_content_hash": "4587ecda3342a38feff73eef527c2582add9f98a892b185b54b470bb91bc631e",
       "plugin_name": "Base64Detector"
@@ -1032,63 +1032,63 @@
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 221,
+      "line_number": 222,
       "finding_type": "Private Key Content",
       "matched_content_hash": "b94c156724c086556087773aad998c0791dc79172caa4b3184a7330cfa7c1d76",
       "plugin_name": "PrivateKeyContentDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 223,
+      "line_number": 224,
       "finding_type": "SSH Private Key",
       "matched_content_hash": "ca54604a9ed82ad96e5f5d68450002ef41112a7058469bbbdde94f83b267dca5",
       "plugin_name": "SSHPrivateKeyDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 223,
+      "line_number": 224,
       "finding_type": "Private Key Content",
       "matched_content_hash": "43531827dd6142886cfeb10207f046021a4eb6c575828583ad2cb20d9430c72f",
       "plugin_name": "PrivateKeyDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 224,
+      "line_number": 225,
       "finding_type": "Base64 Encoded String",
       "matched_content_hash": "131407c23861d5a739223f303ce0b62808fc0dabe0301622d9836dc3c4999fcb",
       "plugin_name": "Base64Detector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 261,
+      "line_number": 263,
       "finding_type": "Password",
       "matched_content_hash": "4ba2d1c9c6db00e16d0b1dcead9e6fe60fc315c7b4a76cb2c07def4685dc8669",
       "plugin_name": "PasswordDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 261,
+      "line_number": 263,
       "finding_type": "Email Address",
       "matched_content_hash": "48f63a76aa3c93efd693e0d5a960f5fe3ddd697e6a280f812bf678de80106a25",
       "plugin_name": "EmailDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 292,
+      "line_number": 294,
       "finding_type": "Password",
       "matched_content_hash": "9f380d00b53e154b8421fb61924bbe35b6f01dccd608f5298f0e35764ee0b654",
       "plugin_name": "PasswordDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 324,
+      "line_number": 326,
       "finding_type": "Password",
       "matched_content_hash": "c505b74b9daf07fb40c38c619a4c0fdf5d807e85223142d6cd19923e7b84e15d",
       "plugin_name": "PasswordDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 325,
+      "line_number": 327,
       "finding_type": "Password",
       "matched_content_hash": "ca52bf35c9f7b4506aaee67e2aede5c5b09b9b258e850a74e7af0c078e932960",
       "plugin_name": "PasswordDetector"
@@ -1102,7 +1102,7 @@
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 447,
+      "line_number": 449,
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "d1456485b2f315b81fcaffef101a4b398ea558b82bfe6ecee763ef7c327608e7",
       "plugin_name": "GenericKeyValueDetector"
@@ -1116,7 +1116,7 @@
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 479,
+      "line_number": 482,
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "795c0808e6128ceee90a9dada1ad2ad243d07534def7532d5adf7e82a7237374",
       "plugin_name": "GenericKeyValueDetector"
@@ -1130,147 +1130,147 @@
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 518,
+      "line_number": 521,
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "ead01d09cbf0176f24f604a4a4f955b32c34b155fe614e81ecc52f2c6fe89a3f",
       "plugin_name": "GenericKeyValueDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 654,
+      "line_number": 657,
       "finding_type": "Aadhaar Card Number",
       "matched_content_hash": "4714ac4f70659987acae4a4760aedecd3924449f855e3be8115a51eb1ad35f93",
       "plugin_name": "AadhaarCardDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 654,
+      "line_number": 657,
       "finding_type": "Aadhaar Card Number",
       "matched_content_hash": "73e8a0879ef4b4acf94b2c188c0b620e4dd198bef454f6270118d63fd87ff4a3",
       "plugin_name": "AadhaarCardDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 654,
+      "line_number": 657,
       "finding_type": "Aadhaar Card Number",
       "matched_content_hash": "c941e88b8d0be7288dcc792a8ecfae22482b8a83ea4494f1ca0e36293009730b",
       "plugin_name": "AadhaarCardDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 681,
+      "line_number": 684,
       "finding_type": "Voter ID (EPIC)",
       "matched_content_hash": "e530110a549dd903837a0e2af06b406b01367b4572d07bffee9387334c027f20",
       "plugin_name": "VoterIDDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 681,
+      "line_number": 684,
       "finding_type": "Voter ID (EPIC)",
       "matched_content_hash": "8d6bf65189e5bdf52955b4a1592eb9c2fb0560709152317a1dabc36971c38f30",
       "plugin_name": "VoterIDDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 705,
+      "line_number": 708,
       "finding_type": "PAN Card Number",
       "matched_content_hash": "75d7a58ed9996980fee805fb623d81193cdb5e9efddf2fa12b595171ca16530e",
       "plugin_name": "PANCardDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 705,
+      "line_number": 708,
       "finding_type": "PAN Card Number",
       "matched_content_hash": "4dd22fad4bf96036ceea29ca253be8d72851cc289d7e694c9b208b7370812ee6",
       "plugin_name": "PANCardDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 729,
+      "line_number": 732,
       "finding_type": "ABHA Health ID",
       "matched_content_hash": "25b618101c3bfdb4438894aa540e108cd150903bd24da57ac24f0d4174c0fe7e",
       "plugin_name": "ABHADetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 729,
+      "line_number": 732,
       "finding_type": "ABHA Health ID",
       "matched_content_hash": "397d0bc36d77ccfc6f74c2eaa6615bb75c3fe3bdc3df26e6f53f413cfcdacdb3",
       "plugin_name": "ABHADetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 754,
+      "line_number": 757,
       "finding_type": "Aadhaar Card Number",
       "matched_content_hash": "8d7ab03162973f8bc2baf7c8556af862841d23c4d66f7f18f8cf5c5777f8b263",
       "plugin_name": "AadhaarCardDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 754,
+      "line_number": 757,
       "finding_type": "PAN Card Number",
       "matched_content_hash": "18fe123b5e00bbed7228c4ededc8a4e6e0bfd59169af97ec2e62b595eac11dde",
       "plugin_name": "PANCardDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 754,
+      "line_number": 757,
       "finding_type": "ABHA Health ID",
       "matched_content_hash": "89deb2b58721d6303daa4a62f2dee30b9a388afb905fc4d3595ec88ca875fb15",
       "plugin_name": "ABHADetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 859,
+      "line_number": 862,
       "finding_type": "Google API Key",
       "matched_content_hash": "aec6660855470791a5b4f5a6c1ac4b61e61d2b942b1cdec400fb7811743798d0",
       "plugin_name": "GoogleAPIKeyDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 859,
+      "line_number": 862,
       "finding_type": "Random String",
       "matched_content_hash": "cbe1ce18b874bc08437699d863cd422c49e104462e7d5ac6bd390acc0d7c973a",
       "plugin_name": "RandomString"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 906,
+      "line_number": 909,
       "finding_type": "Password",
       "matched_content_hash": "67ef748345ad7f183084a7449ec05906e648c882400b9d940f2fadec23a7b197",
       "plugin_name": "PasswordDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 1001,
+      "line_number": 1004,
       "finding_type": "AWS Access Key",
       "matched_content_hash": "05c0aace2b76ca255ed3a7a953016d981477226dccc3b0e709d00174c8bc48b5",
       "plugin_name": "AWSKeyDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 1644,
+      "line_number": 1647,
       "finding_type": "Generic Key/Secret",
       "matched_content_hash": "97894929682fc00219686473cbcfa3731d73b23e88ffa7c19a511c1bbfa18aa5",
       "plugin_name": "GenericKeyValueDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 1848,
+      "line_number": 1851,
       "finding_type": "AWS Access Key",
       "matched_content_hash": "357b7fb7890985d4c94a43012d1f7aefe25757f36d8810388357993bb38bd8e7",
       "plugin_name": "AWSKeyDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 2100,
+      "line_number": 2103,
       "finding_type": "AWS Access Key",
       "matched_content_hash": "0cbae582394e61dc81d9946ed87ec44f4c83cf1167181f62cd1454eb5e2e5469",
       "plugin_name": "AWSKeyDetector"
     },
     {
       "file_path": "./tests/scanner_tests.rs",
-      "line_number": 2401,
+      "line_number": 2404,
       "finding_type": "Password",
       "matched_content_hash": "6121378fbc25183476235d474ee367f7dbd0bbe3d96642daaeb483b5e9108cdb",
       "plugin_name": "PasswordDetector"
@@ -1330,6 +1330,13 @@
       "finding_type": "Random String",
       "matched_content_hash": "be963ea18a45cce7e6304bbbb555137f550f13d598e71b748057ce45b0dfe762",
       "plugin_name": "RandomString"
+    },
+    {
+      "file_path": "./tests/scanner_tests.rs",
+      "line_number": 2518,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "37f93597692f90e64e009b94ce81237f0f5a6d03ffce8085e91814efe71e4431",
+      "plugin_name": "Base64Detector"
     }
   ]
 }
