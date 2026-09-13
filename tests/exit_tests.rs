@@ -119,6 +119,72 @@ fn test_embedded_detectors_enable_standalone_scan() {
 }
 
 #[test]
+fn test_trusted_scan_ignores_environment_detector_config() {
+    // Given a detector configuration placed in environment-derived locations
+    // that a hook-style trusted scan must not consult.
+    let test_dir = setup_scan_dir("trusted_env_detectors", false);
+    let noop_detectors = "[[detectors]]\nname = \"Noop\"\npattern = \"ZZZ_NEVER_MATCHES\"\nfinding_type = \"Noop\"\nseverity = \"LOW\"\n";
+    for relative in [".config/keywatch", "Library/Application Support/keywatch"] {
+        let config_dir = test_dir.join(relative);
+        fs::create_dir_all(&config_dir).expect("Create detector config dir");
+        fs::write(config_dir.join("detectors.toml"), noop_detectors).expect("Write detectors");
+    }
+    let secret_file = test_dir.join("secret.txt");
+    fs::write(&secret_file, "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file");
+
+    // When a trusted scan runs, built-in detectors still report the secret.
+    let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .env("HOME", &test_dir)
+        .env("XDG_CONFIG_HOME", test_dir.join(".config"))
+        .env("APPDATA", &test_dir)
+        .env("USERPROFILE", &test_dir)
+        .arg("scan")
+        .arg("--no-config-discovery")
+        .arg(&secret_file)
+        .status()
+        .expect("Run key-watch");
+
+    assert_eq!(
+        status.code(),
+        Some(1),
+        "environment-derived detectors must not replace built-ins in trusted mode"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_fail_on_unscannable_reports_binary_content() {
+    // Given a file the scanner cannot read because it contains NUL bytes.
+    let test_dir = setup_scan_dir("fail_on_unscannable", true);
+    let binary_file = test_dir.join("payload.bin");
+    fs::write(&binary_file, b"\x00\x01AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write binary file");
+
+    // When scanning without the flag, an unscannable file does not block.
+    let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .arg("scan")
+        .arg(&binary_file)
+        .status()
+        .expect("Run key-watch");
+    assert_eq!(status.code(), Some(0));
+
+    // Then scanning with the flag fails, because the content was never verified.
+    let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .arg("scan")
+        .arg("--fail-on-unscannable")
+        .arg(&binary_file)
+        .status()
+        .expect("Run key-watch");
+    assert_eq!(status.code(), Some(1));
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
 fn test_exit_mode_always() {
     let test_dir = setup_scan_dir("exit_always", true);
     let temp_file = test_dir.join("secret.txt");

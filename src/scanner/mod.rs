@@ -89,6 +89,7 @@ pub fn run_scan(
                 "log",
                 "-p",
                 "-U0",
+                "--diff-merges=first-parent",
                 "--no-ext-diff",
                 "--no-textconv",
                 "--no-color",
@@ -262,6 +263,16 @@ pub fn run_scan(
                 unscannable: None,
             }
         }
+
+        fn unreadable(path: String) -> Self {
+            Self {
+                findings: Vec::new(),
+                lines_seen: 0,
+                scanned: false,
+                excluded: None,
+                unscannable: Some(path),
+            }
+        }
     }
 
     let results: Vec<FileOutcome> = unique_paths
@@ -280,7 +291,10 @@ pub fn run_scan(
 
             let metadata = match fs::symlink_metadata(&path) {
                 Ok(metadata) => metadata,
-                Err(_) => return FileOutcome::ignored(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    return FileOutcome::ignored();
+                }
+                Err(_) => return FileOutcome::unreadable(path),
             };
             let file_type = metadata.file_type();
             if file_type.is_symlink() || !file_type.is_file() {
@@ -292,7 +306,10 @@ pub fn run_scan(
             // marks the file binary (reported as unscannable).
             let mut reader = match fs::File::open(&path) {
                 Ok(file) => BufReader::new(file),
-                Err(_) => return FileOutcome::ignored(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    return FileOutcome::ignored();
+                }
+                Err(_) => return FileOutcome::unreadable(path),
             };
             let scanned = match scan_file_stream(
                 &mut reader,
@@ -301,7 +318,7 @@ pub fn run_scan(
                 &line_scan_context,
             ) {
                 Ok(scanned) => scanned,
-                Err(_) => return FileOutcome::ignored(),
+                Err(_) => return FileOutcome::unreadable(path),
             };
             if scanned.binary {
                 return FileOutcome {

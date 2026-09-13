@@ -1001,6 +1001,99 @@ fn test_git_history_does_not_execute_textconv_helpers() -> Result<(), String> {
     Ok(())
 }
 
+#[test]
+fn test_git_history_scans_merge_commits() -> Result<(), String> {
+    require_git();
+
+    let repo_dir = unique_temp_dir("git_history_merge_commit");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(&repo_dir, "data.txt", "value = 1\n", "base")?;
+
+    let current_branch = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
+        .current_dir(&repo_dir)
+        .output()
+        .map_err(|error| format!("read branch: {error}"))?;
+    let base_branch = String::from_utf8_lossy(&current_branch.stdout)
+        .trim()
+        .to_string();
+
+    let status = Command::new("git")
+        .args(["checkout", "--quiet", "-b", "feature"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|error| format!("checkout feature: {error}"))?;
+    if !status.success() {
+        return Err("git checkout -b feature failed".to_string());
+    }
+    commit_file(&repo_dir, "data.txt", "value = feature\n", "feature")?;
+
+    let status = Command::new("git")
+        .args(["checkout", "--quiet", &base_branch])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|error| format!("checkout {base_branch}: {error}"))?;
+    if !status.success() {
+        return Err("git checkout base failed".to_string());
+    }
+    commit_file(&repo_dir, "data.txt", "value = base\n", "conflicting")?;
+
+    // Merging conflicts. The resolution introduces the secret, so it exists
+    // only in the merge commit's diff.
+    let status = Command::new("git")
+        .args(["merge", "--quiet", "feature"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|error| format!("git merge: {error}"))?;
+    if status.success() {
+        return Err("the fixture merge was expected to conflict".to_string());
+    }
+
+    fs::write(
+        repo_dir.join("data.txt"),
+        "value = resolved\nAWS Key: AKIAABCDEFGHIJKLMNOP\n",
+    )
+    .map_err(|error| format!("write resolution: {error}"))?;
+
+    let status = Command::new("git")
+        .args(["add", "data.txt"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|error| format!("git add resolution: {error}"))?;
+    if !status.success() {
+        return Err("git add resolution failed".to_string());
+    }
+
+    let status = Command::new("git")
+        .args(["commit", "--quiet", "--no-verify", "-m", "evil merge"])
+        .current_dir(&repo_dir)
+        .status()
+        .map_err(|error| format!("git commit merge: {error}"))?;
+    if !status.success() {
+        return Err("git commit merge failed".to_string());
+    }
+
+    let output = run_git_history_scan(&repo_dir, &["--verbose"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        matches!(output.status.code(), Some(1)),
+        "a secret introduced in a merge commit must be found\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+    assert!(
+        stdout.contains("data.txt"),
+        "the finding must name the resolved file\nstdout:\n{}",
+        stdout
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
 fn run_staged_scan(current_dir: &Path, extra_args: &[&str]) -> Result<Output, String> {
     Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .args(["scan", "--staged"])
@@ -1123,6 +1216,43 @@ fn test_staged_scan_reports_added_secret_with_real_path_and_line() -> Result<(),
     assert!(
         stdout.contains("\"line_number\": 3"),
         "findings must carry the post-image line number\nstdout:\n{}",
+        stdout
+    );
+
+    let _ = fs::remove_dir_all(&repo_dir);
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn test_staged_scan_reads_diff_suppressed_blob_by_object_id() -> Result<(), String> {
+    require_git();
+
+    let repo_dir = unique_temp_dir("staged_object_id");
+    let _ = fs::remove_dir_all(&repo_dir);
+    init_git_repo(&repo_dir)?;
+    commit_file(
+        &repo_dir,
+        ".gitattributes",
+        "0:config -diff\n",
+        "attributes",
+    )?;
+    commit_file(&repo_dir, "config", "clean\n", "decoy")?;
+    stage_file(&repo_dir, "0:config", "AWS Key: AKIAABCDEFGHIJKLMNOP\n")?;
+
+    let output = run_staged_scan(&repo_dir, &["--verbose"])?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        matches!(output.status.code(), Some(1)),
+        "a secret in a diff-suppressed file must be read by object ID\nstdout:\n{}\nstderr:\n{}",
+        stdout,
+        stderr
+    );
+    assert!(
+        stdout.contains("\"file_path\": \"0:config\""),
+        "the finding must name the staged file\nstdout:\n{}",
         stdout
     );
 

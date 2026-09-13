@@ -1071,6 +1071,13 @@
       "finding_type": "Password",
       "matched_content_hash": "eae6619d56847e403082838f0f97ce6a3e0f78f02af93e652147853a5cbe16c8",
       "plugin_name": "PasswordDetector"
+    },
+    {
+      "file_path": "./tests/exit_tests.rs",
+      "line_number": 133,
+      "finding_type": "Generic Key/Secret",
+      "matched_content_hash": "d6d60d3e50a63a67cc37ebfac022834f34a7ec0c74d9b5952b8b8ccd50b5f1ff",
+      "plugin_name": "GenericKeyValueDetector"
     }
   ]
 }

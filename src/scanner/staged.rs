@@ -285,6 +285,10 @@ pub(super) fn scan_staged_diff<ReaderType: BufRead>(
         // staged blob directly rather than reporting the file as clean.
         if let Some(marker) = line.strip_prefix("Binary files ") {
             let path = parse_binary_marker_path(marker);
+            // A deleted file has no staged content left to read.
+            if path == "/dev/null" {
+                continue;
+            }
             if matches_exclude_patterns(&path, &[], exclude_patterns)
                 || is_baseline_file(&path, base_dir, excluded_baseline)
                 || is_default_excluded_file(&path)
@@ -329,6 +333,37 @@ pub(super) struct StagedScan {
     pub(super) unscannable_from_diff: Vec<String>,
 }
 
+/// Resolves the staged blob object id for a repository-relative path.
+///
+/// `git ls-files` is asked with the `literal` magic so a path that looks like
+/// git syntax (for example `0:name`) is treated as a file name, not as a
+/// stage-prefixed revision.
+fn staged_blob_oid(path: &str) -> Result<Option<String>, ScannerError> {
+    let output = std::process::Command::new("git")
+        .args(["ls-files", "--stage", "-z", "--"])
+        .arg(format!(":(top,literal){path}"))
+        .output()
+        .map_err(|source| ScannerError::RunGitCatFile { source })?;
+    if !output.status.success() {
+        return Ok(None);
+    }
+    for record in output.stdout.split(|byte| *byte == 0) {
+        let record = String::from_utf8_lossy(record);
+        let Some((metadata, _file)) = record.split_once('\t') else {
+            continue;
+        };
+        let mut fields = metadata.split(' ');
+        let (Some(_mode), Some(oid), Some("0")) = (fields.next(), fields.next(), fields.next())
+        else {
+            continue;
+        };
+        if oid.bytes().any(|byte| byte != b'0') {
+            return Ok(Some(oid.to_string()));
+        }
+    }
+    Ok(None)
+}
+
 /// Scans the staged blob of each undiffable path via `git cat-file`.
 ///
 /// Without this a `.gitattributes` entry like `*.env -diff` would hide a
@@ -345,8 +380,12 @@ pub(super) fn scan_index_blobs(
     let mut skipped = Vec::new();
 
     for path in paths {
+        let Some(oid) = staged_blob_oid(path)? else {
+            skipped.push(path.clone());
+            continue;
+        };
         let output = std::process::Command::new("git")
-            .args(["cat-file", "blob", &format!(":{path}")])
+            .args(["cat-file", "blob", &oid])
             .output()
             .map_err(|source| ScannerError::RunGitCatFile { source })?;
         if !output.status.success() {

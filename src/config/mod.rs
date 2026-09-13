@@ -243,7 +243,9 @@ pub(crate) fn find_file_upwards(
             // host any user could drop a config into /tmp and weaken every
             // scan beneath it. Neither is a world-writable config file: it
             // can be rewritten in place even inside a 0755 directory.
-            if is_world_writable(dir) || is_world_writable(Path::new(&config_path)) {
+            if crate::utils::is_world_writable(dir)
+                || crate::utils::is_world_writable(Path::new(&config_path))
+            {
                 return None;
             }
             return Some(config_path);
@@ -253,17 +255,4 @@ pub(crate) fn find_file_upwards(
         }
     }
     None
-}
-
-#[cfg(unix)]
-fn is_world_writable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt;
-    fs::metadata(path)
-        .map(|metadata| metadata.permissions().mode() & 0o002 != 0)
-        .unwrap_or(false)
-}
-
-#[cfg(not(unix))]
-fn is_world_writable(_path: &Path) -> bool {
-    false
 }
