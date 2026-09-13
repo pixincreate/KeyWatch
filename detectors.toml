@@ -107,7 +107,7 @@ finding_type = "Phone Number"
 severity = "LOW"
 # Only 555-0100 through 555-0199 are reserved for fictional use, so the
 # allowlist matches the whole number rather than just the exchange.
-allowlist = ["^\\(?\\d{3}\\)?[-.\\s]*555-01\\d{2}$"]
+allowlist = ["^(?:\\+1[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]*555-01\\d{2}$"]
 
 [[detectors]]
 name = "CreditCardDetector"
@@ -735,12 +735,14 @@ keywords = ["planetscale", "pscale_tkn_"]
 
 [[detectors]]
 name = "SupabaseServiceRoleKeyDetector"
-# Any HS256 Supabase JWT whose payload segment carries the base64url
-# `service_role` claim (`c2VydmljZV9yb2xl`). The previous pattern embedded
-# one fixture's exact payload and timestamps.
-pattern = "\\beyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\\.[A-Za-z0-9_+/=-]*c2VydmljZV9yb2xl[A-Za-z0-9_+/=-]*\\.[A-Za-z0-9_+/=-]+\\b"
+# Any HS256 Supabase JWT whose payload claims `service_role`. The claim is
+# JSON inside the base64url segment, so its encoded bytes shift with the
+# surrounding fields; the validator decodes the segment instead of matching
+# a fixed fragment. The previous pattern embedded one fixture's payload.
+pattern = "\\beyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\b"
 finding_type = "Supabase Service Role Key"
 severity = "HIGH"
+validate = "supabase-service-role"
 keywords = ["supabase", "service_role"]
 
 [[detectors]]
@@ -789,7 +791,7 @@ keywords = ["service_account"]
 
 [[detectors]]
 name = "AzureStorageKeyDetector"
-pattern = "AccountKey=[A-Za-z0-9+/]{86,88}=="
+pattern = "AccountKey=[A-Za-z0-9+/]{86}=="
 finding_type = "Azure Storage Key"
 severity = "HIGH"
 keywords = ["AccountKey"]

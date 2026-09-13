@@ -389,9 +389,15 @@ fn test_verify_integrity_command() {
         "Should exit 0 for verify-integrity"
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
+    #[cfg(unix)]
     assert!(
         stdout.contains("Binary permissions verified") && stdout.contains("not world-writable"),
         "the success message must say which check ran, got:\n{stdout}"
+    );
+    #[cfg(not(unix))]
+    assert!(
+        stdout.contains("permission checks run on unix only"),
+        "the success message must state which platform check ran, got:\n{stdout}"
     );
 }
 

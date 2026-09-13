@@ -607,11 +607,15 @@ fn test_checksum_prefix_is_allowlisted_in_random_string() {
 
 #[test]
 fn test_supabase_service_role_key_requires_service_role_claim() {
-    // Real service-role JWTs carry the base64url `service_role` claim in the
-    // payload segment; the old pattern embedded one fixture's exact payload.
+    // The claim is JSON inside the base64url payload, so its encoded bytes
+    // shift with the surrounding fields: a 20-character project ref (the real
+    // shape) puts `service_role` out of phase with the literal
+    // `c2VydmljZV9yb2xl` that the old pattern required.
     let header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
-    let service_role = "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3AiLCJyb2xlIjoic2VydmljZV9yb2xlIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjIwMDAwMDAwMDB9";
-    let anon = "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3AiLCJyb2xlIjoiYW5vbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoyMDAwMDAwMDAwfQ";
+    let service_role = "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3BxcnN0Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjoyMDAwMDAwMDAwfQ";
+    let demo_service_role =
+        "eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0";
+    let anon = "eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFiY2RlZmdoaWprbG1ub3BxcnN0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MjAwMDAwMDAwMH0";
     let signature = "sIGf0pXe9Bq8wZ1k3nR7vL5cQ2dY4uM6aJ0hT8eWxN";
 
     assert!(
@@ -619,7 +623,14 @@ fn test_supabase_service_role_key_requires_service_role_claim() {
             "SUPABASE_SERVICE_ROLE_KEY={header}.{service_role}.{signature}"
         ))
         .contains(&"SupabaseServiceRoleKeyDetector".to_string()),
-        "a service_role claim in the payload must report"
+        "a realistic 20-character project ref must not hide the claim"
+    );
+    assert!(
+        reported_by(&format!(
+            "SUPABASE_SERVICE_ROLE_KEY={header}.{demo_service_role}.{signature}"
+        ))
+        .contains(&"SupabaseServiceRoleKeyDetector".to_string()),
+        "the documented local-development key must report"
     );
     assert!(
         !reported_by(&format!("SUPABASE_ANON_KEY={header}.{anon}.{signature}"))

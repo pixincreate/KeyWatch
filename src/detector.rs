@@ -50,6 +50,10 @@ pub enum ContentValidator {
     /// Aadhaar numbers carry a Verhoeff check digit. Without it, every
     /// 12-digit run (the tail of a UUID, a numeric id) reports HIGH.
     Verhoeff,
+    /// Supabase JWTs carry the role in the base64url payload, so the claim's
+    /// encoded bytes shift with the surrounding fields. Decode the payload and
+    /// read the claim instead of matching one fixed base64 fragment.
+    SupabaseServiceRole,
 }
 
 impl FromStr for ContentValidator {
@@ -59,6 +63,7 @@ impl FromStr for ContentValidator {
         match value.trim().to_lowercase().as_str() {
             "luhn" => Ok(Self::Luhn),
             "verhoeff" => Ok(Self::Verhoeff),
+            "supabase-service-role" => Ok(Self::SupabaseServiceRole),
             other => Err(ParseValidatorError {
                 value: other.to_string(),
             }),
@@ -251,8 +256,59 @@ impl Detector {
         match self.validator {
             Some(ContentValidator::Luhn) => passes_luhn(matched),
             Some(ContentValidator::Verhoeff) => passes_verhoeff(matched),
+            Some(ContentValidator::SupabaseServiceRole) => {
+                Self::passes_supabase_service_role(matched)
+            }
             None => true,
         }
+    }
+
+    /// Whether a Supabase JWT's payload claims the `service_role`.
+    ///
+    /// The claim is JSON inside the base64url payload segment, so its encoded
+    /// bytes shift with the surrounding fields (a 20-character project ref puts
+    /// `service_role` out of phase with the literal `c2VydmljZV9yb2xl`). Decode
+    /// the segment and read the claim instead.
+    fn passes_supabase_service_role(matched: &str) -> bool {
+        static ROLE_CLAIM: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+            Regex::new(r#""role"\s*:\s*"service_role""#).expect("role claim pattern is valid")
+        });
+
+        let Some(payload) = matched.split('.').nth(1) else {
+            return false;
+        };
+        let Some(decoded) = Self::decode_base64url(payload) else {
+            return false;
+        };
+        let Ok(payload) = String::from_utf8(decoded) else {
+            return false;
+        };
+        ROLE_CLAIM.is_match(&payload)
+    }
+
+    /// Decodes unpadded base64url. Returns `None` for any character outside the
+    /// alphabet, so malformed candidates do not validate.
+    fn decode_base64url(input: &str) -> Option<Vec<u8>> {
+        const ALPHABET: &[u8; 64] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+        let mut decoded = Vec::with_capacity(input.len() * 3 / 4);
+        let mut buffer: u32 = 0;
+        let mut bits: u32 = 0;
+        for byte in input.bytes() {
+            if byte == b'=' {
+                continue;
+            }
+            let value = ALPHABET.iter().position(|candidate| *candidate == byte)? as u32;
+            buffer = (buffer << 6) | value;
+            bits += 6;
+            if bits >= 8 {
+                bits -= 8;
+                decoded.push((buffer >> bits) as u8);
+                buffer &= (1 << bits) - 1;
+            }
+        }
+        Some(decoded)
     }
 
     /// `lowercase_content` must already be lowercased. Keywords are stored
