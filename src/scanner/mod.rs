@@ -562,3 +562,57 @@ pub(crate) mod test_support {
         Detector::new(name, pattern, finding_type, severity, &[], &[], None).unwrap()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::dedupe_findings;
+    use crate::report::{Finding, Severity};
+
+    fn finding(detector: &str, severity: Severity, matched: &str, line: usize) -> Finding {
+        Finding {
+            file_path: "src/lib.rs".to_string(),
+            line_number: line,
+            finding_type: "test".to_string(),
+            severity,
+            matched_content: matched.to_string(),
+            detector_name: detector.to_string(),
+        }
+    }
+
+    #[test]
+    fn dedupe_findings_keeps_the_most_severe_detector() {
+        let findings = vec![
+            finding("LowDetector", Severity::Low, "secret", 10),
+            finding("HighDetector", Severity::High, "secret", 10),
+            finding("HighDetector", Severity::High, "other", 10),
+        ];
+
+        let deduped = dedupe_findings(findings);
+
+        assert_eq!(deduped.len(), 2);
+        assert!(
+            deduped
+                .iter()
+                .any(|finding| finding.detector_name == "HighDetector"
+                    && finding.matched_content == "secret")
+        );
+        assert!(
+            !deduped
+                .iter()
+                .any(|finding| finding.severity == Severity::Low)
+        );
+    }
+
+    #[test]
+    fn dedupe_findings_breaks_ties_by_detector_name() {
+        let findings = vec![
+            finding("ZetaDetector", Severity::High, "secret", 10),
+            finding("AlphaDetector", Severity::High, "secret", 10),
+        ];
+
+        let deduped = dedupe_findings(findings);
+
+        assert_eq!(deduped.len(), 1);
+        assert_eq!(deduped[0].detector_name, "AlphaDetector");
+    }
+}
