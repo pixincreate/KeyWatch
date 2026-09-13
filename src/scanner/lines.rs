@@ -194,12 +194,15 @@ pub(super) fn scan_line_detectors(
         if !scratch.candidates[detector_index] {
             continue;
         }
-        for mat in detector.regex.find_iter(line) {
-            if detector.accepts_match(mat.as_str()) {
+        for captures in detector.regex.captures_iter(line) {
+            let Some(matched) = captures.get(0) else {
+                continue;
+            };
+            if detector.accepts_captures(&captures) {
                 findings.push(Finding {
                     file_path: path.to_string(),
                     line_number,
-                    matched_content: mat.as_str().to_string(),
+                    matched_content: matched.as_str().to_string(),
                     finding_type: detector.finding_type.clone(),
                     severity: detector.severity,
                     detector_name: detector.name.clone(),
@@ -223,14 +226,20 @@ pub(super) fn scan_multiline_chunk(
     let lowered_chunk = chunk.to_lowercase();
     for detector in multiline_detectors {
         if detector.has_keywords(&lowered_chunk) {
-            for mat in detector.regex.find_iter(chunk) {
-                let line_in_chunk = chunk[..mat.start()].matches('\n').count() + 1;
-                let line_start = chunk[..mat.start()].rfind('\n').map(|i| i + 1).unwrap_or(0);
+            for captures in detector.regex.captures_iter(chunk) {
+                let Some(matched) = captures.get(0) else {
+                    continue;
+                };
+                let line_in_chunk = chunk[..matched.start()].matches('\n').count() + 1;
+                let line_start = chunk[..matched.start()]
+                    .rfind('\n')
+                    .map(|i| i + 1)
+                    .unwrap_or(0);
                 // Start position identifies a match exactly; sliding windows
                 // re-scan their carry, so the same match can be seen twice.
                 if !reported.insert((
                     line_offset + line_in_chunk,
-                    mat.start() - line_start,
+                    matched.start() - line_start,
                     detector.name.clone(),
                 )) {
                     continue;
@@ -241,11 +250,11 @@ pub(super) fn scan_multiline_chunk(
                     .unwrap_or_default();
                 let line_is_suppressed = is_inline_suppressed(line_content);
 
-                if !line_is_suppressed && detector.accepts_match(mat.as_str()) {
+                if !line_is_suppressed && detector.accepts_captures(&captures) {
                     findings.push(Finding {
                         file_path: path.to_string(),
                         line_number: line_offset + line_in_chunk,
-                        matched_content: mat.as_str().to_string(),
+                        matched_content: matched.as_str().to_string(),
                         finding_type: detector.finding_type.clone(),
                         severity: detector.severity,
                         detector_name: detector.name.clone(),
@@ -553,9 +562,10 @@ mod tests {
 
     #[test]
     fn test_prefilter_selects_detectors_with_overlapping_keywords() {
-        // detectors.toml has genuinely overlapping keywords ("sk_" for Adyen,
-        // "sk_test_" for Stripe). A non-overlapping search reports only the
-        // shorter one and the longer detector silently never runs.
+        // detectors.toml has genuinely overlapping keywords ("sk_live" for
+        // Plaid, "sk_live_" for Stripe and Paystack). A non-overlapping
+        // search reports only the shorter one and the longer detector
+        // silently never runs.
         let short = Detector::new(
             "Short",
             r"sk_\w+",

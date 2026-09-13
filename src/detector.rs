@@ -3,7 +3,7 @@ mod error;
 pub use error::DetectorInitError;
 
 use crate::report::{ParseSeverityError, Severity};
-use regex::Regex;
+use regex::{Captures, Regex};
 use serde::Deserialize;
 use std::{borrow::Cow, fs, str::FromStr};
 use thiserror::Error;
@@ -272,12 +272,37 @@ impl Detector {
     /// and the structural validator. The scanner loops and the tests share
     /// this so the accept chain exists in exactly one place.
     pub fn accepts_match(&self, matched: &str) -> bool {
+        self.accepts_parts(matched, matched)
+    }
+
+    /// Captures-aware accept gate for a pattern with capture groups: the
+    /// allowlist encodes key-name context and always sees the whole match,
+    /// while entropy and the validator see the captured value. The value is
+    /// the last group that participated, which is group 1 for the common
+    /// single-group value pattern; a keyword alternation may add an earlier
+    /// group, and a key name such as `api_key` must not supply the entropy
+    /// its value lacks. Without a participating group, both checks fall back
+    /// to the whole match.
+    pub fn accepts_captures(&self, captures: &Captures<'_>) -> bool {
+        let Some(matched) = captures.get(0) else {
+            return false;
+        };
+        match (1..captures.len())
+            .rev()
+            .find_map(|index| captures.get(index))
+        {
+            Some(value) => self.accepts_parts(matched.as_str(), value.as_str()),
+            None => self.accepts_match(matched.as_str()),
+        }
+    }
+
+    fn accepts_parts(&self, matched: &str, value: &str) -> bool {
         !self
             .allowlist
             .iter()
             .any(|pattern| pattern.is_match(matched))
-            && self.has_sufficient_entropy(matched)
-            && self.passes_validation(matched)
+            && self.has_sufficient_entropy(value)
+            && self.passes_validation(value)
     }
 
     /// Whether the pattern carries the dot-matches-newline flag anywhere —

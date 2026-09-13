@@ -70,6 +70,9 @@ All notable changes to this project will be documented in this file.
 - Staged blobs are resolved to object IDs and read with `git cat-file blob <oid>` instead of `:<path>`, so a file whose name resembles a git stage path (`0:config`) can no longer substitute another file's content
 - `scan --git-history` reads merge commits (`--diff-merges=first-parent`), so a secret introduced while resolving a conflict is reported
 - Files that fail to open or read are counted as `unscannable` instead of being silently skipped
+- Ten detectors that matched the wrong shape or nothing at all (`SupabaseServiceRoleKey`, `TerraformCloudToken`, `AzureStorageKey`, `DockerHubToken`, `CircleCIToken`, `DiscordToken`, `NetlifyToken`, `CodecovToken`, `AdyenAPIKey`, `RazorpayKey`) now follow the documented token format, each pinned by a real-format fixture test; the two that matched only non-secrets were removed
+- `Email`, `PhoneNumber`, `IPAddress`, `TwilioAPIKey` and `MailgunAPIKey` no longer suppress or match unintended text: the example-domain allowlist is anchored, only the reserved `555-01xx` numbers are ignored, every IPv4 octet is validated, and embedded vendor prefixes require word boundaries
+- Entropy and validators run on the captured value rather than the whole match, so `api_key = "aaaaaaaaaa"` is no longer reported; `GCPServiceAccountKey` requires a `private_key` field and `MasterAPIKey`, `AzureDevOpsPAT`, `KimiMoonshotAPIKey` and `CertificateDetector` severities now reflect credential impact
 
 ### Performance
 
