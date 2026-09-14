@@ -39,11 +39,11 @@ classes: {
   }
 }
 
-mode: "SCAN MODE\nnormal or trusted¹\n¹ --no-config-discovery" {class: warning}
+mode: "SCAN FLAGS\n¹ dropped by --trusted-detectors\n² skipped by --no-repo-config\n--no-config-discovery = both" {class: warning}
 
 detectors: "DETECTOR SOURCE\nKEYWATCH_CONFIG_PATH → repository¹\n→ user → executable → embedded" {class: embedded}
 
-policy: "POLICY SOURCE\nexplicit --config, or repository¹\n.keywatch.toml → keywatch.toml → .kw.toml" {class: repository}
+policy: "POLICY SOURCE\nexplicit --config, or repository²\n.keywatch.toml → keywatch.toml → .kw.toml" {class: repository}
 
 merge: "VALIDATE + MERGE\ncustom rules · overrides · excludes" {class: trusted}
 result: "FINAL RULES\ndetectors + exclusion policy" {class: trusted}

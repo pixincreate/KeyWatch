@@ -1743,6 +1743,27 @@
       "finding_type": "Base64 Encoded String",
       "matched_content_hash": "69abc601294453463474ddc77dcbcf003202a1dfa2e1f886d880151676c42e5f",
       "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "docs/architecture/detector-config-trust.svg",
+      "line_number": 7,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "b7141e1d4f3ed2f03840807e34d0514f9142d1617d99e6e284495a2391ee5a79",
+      "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "docs/architecture/scan-pipeline.svg",
+      "line_number": 7,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "8dc72c32e291de9c0401c3550fa2c8df4698939bb6edc5a0fcdc60f0c768513c",
+      "plugin_name": "Base64Detector"
+    },
+    {
+      "file_path": "docs/architecture/scan-pipeline.svg",
+      "line_number": 14,
+      "finding_type": "Base64 Encoded String",
+      "matched_content_hash": "9655d730afa93f28500efce8fd3efadc67e1d32ae4d6768e3ac7da8c1fa4dd11",
+      "plugin_name": "Base64Detector"
     }
   ]
 }
