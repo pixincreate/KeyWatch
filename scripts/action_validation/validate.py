@@ -149,7 +149,7 @@ def main() -> int:
     require("keywatch_args+=(--output \"$report_path\")" in shell, "scan must always request a JSON report")
     require("rm -f -- \"$report_path\"" in shell, "stale reports must be removed before scanning")
     require("scan_status=$?" in shell, "scanner exit status must be captured")
-    require("echo \"exit_code=$scan_status\"" in shell, "scanner status must be written to outputs")
+    require("echo \"exit_code=$action_status\"" in shell, "the effective action status must be written to outputs")
     require("findings_count=\"unknown\"" in shell, "missing/malformed reports must not default to zero findings")
     require("jq -e '.findings | type == \"array\"'" in shell, "findings count must validate JSON report shape")
     require("action_status=$scan_status" in shell, "action status must preserve scanner status by default")

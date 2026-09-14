@@ -40,12 +40,8 @@ run-release:
     cargo run --release
 
 # Full check pipeline
-check: fmt clippy test
+check: fmt clippy-strict test
     @echo "✓ All checks passed"
-
-# Run benchmarks (requires criterion)
-bench:
-    cargo bench
 
 # Generate docs
 doc:

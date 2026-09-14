@@ -37,5 +37,7 @@ USER keywatch
 
 ENV KEYWATCH_CONFIG_PATH=/etc/keywatch/detectors.toml
 
+WORKDIR /workspace
+
 ENTRYPOINT ["key-watch"]
 CMD ["--help"]

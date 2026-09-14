@@ -114,10 +114,6 @@ jobs:
         with:
           targets: ${{ matrix.platform.target }}
 
-      - name: Add aarch64 Apple target
-        if: matrix.platform.target == 'aarch64-apple-darwin'
-        run: rustup target add aarch64-apple-darwin
-
       # Build the specific package
       - name: Build Binary
         run: |
@@ -167,3 +163,27 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  major-tag:
+    name: update-major-tag
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Move the major tag to this release
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          case "$REF_NAME" in
+            *-*) echo "Prerelease tag; major tag not moved."; exit 0 ;;
+          esac
+          major="${REF_NAME%%.*}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -fa "$major" -m "Update $major tag"
+          git push origin "$major" --force

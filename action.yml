@@ -293,8 +293,11 @@ runs:
           action_status=2
         fi
 
+        if [ "$findings_count" = "unknown" ]; then
+          findings_count=-1
+        fi
         {
-          echo "exit_code=$scan_status"
+          echo "exit_code=$action_status"
           echo "findings_count=$findings_count"
         } >> "$GITHUB_OUTPUT"
 

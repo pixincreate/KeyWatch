@@ -15,9 +15,25 @@ env:
   IMAGE_NAME: pixincreate/keywatch
 
 jobs:
+  test:
+    name: Test before publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Run tests
+        run: cargo test --release --locked
+
   build-and-push:
     name: Build and push Docker image
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
       - name: Checkout repository
