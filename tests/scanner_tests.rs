@@ -275,9 +275,16 @@ fn test_multiple_detections_in_line() {
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
-    assert!(
-        findings.len() >= 2,
-        "Should find multiple secrets on one line"
+    let types: Vec<&str> = findings
+        .iter()
+        .map(|finding| finding.finding_type.as_str())
+        .collect();
+    assert_eq!(
+        types,
+        vec!["Password", "Email Address"],
+        // The password value swallows the rest of the line, the email is its
+        // own finding, and the AKIA fragment is too short for any detector.
+        "every secret on the line must be reported exactly once"
     );
 
     fs::remove_file(test_file).expect("Cleanup");
@@ -671,9 +678,10 @@ fn test_detect_aadhaar() {
         .iter()
         .filter(|f| f.finding_type == "Aadhaar Card Number")
         .collect();
-    assert!(
-        !aadhaar_findings.is_empty(),
-        "Should detect Aadhaar numbers"
+    assert_eq!(
+        aadhaar_findings.len(),
+        1,
+        "exactly the Verhoeff-valid, labeled number is reported: {findings:?}"
     );
 
     fs::remove_file(test_file).expect("Cleanup");

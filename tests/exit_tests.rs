@@ -552,7 +552,10 @@ fn test_unlistable_directory_is_unscannable_and_fails_with_flag() {
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("Lock dir");
     if fs::read_dir(&locked).is_ok() {
         // Running as root (e.g. in a container): mode 000 does not make the
-        // directory unlistable, so the scenario cannot be constructed.
+        // directory unlistable, so the scenario cannot be constructed and
+        // this test verifies nothing. Said out loud so a root CI runner does
+        // not silently lose the contract; GitHub-hosted runners are not root.
+        eprintln!("SKIPPED: unlistable-directory scenario needs a non-root user");
         fs::remove_dir_all(&test_dir).expect("Cleanup");
         return;
     }
@@ -590,7 +593,11 @@ fn test_exit_code_2_on_unlistable_directory_operand() {
     fs::create_dir(&locked).expect("Create locked dir");
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("Lock dir");
     if fs::read_dir(&locked).is_ok() {
-        // Running as root: mode 000 does not make the directory unlistable.
+        // Running as root (e.g. in a container): mode 000 does not make the
+        // directory unlistable, so the scenario cannot be constructed and
+        // this test verifies nothing. Said out loud so a root CI runner does
+        // not silently lose the contract; GitHub-hosted runners are not root.
+        eprintln!("SKIPPED: unlistable-directory scenario needs a non-root user");
         fs::remove_dir_all(&test_dir).expect("Cleanup");
         return;
     }
@@ -726,6 +733,51 @@ fn test_max_file_size_skips_large_files_as_unscannable() {
         run(&["--max-file-size", "3"]),
         Some(1),
         "under the cap the file scans normally"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_sarif_format_through_the_cli() {
+    let test_dir = setup_scan_dir("sarif_cli", false);
+    fs::write(test_dir.join("creds.txt"), "AKIAABCDEFGHIJKLMNOP\n").expect("write secret");
+    let report_path = test_dir.join("report.sarif");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .args([
+            "scan",
+            "creds.txt",
+            "--no-baseline-discovery",
+            "--format",
+            "sarif",
+            "--output",
+            report_path.to_str().unwrap(),
+        ])
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .status()
+        .expect("run key-watch");
+    assert_eq!(
+        status.code(),
+        Some(1),
+        "the finding still drives the exit code"
+    );
+
+    let sarif: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&report_path).expect("read report"))
+            .expect("report must be valid JSON");
+    assert_eq!(sarif["version"], "2.1.0");
+    let result = &sarif["runs"][0]["results"][0];
+    assert_eq!(result["ruleId"], "AWS Access Key");
+    assert_eq!(result["level"], "error");
+    assert_eq!(
+        result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+        "creds.txt"
+    );
+    assert_eq!(
+        result["locations"][0]["physicalLocation"]["region"]["startLine"],
+        1
     );
 
     fs::remove_dir_all(test_dir).expect("Cleanup");

@@ -53,7 +53,7 @@ Control the output:
 ```sh
 key-watch scan . --verbose               # print the full JSON report
 key-watch scan . --output report.json    # write the report to a file
-key-watch scan . --format sarif          # write SARIF instead of JSON
+key-watch scan . --format sarif --output report.sarif   # write SARIF to a file
 ```
 
 By default, KeyWatch prints one line per finding with the file, line number, and a redacted preview.
@@ -65,7 +65,7 @@ Reports never contain the full matched text unless you pass `--show-secrets`.
 | ------ | ------- |
 | `--exclude <patterns>` | Skip paths that match these comma-separated glob patterns |
 | `--exit-mode <mode>` | `strict` fails on any finding (default), `critical` fails only on HIGH or CRITICAL findings, `always` never fails |
-| `--fail-on-unscannable` | Fail when a file or directory could not be read |
+| `--fail-on-unscannable` | Fail when a file or directory could not be read; applies in `strict` exit mode and not with `--update-baseline` |
 | `--baseline <path>` | Use a specific baseline file |
 | `--no-baseline-discovery` | Do not look for a baseline file automatically |
 | `--update-baseline` | Record the current findings in the baseline instead of reporting them |
@@ -83,6 +83,7 @@ Notes:
   They contain checksums, not credentials.
 - `--staged` reads the content you staged with `git add`, not the files on disk.
   A secret that is staged but already removed from the working copy is still found.
+  A secret whose lines were staged in separate commits can span change hunks the diff never shows together; run `key-watch scan .` on the tree to catch that case.
 - `--git-history` scans every branch and tag.
   Use `--rev-range` to scan only a range of commits.
 - A scan path that does not exist, is a symbolic link, or cannot be read is an error.
@@ -104,7 +105,7 @@ KeyWatch installs two git hooks:
   A secret in staged content blocks the commit.
   Findings in lines you did not change never block a commit.
 - The **pre-push** hook scans the commits you are about to push.
-  A secret in those commits blocks the push.
+  It runs in `critical` exit mode, so HIGH and CRITICAL findings block the push; MEDIUM and LOW findings are reported but do not block.
   Uncommitted files never block a push.
 
 Install and remove hooks inside a repository:
