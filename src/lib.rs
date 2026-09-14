@@ -69,6 +69,7 @@ fn run_scan_command(args: &ScanArgs) -> Result<i32, RunCliError> {
     // plain update must refresh the recorded line numbers of known findings,
     // so neither may filter the findings first.
     let prune = args.prune_baseline && args.update_baseline;
+    let anchor = baseline_anchor(&args);
     let mut loaded_baseline = match args.baseline.as_deref() {
         Some(path) => Some(baseline::Baseline::load(std::path::Path::new(path))?),
         None => None,
@@ -78,12 +79,12 @@ fn run_scan_command(args: &ScanArgs) -> Result<i32, RunCliError> {
         .filter(|_| !prune && !args.update_baseline)
     {
         let before = findings.len();
-        findings = baseline.filter_findings(findings);
+        findings = baseline.filter_findings(findings, &anchor);
         scan_metadata.suppressed_by_baseline = before - findings.len();
     }
 
     if args.update_baseline {
-        update_baseline(&args, &findings, &mut loaded_baseline, prune)?;
+        update_baseline(&args, &findings, &mut loaded_baseline, prune, &anchor)?;
         return Ok(0);
     }
 
@@ -127,6 +128,45 @@ fn load_scan_config(args: &ScanArgs) -> Result<Option<config::KeywatchConfig>, R
     }
 }
 
+/// Where fingerprint paths are anchored for this scan: relative finding
+/// paths come from the repository root in git-backed modes and from the
+/// invocation directory otherwise. The repository is probed at the first
+/// scan operand, not the process directory, so `key-watch scan some/repo`
+/// run from outside the repository still anchors to it. Canonicalized so
+/// macOS `/tmp` vs `/private/tmp` spellings cannot break the root prefix
+/// match.
+fn baseline_anchor(args: &ScanArgs) -> baseline::PathAnchor {
+    let cwd = env::current_dir()
+        .ok()
+        .and_then(|dir| std::fs::canonicalize(dir).ok())
+        .unwrap_or_else(|| std::path::PathBuf::from("."));
+    let probe = match args.paths.first() {
+        Some(first) if !args.staged => {
+            let joined = cwd.join(first);
+            if joined.is_dir() {
+                joined
+            } else {
+                joined
+                    .parent()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or_else(|| cwd.clone())
+            }
+        }
+        _ => cwd.clone(),
+    };
+    let repo_root =
+        scanner::git_repo_root(&probe).and_then(|root| std::fs::canonicalize(root).ok());
+    let scan_dir = if args.staged || args.git_history {
+        repo_root.clone().unwrap_or(cwd)
+    } else {
+        cwd
+    };
+    baseline::PathAnchor {
+        scan_dir,
+        repo_root,
+    }
+}
+
 /// Writes the baseline after the scan.
 ///
 /// Pruning rebuilds it from what the scan actually found. The drop count and
@@ -137,6 +177,7 @@ fn update_baseline(
     findings: &[Finding],
     loaded_baseline: &mut Option<baseline::Baseline>,
     prune: bool,
+    anchor: &baseline::PathAnchor,
 ) -> Result<(), RunCliError> {
     let baseline_path = args
         .baseline
@@ -148,7 +189,7 @@ fn update_baseline(
 
     if prune {
         let stale = baseline.entries.len();
-        *baseline = baseline::Baseline::from_findings(findings);
+        *baseline = baseline::Baseline::from_findings(findings, anchor);
         let dropped = stale.saturating_sub(baseline.entries.len());
         if dropped > 0 {
             let noun = if dropped == 1 { "entry" } else { "entries" };
@@ -162,7 +203,7 @@ fn update_baseline(
             )?;
         }
     } else {
-        baseline.update_with_findings(findings);
+        baseline.update_with_findings(findings, anchor);
     }
 
     baseline.save(std::path::Path::new(baseline_path))?;
@@ -181,13 +222,35 @@ fn emit_scan_result(
     let suppressed = scan_metadata.suppressed_by_baseline;
     let severity_counts = report::get_severity_counts(&findings);
     let mut exit_code = calculate_exit_code(&findings, &args.exit_mode);
-    if args.fail_on_unscannable
+    let unscannable_failure = args.fail_on_unscannable
         && matches!(args.exit_mode, ExitMode::Strict)
-        && !scan_metadata.unscannable_files.is_empty()
-    {
+        && !scan_metadata.unscannable_files.is_empty();
+    if unscannable_failure {
         exit_code = 1;
     }
+    let unscannable_count = scan_metadata.unscannable_files.len();
     let findings_count = findings.len();
+    // Non-verbose runs still need to say WHERE each finding is; a bare count
+    // forces a second scan with --verbose to act on anything. Matched text
+    // stays redacted on the console regardless of --show-secrets.
+    let finding_lines: Vec<String> = if args.verbose {
+        Vec::new()
+    } else {
+        findings
+            .iter()
+            .map(|finding| {
+                format!(
+                    "{}: {} at {}:{} ({}) [{}]",
+                    finding.severity,
+                    finding.finding_type,
+                    finding.file_path,
+                    finding.line_number,
+                    report::redact(&finding.matched_content),
+                    finding.detector_name
+                )
+            })
+            .collect()
+    };
     let report_out = match args.format {
         OutputFormat::Json => {
             report::create_report(findings, scan_metadata, scan_time, args.show_secrets)
@@ -207,8 +270,16 @@ fn emit_scan_result(
         ))?;
     }
 
+    for line in &finding_lines {
+        emit(line)?;
+    }
     let summary = match findings_count {
         _ if args.verbose => report_out.clone(),
+        // "No secrets found." next to exit code 1 is contradictory; name the
+        // actual failure instead.
+        0 if unscannable_failure => format!(
+            "WARNING: {unscannable_count} file(s) could not be scanned (--fail-on-unscannable)"
+        ),
         0 => "No secrets found.".to_string(),
         count => format!(
             "WARNING: {} potential secret(s) detected (CRITICAL: {}, HIGH: {}, MEDIUM: {}, LOW: {})",

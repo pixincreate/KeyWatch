@@ -22,16 +22,28 @@ use std::path::{Path, PathBuf};
 /// is checked.
 pub(super) fn scan_git_output<T>(
     mut command: std::process::Command,
-    nonzero_status: ScannerError,
+    nonzero_status: impl FnOnce(String) -> ScannerError,
     scan: impl FnOnce(BufReader<std::process::ChildStdout>) -> Result<T, ScannerError>,
     spawn_failed: impl FnOnce(std::io::Error) -> ScannerError,
 ) -> Result<T, ScannerError> {
     let mut child = command
         .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
         .spawn()
         .map_err(spawn_failed)?;
 
     let stdout = child.stdout.take().ok_or(ScannerError::CaptureGitStdout)?;
+    // Drained on its own thread: git can fill the stderr pipe (a full usage
+    // dump) while this process is still reading stdout, deadlocking both.
+    let stderr = child.stderr.take();
+    let stderr_reader = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut buffer = String::new();
+        if let Some(mut stderr) = stderr {
+            let _ = stderr.read_to_string(&mut buffer);
+        }
+        buffer
+    });
     let scanned = scan(BufReader::new(stdout));
     if scanned.is_err() {
         let _ = child.kill();
@@ -40,9 +52,30 @@ pub(super) fn scan_git_output<T>(
     let status = child
         .wait()
         .map_err(|source| ScannerError::GitProcess { source })?;
+    let stderr = stderr_reader.join().unwrap_or_default();
     let scanned = scanned?;
 
-    status.success().then_some(scanned).ok_or(nonzero_status)
+    status
+        .success()
+        .then_some(scanned)
+        .ok_or_else(|| nonzero_status(summarize_git_stderr(&stderr)))
+}
+
+/// One line of git's stderr for the error message: the first `fatal:` or
+/// `error:` line when present, otherwise the first non-empty line. Keeps a
+/// 150-line usage dump out of the report.
+fn summarize_git_stderr(stderr: &str) -> String {
+    let lines = || {
+        stderr
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+    };
+    lines()
+        .find(|line| line.starts_with("fatal:") || line.starts_with("error:"))
+        .or_else(|| lines().next())
+        .unwrap_or("exited with non-zero status")
+        .to_string()
 }
 fn parse_hunk_new_start(header: &str) -> usize {
     let parsed = header

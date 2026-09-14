@@ -201,6 +201,25 @@ severity = "HIGH"
 }
 
 #[test]
+fn test_rule_description_is_accepted_and_ignored() {
+    let toml_str = r#"
+[[rules]]
+name = "DescribedDetector"
+pattern = "DESCRIBED_[A-Z]+"
+finding_type = "Test Secret"
+severity = "HIGH"
+description = "kept for configuration compatibility"
+"#;
+
+    let config: KeywatchConfig = toml::from_str(toml_str).expect("description should parse");
+    let rules = config.rules.expect("rules present");
+    assert_eq!(
+        rules[0].description.as_deref(),
+        Some("kept for configuration compatibility")
+    );
+}
+
+#[test]
 fn test_parse_config_with_overrides() {
     let toml_str = r#"
 [overrides]

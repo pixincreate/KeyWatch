@@ -156,11 +156,23 @@ fn scan_git_history(
             "--no-textconv",
             "--no-color",
         ]);
+    // Without a range, walk every ref: a secret committed on a side branch
+    // is exactly as leaked as one on the checked-out branch. An explicit
+    // --rev-range (the pre-push hook passes the pushed range) narrows the
+    // walk instead.
+    match args.rev_range.as_deref() {
+        Some(range) => {
+            command.arg(range);
+        }
+        None => {
+            command.arg("--all");
+        }
+    }
 
     let exclude_patterns = compile_exclude_patterns(args, config)?;
     let history = scan_git_output(
         command,
-        ScannerError::GitLogNonZero,
+        |stderr| ScannerError::GitLogNonZero { stderr },
         |reader| {
             scan_staged_diff(
                 reader,
@@ -210,7 +222,7 @@ fn scan_staged(
 
     let staged = scan_git_output(
         command,
-        ScannerError::GitDiffNonZero,
+        |stderr| ScannerError::GitDiffNonZero { stderr },
         |reader| {
             scan_staged_diff(
                 reader,
@@ -311,15 +323,32 @@ fn scan_filesystem(
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
     let mut target_paths: Vec<ScanTarget> = Vec::new();
+    let mut unlistable_dirs: Vec<String> = Vec::new();
 
+    // Explicit operands are validated strictly: a typo'd path or an operand
+    // the scanner will not read (symlink, device, FIFO) must not produce a
+    // silent "No secrets found" pass.
     for path_str in &args.paths {
         let path = Path::new(path_str);
-        let Ok(metadata) = fs::symlink_metadata(path) else {
-            continue;
+        let metadata = match fs::symlink_metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Err(ScannerError::ScanPathMissing {
+                    path: path_str.clone(),
+                });
+            }
+            Err(source) => {
+                return Err(ScannerError::ScanPathUnreadable {
+                    path: path_str.clone(),
+                    source,
+                });
+            }
         };
         let file_type = metadata.file_type();
         if file_type.is_symlink() {
-            continue;
+            return Err(ScannerError::ScanPathSymlink {
+                path: path_str.clone(),
+            });
         }
         if file_type.is_file() {
             target_paths.push(ScanTarget {
@@ -327,21 +356,39 @@ fn scan_filesystem(
                 root: None,
             });
         } else if file_type.is_dir() {
-            collect_files(path_str, &mut target_paths, path_str);
+            // An explicit operand that cannot be listed is the same silent
+            // clean pass as a missing one; nested unlistable directories
+            // stay unscannable entries instead.
+            if let Err(source) = fs::read_dir(path) {
+                return Err(ScannerError::ScanPathUnreadable {
+                    path: path_str.clone(),
+                    source,
+                });
+            }
+            collect_files(path_str, &mut target_paths, path_str, &mut unlistable_dirs);
+        } else {
+            return Err(ScannerError::ScanPathUnsupported {
+                path: path_str.clone(),
+            });
         }
     }
 
     target_paths.sort_by(|a, b| a.path.cmp(&b.path));
 
-    let mut unique_paths: std::collections::BTreeMap<String, Vec<Option<String>>> =
+    // Keyed by a lexically normalized form so `dup.txt` and `./dup.txt` are
+    // one scan target, not two duplicated findings. The first spelling seen
+    // is the one reported.
+    let mut unique_paths: std::collections::BTreeMap<String, (String, Vec<Option<String>>)> =
         std::collections::BTreeMap::new();
     for ScanTarget { path, root } in target_paths {
-        let roots = unique_paths.entry(path).or_default();
+        let (_, roots) = unique_paths
+            .entry(normalized_path_key(&path))
+            .or_insert_with(|| (path, Vec::new()));
         if !roots.contains(&root) {
             roots.push(root);
         }
     }
-    let unique_paths: Vec<_> = unique_paths.into_iter().collect();
+    let unique_paths: Vec<_> = unique_paths.into_values().collect();
 
     let exclude_patterns = compile_exclude_patterns(args, config)?;
     let line_scan_context = LineScanContext::new(line_detectors);
@@ -362,7 +409,32 @@ fn scan_filesystem(
         })
         .collect();
 
-    Ok(aggregate_file_outcomes(results))
+    let (findings, mut metadata) = aggregate_file_outcomes(results);
+    metadata.unscannable_files.extend(unlistable_dirs);
+    Ok((findings, metadata))
+}
+
+/// Lexically normalized dedup key for a scan target: `.` components and
+/// empty segments drop out, absoluteness is preserved (so `.//x` keys as
+/// `x`, never as the absolute `/x`), and `\` folds to `/` on Windows only —
+/// on unix a backslash is an ordinary filename character, and folding it
+/// would collide `a\b` with `a/b` and silently drop one of them from the
+/// scan. Purely a key — the path reported to the user keeps its original
+/// spelling.
+fn normalized_path_key(path: &str) -> String {
+    #[cfg(windows)]
+    let path = &path.replace('\\', "/");
+    let absolute = path.starts_with('/');
+    let segments: Vec<&str> = path
+        .split('/')
+        .filter(|segment| !segment.is_empty() && *segment != ".")
+        .collect();
+    let joined = segments.join("/");
+    if absolute {
+        format!("/{joined}")
+    } else {
+        joined
+    }
 }
 
 /// Scans a single path and classifies the outcome. Streamed: memory stays
@@ -498,7 +570,7 @@ fn untrusted_roots(args: &ScanArgs) -> Vec<PathBuf> {
 
 /// The enclosing repository's root, via `git rev-parse --show-toplevel`.
 /// `None` when the directory is not inside a working tree.
-fn git_repo_root(dir: &Path) -> Option<PathBuf> {
+pub(crate) fn git_repo_root(dir: &Path) -> Option<PathBuf> {
     let output = std::process::Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .current_dir(dir)
@@ -565,8 +637,25 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::dedupe_findings;
+    use super::{dedupe_findings, normalized_path_key};
     use crate::report::{Finding, Severity};
+
+    #[test]
+    fn normalized_path_key_never_turns_relative_into_absolute() {
+        // `.//x` must key as the relative `x`; keying it as `/x` would
+        // collide with a genuine absolute operand and silently drop one of
+        // the two files from the scan.
+        assert_eq!(normalized_path_key(".//x"), "x");
+        assert_eq!(normalized_path_key("./x"), "x");
+        assert_eq!(normalized_path_key("a/./b"), "a/b");
+        assert_eq!(normalized_path_key("a//b"), "a/b");
+        assert_eq!(normalized_path_key("/x"), "/x");
+        // `..` is kept: resolving it lexically could alias distinct paths.
+        assert_eq!(normalized_path_key("a/../b"), "a/../b");
+        // On unix a backslash is a filename character, not a separator.
+        #[cfg(not(windows))]
+        assert_eq!(normalized_path_key("a\\b"), "a\\b");
+    }
 
     fn finding(detector: &str, severity: Severity, matched: &str, line: usize) -> Finding {
         Finding {

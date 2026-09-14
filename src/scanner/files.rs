@@ -58,14 +58,18 @@ pub(super) fn baseline_exclusion(args: &ScanArgs) -> Option<PathBuf> {
 /// generated hashes otherwise flood reports and baselines with "Random
 /// String" findings. Excluded by basename at any depth in every
 /// filesystem-backed mode, matching gitleaks; `--stdin` is unaffected.
-const DEFAULT_EXCLUDED_FILES: [&str; 9] = [
+const DEFAULT_EXCLUDED_FILES: [&str; 13] = [
+    "bun.lock",
+    "bun.lockb",
     "Cargo.lock",
     "composer.lock",
     "Gemfile.lock",
     "go.sum",
+    "npm-shrinkwrap.json",
     "package-lock.json",
     "packages.lock.json",
     "Pipfile.lock",
+    "pnpm-lock.yaml",
     "poetry.lock",
     "yarn.lock",
 ];
@@ -102,27 +106,40 @@ pub(super) struct ScanTarget {
     pub(super) root: Option<String>,
 }
 
-pub(super) fn collect_files(dir_path: &str, targets: &mut Vec<ScanTarget>, root: &str) {
-    if let Ok(entries) = fs::read_dir(dir_path) {
-        for entry in entries.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_symlink() {
-                continue;
+pub(super) fn collect_files(
+    dir_path: &str,
+    targets: &mut Vec<ScanTarget>,
+    root: &str,
+    unlistable_dirs: &mut Vec<String>,
+) {
+    // A directory that cannot be listed hides everything beneath it; record
+    // it as unscannable instead of silently reporting a clean scan, so
+    // --fail-on-unscannable catches it.
+    let entries = match fs::read_dir(dir_path) {
+        Ok(entries) => entries,
+        Err(_) => {
+            unlistable_dirs.push(dir_path.to_string());
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_symlink() {
+            continue;
+        }
+        let path = entry.path();
+        if file_type.is_file() {
+            if let Some(path_str) = path.to_str() {
+                targets.push(ScanTarget {
+                    path: path_str.to_string(),
+                    root: Some(root.to_string()),
+                });
             }
-            let path = entry.path();
-            if file_type.is_file() {
-                if let Some(path_str) = path.to_str() {
-                    targets.push(ScanTarget {
-                        path: path_str.to_string(),
-                        root: Some(root.to_string()),
-                    });
-                }
-            } else if file_type.is_dir() && path.file_name().is_none_or(|name| name != ".git") {
-                if let Some(path_str) = path.to_str() {
-                    collect_files(path_str, targets, root);
-                }
+        } else if file_type.is_dir() && path.file_name().is_none_or(|name| name != ".git") {
+            if let Some(path_str) = path.to_str() {
+                collect_files(path_str, targets, root, unlistable_dirs);
             }
         }
     }

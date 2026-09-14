@@ -18,6 +18,7 @@ mod tests;
 /// directory. Merges with `detectors.toml`: custom rules are appended,
 /// overrides are applied by detector name.
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 pub struct KeywatchConfig {
     pub rules: Option<Vec<CustomRule>>,
     pub overrides: Option<HashMap<String, DetectorOverride>>,
@@ -86,10 +87,17 @@ impl KeywatchConfig {
         detectors.extend(staged_detectors);
 
         if let Some(overrides) = &self.overrides {
+            let before = detectors.len();
             detectors.retain(|detector| match overrides.get(&detector.name) {
                 Some(detector_override) => detector_override.enabled != Some(false),
                 None => true,
             });
+            let disabled = before - detectors.len();
+            if disabled > 0 {
+                // A config can legitimately disable detectors, but doing so
+                // must be visible to whoever reads the scan output.
+                eprintln!("keywatch: {disabled} detector(s) disabled by config overrides");
+            }
             for detector in detectors.iter_mut() {
                 if let Some(severity) = overrides
                     .get(&detector.name)
@@ -157,7 +165,10 @@ impl KeywatchConfig {
     }
 }
 
+// deny_unknown_fields: a misspelled key (`[[custom_rules]]` instead of
+// `[[rules]]`) must fail loudly, not silently weaken the scan.
 #[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct CustomRule {
     pub name: String,
     pub pattern: String,
@@ -174,9 +185,13 @@ pub struct CustomRule {
     pub entropy: Option<f64>,
     /// Extra structural check applied to each match, e.g. `validate = "luhn"`.
     pub validate: Option<String>,
+    /// Accepted for configuration compatibility and otherwise ignored; earlier
+    /// releases parsed the key but never surfaced it.
+    pub description: Option<String>,
 }
 
 #[derive(Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct DetectorOverride {
     pub enabled: Option<bool>,
     pub severity: Option<Severity>,

@@ -187,7 +187,9 @@ fn test_create_sarif_report_uses_camel_case_fields_and_hides_matched_content() {
         result["properties"]["severity"],
         Severity::Critical.as_str()
     );
-    assert_eq!(result["properties"]["precision"], "very-high");
+    // No blanket precision claim: KeyWatch has no per-rule confidence model,
+    // so asserting "very-high" to SARIF consumers would be false.
+    assert!(result["properties"].get("precision").is_none());
     assert!(!sarif.contains(&secret));
 }
 
