@@ -165,8 +165,8 @@ impl KeywatchConfig {
     }
 }
 
-// deny_unknown_fields: a typo'd key (`[[custom_rules]]`, `entrophy = ...`)
-// must fail loudly, not silently weaken the scan.
+// deny_unknown_fields: a misspelled key (`[[custom_rules]]` instead of
+// `[[rules]]`) must fail loudly, not silently weaken the scan.
 #[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct CustomRule {
