@@ -16,6 +16,8 @@ pub enum CliValidationError {
     StdinWithPaths,
     #[error("Must specify paths, use --stdin, --staged, or --git-history")]
     MissingScanInput,
+    #[error("--rev-range must be a revision or range, not a flag (got '{range}')")]
+    RevRangeLooksLikeFlag { range: String },
     #[error("--allowed-repos and --blocked-repos are only supported for pre-push hooks")]
     PreCommitRepositoryFilters,
     #[error("--exclude is only supported for pre-commit hooks")]
@@ -70,6 +72,11 @@ pub struct ScanArgs {
     /// Scan git history instead of files
     #[arg(long, default_value_t = false)]
     pub git_history: bool,
+
+    /// Restrict --git-history to a revision range (e.g. "abc123..def456");
+    /// without it, every ref is walked (git log --all)
+    #[arg(long, requires = "git_history")]
+    pub rev_range: Option<String>,
 
     /// Scan only the lines staged for commit (paths narrow the staged diff)
     #[arg(long, default_value_t = false)]
@@ -135,6 +142,15 @@ pub struct ScanArgs {
 
 impl ScanArgs {
     pub fn validate(&self) -> Result<(), CliValidationError> {
+        // The range is placed on the git command line; a value starting with
+        // "-" would be parsed by git as a flag (argument injection).
+        if let Some(range) = self.rev_range.as_deref() {
+            if range.starts_with('-') {
+                return Err(CliValidationError::RevRangeLooksLikeFlag {
+                    range: range.to_string(),
+                });
+            }
+        }
         match (self.git_history, self.staged, self.stdin) {
             (true, true, _) => Err(CliValidationError::StagedWithGitHistory),
             (true, _, true) => Err(CliValidationError::GitHistoryWithStdin),

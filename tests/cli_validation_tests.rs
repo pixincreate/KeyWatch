@@ -76,3 +76,35 @@ fn test_staged_allows_zero_or_many_paths() {
 
     assert!(options.validate().is_ok(), "staged paths narrow the diff");
 }
+
+#[test]
+fn test_rev_range_rejects_flag_shaped_values() {
+    // The range lands on the git command line; a leading dash would be
+    // parsed by git as a flag (argument injection).
+    let options = ScanArgs {
+        git_history: true,
+        rev_range: Some("--exec=evil".to_string()),
+        ..Default::default()
+    };
+
+    let error = options
+        .validate()
+        .expect_err("flag-shaped rev-range must be rejected");
+    assert_eq!(
+        error,
+        CliValidationError::RevRangeLooksLikeFlag {
+            range: "--exec=evil".to_string()
+        }
+    );
+}
+
+#[test]
+fn test_rev_range_accepts_sha_ranges() {
+    let options = ScanArgs {
+        git_history: true,
+        rev_range: Some("abc123..def456".to_string()),
+        ..Default::default()
+    };
+
+    assert!(options.validate().is_ok());
+}

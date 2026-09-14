@@ -1,4 +1,4 @@
-use key_watch::baseline::{Baseline, BaselineEntry, BaselineError};
+use key_watch::baseline::{Baseline, BaselineEntry, BaselineError, PathAnchor};
 use key_watch::report::{Finding, Severity};
 use std::fs;
 use std::path::Path;
@@ -53,7 +53,8 @@ fn test_baseline_filters_known_findings() {
         "AKIAABCDEFGHIJKLMNOP",
         "AWSAccessKeyDetector",
     );
-    let baseline = Baseline::from_findings(std::slice::from_ref(&known_finding));
+    let baseline =
+        Baseline::from_findings(std::slice::from_ref(&known_finding), &PathAnchor::default());
 
     let findings = vec![
         known_finding,
@@ -66,7 +67,7 @@ fn test_baseline_filters_known_findings() {
         ),
     ];
 
-    let filtered = baseline.filter_findings(findings);
+    let filtered = baseline.filter_findings(findings, &PathAnchor::default());
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].file_path, "other.txt");
 }
@@ -80,7 +81,8 @@ fn test_baseline_filters_moved_finding_in_same_file() {
         "AKIAABCDEFGHIJKLMNOP",
         "AWSAccessKeyDetector",
     );
-    let baseline = Baseline::from_findings(std::slice::from_ref(&known_finding));
+    let baseline =
+        Baseline::from_findings(std::slice::from_ref(&known_finding), &PathAnchor::default());
 
     let findings = vec![make_finding(
         "test.txt",
@@ -90,7 +92,7 @@ fn test_baseline_filters_moved_finding_in_same_file() {
         "AWSAccessKeyDetector",
     )];
 
-    let filtered = baseline.filter_findings(findings);
+    let filtered = baseline.filter_findings(findings, &PathAnchor::default());
     assert!(filtered.is_empty());
 }
 
@@ -103,7 +105,8 @@ fn test_baseline_keeps_same_finding_in_different_file() {
         "AKIAABCDEFGHIJKLMNOP",
         "AWSAccessKeyDetector",
     );
-    let baseline = Baseline::from_findings(std::slice::from_ref(&known_finding));
+    let baseline =
+        Baseline::from_findings(std::slice::from_ref(&known_finding), &PathAnchor::default());
 
     let findings = vec![make_finding(
         "other.txt",
@@ -113,7 +116,7 @@ fn test_baseline_keeps_same_finding_in_different_file() {
         "AWSAccessKeyDetector",
     )];
 
-    let filtered = baseline.filter_findings(findings);
+    let filtered = baseline.filter_findings(findings, &PathAnchor::default());
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].file_path, "other.txt");
 }
@@ -128,7 +131,7 @@ fn test_baseline_allows_new_findings() {
         "sk-abc",
         "GenericKeyValueDetector",
     )];
-    let filtered = baseline.filter_findings(findings);
+    let filtered = baseline.filter_findings(findings, &PathAnchor::default());
     assert_eq!(filtered.len(), 1);
 }
 
@@ -184,7 +187,7 @@ fn test_baseline_from_findings() {
         make_finding("f1.txt", 1, "A", "x", "D1"),
         make_finding("f2.txt", 2, "B", "y", "D2"),
     ];
-    let baseline = Baseline::from_findings(&findings);
+    let baseline = Baseline::from_findings(&findings, &PathAnchor::default());
     assert_eq!(baseline.entries.len(), 2);
 }
 
@@ -194,21 +197,24 @@ fn test_baseline_from_findings_deduplicates_and_keeps_first_metadata() {
         make_finding("f1.txt", 1, "A", "x", "D1"),
         make_finding("f1.txt", 99, "A", "x", "D1"),
     ];
-    let baseline = Baseline::from_findings(&findings);
+    let baseline = Baseline::from_findings(&findings, &PathAnchor::default());
     assert_eq!(baseline.entries.len(), 1);
     assert_eq!(baseline.entries[0].line_number, 1);
 }
 
 #[test]
 fn test_baseline_update_merges_new_findings() {
-    let mut baseline = Baseline::from_findings(&[make_finding("old.txt", 1, "X", "old", "D")]);
+    let mut baseline = Baseline::from_findings(
+        &[make_finding("old.txt", 1, "X", "old", "D")],
+        &PathAnchor::default(),
+    );
     let new_findings = vec![
         make_finding("old.txt", 1, "X", "old", "D"),
         make_finding("new.txt", 2, "Y", "new", "D2"),
         make_finding("new.txt", 99, "Y", "new", "D2"),
     ];
 
-    baseline.update_with_findings(&new_findings);
+    baseline.update_with_findings(&new_findings, &PathAnchor::default());
 
     assert_eq!(baseline.entries.len(), 2);
     assert!(baseline.entries.iter().any(|e| e.file_path == "old.txt"));
@@ -226,9 +232,11 @@ fn test_baseline_update_merges_new_findings() {
 
 #[test]
 fn test_baseline_update_preserves_existing() {
-    let mut baseline =
-        Baseline::from_findings(&[make_finding("existing.txt", 5, "API", "secret", "D")]);
-    baseline.update_with_findings(&[]);
+    let mut baseline = Baseline::from_findings(
+        &[make_finding("existing.txt", 5, "API", "secret", "D")],
+        &PathAnchor::default(),
+    );
+    baseline.update_with_findings(&[], &PathAnchor::default());
 
     assert_eq!(baseline.entries.len(), 1);
     assert_eq!(baseline.entries[0].file_path, "existing.txt");

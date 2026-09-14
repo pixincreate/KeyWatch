@@ -477,3 +477,139 @@ fn test_show_secrets_opts_into_raw_matched_content() {
 
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn test_exit_code_2_on_nonexistent_scan_path() {
+    // A typo'd path in CI must fail the scan, not report a clean pass.
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .args(["scan", "/definitely/not/a/real/path"])
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .output()
+        .expect("Run key-watch");
+
+    assert_eq!(output.status.code(), Some(2));
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("Scan path not found"),
+        "stderr must name the missing path"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_exit_code_2_on_symlink_scan_operand() {
+    let test_dir = setup_scan_dir("exit_symlink_operand", false);
+    let target = test_dir.join("real.txt");
+    fs::write(&target, "plain").expect("Write target");
+    let link = test_dir.join("link.txt");
+    std::os::unix::fs::symlink(&target, &link).expect("Create symlink");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .args(["scan", "link.txt"])
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .output()
+        .expect("Run key-watch");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "an explicitly named symlink must not silently scan zero files"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_same_file_under_two_spellings_reports_once() {
+    let test_dir = setup_scan_dir("exit_dup_spelling", false);
+    fs::write(test_dir.join("dup.txt"), "AWS_KEY=AKIAABCDEFGHIJKLMNOP").expect("Write test file");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .args(["scan", "dup.txt", "./dup.txt", "--verbose"])
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .output()
+        .expect("Run key-watch");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(
+        stdout.matches("AWS Access Key").count(),
+        1,
+        "one file passed twice must yield one finding: {stdout}"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_unlistable_directory_is_unscannable_and_fails_with_flag() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let test_dir = setup_scan_dir("exit_unlistable_dir", false);
+    let locked = test_dir.join("locked");
+    fs::create_dir(&locked).expect("Create locked dir");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("Lock dir");
+    if fs::read_dir(&locked).is_ok() {
+        // Running as root (e.g. in a container): mode 000 does not make the
+        // directory unlistable, so the scenario cannot be constructed.
+        fs::remove_dir_all(&test_dir).expect("Cleanup");
+        return;
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .args(["scan", ".", "--fail-on-unscannable"])
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .output()
+        .expect("Run key-watch");
+
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).expect("Unlock dir");
+
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "an unlistable directory hides content and must fail --fail-on-unscannable: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("could not be scanned"),
+        "the summary must name the unscannable failure, not claim a clean pass"
+    );
+
+    fs::remove_dir_all(&test_dir).expect("Cleanup");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_exit_code_2_on_unlistable_directory_operand() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let test_dir = setup_scan_dir("exit_unlistable_operand", false);
+    let locked = test_dir.join("locked");
+    fs::create_dir(&locked).expect("Create locked dir");
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("Lock dir");
+    if fs::read_dir(&locked).is_ok() {
+        // Running as root: mode 000 does not make the directory unlistable.
+        fs::remove_dir_all(&test_dir).expect("Cleanup");
+        return;
+    }
+
+    let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .args(["scan", "locked"])
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .output()
+        .expect("Run key-watch");
+
+    fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).expect("Unlock dir");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "an explicitly named directory that cannot be listed must not pass silently: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    fs::remove_dir_all(&test_dir).expect("Cleanup");
+}

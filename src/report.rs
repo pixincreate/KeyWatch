@@ -126,7 +126,7 @@ pub struct Finding {
     pub detector_name: String,
 }
 
-#[derive(Serialize, Clone, Default)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct ScanMetadata {
     pub files_scanned: usize,
     pub total_lines: usize,
