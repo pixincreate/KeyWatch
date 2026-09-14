@@ -61,21 +61,21 @@ Reports never contain the full matched text unless you pass `--show-secrets`.
 
 ### Scan options
 
-| Option | Purpose |
-| ------ | ------- |
-| `--exclude <patterns>` | Skip paths that match these comma-separated glob patterns |
-| `--exit-mode <mode>` | `strict` fails on any finding (default), `critical` fails only on HIGH or CRITICAL findings, `always` never fails |
-| `--fail-on-unscannable` | Fail when a file or directory could not be read; applies in `strict` exit mode and not with `--update-baseline` |
-| `--baseline <path>` | Use a specific baseline file |
-| `--no-baseline-discovery` | Do not look for a baseline file automatically |
-| `--update-baseline` | Record the current findings in the baseline instead of reporting them |
-| `--prune-baseline` | With `--update-baseline`, also remove baseline entries that no longer match anything |
-| `--config <path>` | Use a specific `.keywatch.toml` configuration file |
-| `--trusted-detectors` | Ignore a `detectors.toml` supplied by the scanned repository; use only built-in or operator rules |
-| `--no-repo-config` | Do not look for `.keywatch.toml` in the scanned tree; an explicit `--config` still loads |
-| `--no-config-discovery` | Shorthand for `--trusted-detectors` plus `--no-repo-config`; the installed hooks pass it |
-| `--show-secrets` | Include the full matched text in reports |
-| `--max-file-size <MB>` | Skip files larger than this size and report them as unscannable |
+| Option                    | Purpose                                                                                                           |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `--exclude <patterns>`    | Skip paths that match these comma-separated glob patterns                                                         |
+| `--exit-mode <mode>`      | `strict` fails on any finding (default), `critical` fails only on HIGH or CRITICAL findings, `always` never fails |
+| `--fail-on-unscannable`   | Fail when a file or directory could not be read; applies in `strict` exit mode and not with `--update-baseline`   |
+| `--baseline <path>`       | Use a specific baseline file                                                                                      |
+| `--no-baseline-discovery` | Do not look for a baseline file automatically                                                                     |
+| `--update-baseline`       | Record the current findings in the baseline instead of reporting them                                             |
+| `--prune-baseline`        | With `--update-baseline`, also remove baseline entries that no longer match anything                              |
+| `--config <path>`         | Use a specific `.keywatch.toml` configuration file                                                                |
+| `--trusted-detectors`     | Ignore a `detectors.toml` supplied by the scanned repository; use only built-in or operator rules                 |
+| `--no-repo-config`        | Do not look for `.keywatch.toml` in the scanned tree; an explicit `--config` still loads                          |
+| `--no-config-discovery`   | Shorthand for `--trusted-detectors` plus `--no-repo-config`; the installed hooks pass it                          |
+| `--show-secrets`          | Include the full matched text in reports                                                                          |
+| `--max-file-size <MB>`    | Skip files larger than this size and report them as unscannable                                                   |
 
 Notes:
 
@@ -88,14 +88,19 @@ Notes:
   Use `--rev-range` to scan only a range of commits.
 - A scan path that does not exist, is a symbolic link, or cannot be read is an error.
   The scan never reports a clean result for input it could not read.
+- Files that start with a UTF-16 byte-order mark are decoded and scanned.
+  Other files that contain NUL bytes are treated as binary and reported as unscannable.
+- Base64 runs of 24 or more characters are decoded, and the decoded text is scanned as well.
+  An encoded credential is reported at the line that contains it.
+- GitHub tokens are checked against their built-in checksum, so lookalike strings do not appear in results.
 
 ### Exit codes
 
-| Code | Meaning |
-| ---- | ------- |
-| 0 | No secrets found, or `--exit-mode always` |
-| 1 | Secrets found, or an unreadable file with `--fail-on-unscannable` |
-| 2 | Invalid input, configuration error, or runtime error |
+| Code | Meaning                                                           |
+| ---- | ----------------------------------------------------------------- |
+| 0    | No secrets found, or `--exit-mode always`                         |
+| 1    | Secrets found, or an unreadable file with `--fail-on-unscannable` |
+| 2    | Invalid input, configuration error, or runtime error              |
 
 ## Git hooks
 
@@ -126,11 +131,11 @@ key-watch hook uninstall pre-commit --global
 
 ### Hook options
 
-| Option | Applies to | Purpose |
-| ------ | ---------- | ------- |
-| `--exclude <patterns>` | pre-commit | Skip staged paths that match these patterns |
-| `--allowed-repos <urls>` | pre-push | Allow pushes only to these repositories |
-| `--blocked-repos <urls>` | pre-push | Block pushes to these repositories |
+| Option                   | Applies to | Purpose                                     |
+| ------------------------ | ---------- | ------------------------------------------- |
+| `--exclude <patterns>`   | pre-commit | Skip staged paths that match these patterns |
+| `--allowed-repos <urls>` | pre-push   | Allow pushes only to these repositories     |
+| `--blocked-repos <urls>` | pre-push   | Block pushes to these repositories          |
 
 ### How hooks behave
 
@@ -216,15 +221,15 @@ The Action installs a released KeyWatch binary, verifies its checksum, and write
 It supports Linux x64 and macOS runners.
 Pin an exact release tag or commit SHA when you need a fixed version.
 
-| Input | Default | Purpose |
-| ----- | ------- | ------- |
-| `version` | Action release version | Exact KeyWatch release to install |
-| `paths` | `.` | Space-separated paths or globs to scan |
-| `args` | empty | Extra scanner arguments; Action-managed options cannot be overridden |
-| `exit-mode` | `strict` | `strict`, `critical`, or `always` |
-| `output` | temporary file | Path for the JSON report |
-| `config` | empty | Path to a trusted `.keywatch.toml` |
-| `verbose` | `false` | Deprecated; enabling it is rejected to keep secrets out of logs |
+| Input       | Default                | Purpose                                                              |
+| ----------- | ---------------------- | -------------------------------------------------------------------- |
+| `version`   | Action release version | Exact KeyWatch release to install                                    |
+| `paths`     | `.`                    | Space-separated paths or globs to scan                               |
+| `args`      | empty                  | Extra scanner arguments; Action-managed options cannot be overridden |
+| `exit-mode` | `strict`               | `strict`, `critical`, or `always`                                    |
+| `output`    | temporary file         | Path for the JSON report                                             |
+| `config`    | empty                  | Path to a trusted `.keywatch.toml`                                   |
+| `verbose`   | `false`                | Deprecated; enabling it is rejected to keep secrets out of logs      |
 
 The Action exposes `findings-count` and `exit-code` as step outputs.
 
