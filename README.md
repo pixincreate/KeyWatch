@@ -260,6 +260,49 @@ rm -f ~/.local/bin/key-watch
 
 In both cases, remove the `key-watch init` line from your shell configuration file if you added one.
 
+## Architecture
+
+KeyWatch is a single Rust binary.
+`main.rs` starts the program and maps every validation, configuration, or runtime failure to exit code 2.
+Scans exit with code 0 or 1.
+Separate modules own detector loading, scanning, baselines, reports, and hooks.
+
+### Modules and adapters
+
+![KeyWatch CLI module and adapter architecture](docs/architecture/cli-modules.svg)
+
+Green boxes are internal modules.
+Blue boxes are entry and output boundaries.
+Yellow boxes are external adapters such as git and the installed hook scripts, which call `key-watch scan` themselves.
+
+### Scan pipeline
+
+![KeyWatch scan pipeline](docs/architecture/scan-pipeline.svg)
+
+Path scans collect files and scan them in parallel.
+Stdin and git-based scans stream their input in overlapping chunks.
+`--update-baseline` writes the baseline instead of producing a report.
+
+### Detector and configuration trust
+
+![KeyWatch detector and configuration trust boundaries](docs/architecture/detector-config-trust.svg)
+
+Detector rules and repository configuration are separate systems.
+External detector sources take precedence, and the compiled-in rules are the fallback.
+Trusted scans ignore files supplied by the scanned repository but still honor explicit configuration and operator-supplied detector sources.
+
+### Core data types
+
+- **Detector** — one named rule: pattern, finding type, severity, optional keywords, entropy threshold, allowlist, and validator.
+- **Finding** — one detected secret: file path, line number, finding type, severity, matched content, and the detector that produced it.
+- **Severity** — `Critical`, `High`, `Medium`, `Low`.
+- **KeywatchConfig** — parsed `.keywatch.toml`: custom rules, per-detector overrides, and exclude patterns.
+- **Baseline** — versioned fingerprint entries that filter out known findings.
+- **ScanMetadata** — files scanned, total lines, and skipped files, reported alongside findings.
+
+The diagram sources are in `docs/architecture/*.d2`.
+After editing them, run `scripts/render-diagrams.sh render` with D2 v0.7.1, or `scripts/render-diagrams.sh check` to detect stale images.
+
 ## Development
 
 ```sh
@@ -268,9 +311,6 @@ cargo test
 cargo fmt
 cargo clippy
 ```
-
-Architecture diagrams live in `docs/architecture/`.
-Edit the `.d2` sources and run `scripts/render-diagrams.sh render` to update the rendered images.
 
 ## License
 
