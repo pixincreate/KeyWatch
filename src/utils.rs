@@ -96,3 +96,41 @@ pub fn make_executable(path: &str) -> Result<()> {
 pub fn make_executable(_path: &str) -> Result<()> {
     Ok(())
 }
+
+/// Decodes standard-alphabet base64 (`+/`, optional `=` padding). Returns
+/// `None` for any character outside the alphabet so arbitrary text is
+/// rejected cheaply. Used to scan the decoded form of base64 runs found in
+/// scanned lines.
+pub(crate) fn decode_base64_standard(input: &str) -> Option<Vec<u8>> {
+    const fn value_of(byte: u8) -> i8 {
+        match byte {
+            b'A'..=b'Z' => (byte - b'A') as i8,
+            b'a'..=b'z' => (byte - b'a' + 26) as i8,
+            b'0'..=b'9' => (byte - b'0' + 52) as i8,
+            b'+' => 62,
+            b'/' => 63,
+            _ => -1,
+        }
+    }
+
+    let mut decoded = Vec::with_capacity(input.len() * 3 / 4);
+    let mut buffer: u32 = 0;
+    let mut bits: u32 = 0;
+    for byte in input.bytes() {
+        if byte == b'=' {
+            continue;
+        }
+        let value = value_of(byte);
+        if value < 0 {
+            return None;
+        }
+        buffer = (buffer << 6) | value as u32;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            decoded.push((buffer >> bits) as u8);
+            buffer &= (1 << bits) - 1;
+        }
+    }
+    Some(decoded)
+}

@@ -43,9 +43,9 @@ start: "SCAN\nvalidated input" {class: output}
 
 prepare: "1 · PREPARE\npolicy + detector rules" {class: action}
 
-input: "2 · INPUT\npaths in parallel\nstdin / git in chunks" {class: action}
+input: "2 · INPUT\npaths in parallel\nstdin / git in chunks\nUTF-16 decoded · size cap" {class: action}
 
-detect: "3 · DETECT\nkeyword → regex → entropy\n→ suppression → findings" {class: action}
+detect: "3 · DETECT\nkeyword → regex → entropy\n→ validators → suppression\nbase64 payloads rescanned" {class: action}
 
 baseline: "4 · BASELINE\nkeep or filter" {class: decision}
 

@@ -243,8 +243,8 @@ fn test_generic_key_value_ignores_unquoted_identifier_assignments() {
     let is_reported = |line: &str| {
         generic
             .regex
-            .find_iter(line)
-            .any(|m| generic.accepts_match(m.as_str()))
+            .captures_iter(line)
+            .any(|captures| generic.accepts_captures(&captures))
     };
 
     // Rust/Python/Go variable bindings are not credentials.
@@ -367,8 +367,8 @@ fn test_password_detector_ignores_rust_expressions() {
     let is_reported = |line: &str| {
         password_detector
             .regex
-            .find_iter(line)
-            .any(|m| password_detector.accepts_match(m.as_str()))
+            .captures_iter(line)
+            .any(|captures| password_detector.accepts_captures(&captures))
     };
 
     // Rust expressions are plumbing, not credentials.
@@ -396,13 +396,22 @@ fn test_password_detector_ignores_rust_expressions() {
 }
 
 /// Helper: does any built-in detector report this line?
+///
+/// Mirrors production exactly: keyword gate, then captures_iter with
+/// accepts_captures, so entropy and validators judge the captured value.
+/// A whole-match variant here once diverged from the scanner and could
+/// bless fixtures the real scan never reports.
 fn reported_by(line: &str) -> Vec<String> {
     let detectors = key_watch::detector::initialize_detectors().expect("load detectors");
     let lowered = line.to_lowercase();
     detectors
         .iter()
         .filter(|d| d.has_keywords(&lowered))
-        .filter(|d| d.regex.find_iter(line).any(|m| d.accepts_match(m.as_str())))
+        .filter(|d| {
+            d.regex
+                .captures_iter(line)
+                .any(|captures| d.accepts_captures(&captures))
+        })
         .map(|d| d.name.clone())
         .collect()
 }
@@ -470,8 +479,8 @@ fn test_pkcs8_private_key_headers_are_detected() {
         "-----BEGIN RSA PRIVATE KEY-----",
     ] {
         assert!(
-            !reported_by(header).is_empty(),
-            "should detect private key header: {header}"
+            reported_by(header).contains(&"SSHPrivateKeyDetector".to_string()),
+            "the header detector must report: {header}"
         );
     }
 }
@@ -914,11 +923,11 @@ fn test_every_format_detector_fires_on_a_realistic_sample() {
         ),
         (
             "GitHubTokenDetector",
-            "token = ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+            "token = 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",
         ),
         (
             "GitHubTokenDetector",
-            "refresh = ghr_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+            "refresh = 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",
         ),
         (
             "GitHubFineGrainedPATDetector",

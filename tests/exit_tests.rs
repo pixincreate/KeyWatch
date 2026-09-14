@@ -552,7 +552,10 @@ fn test_unlistable_directory_is_unscannable_and_fails_with_flag() {
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("Lock dir");
     if fs::read_dir(&locked).is_ok() {
         // Running as root (e.g. in a container): mode 000 does not make the
-        // directory unlistable, so the scenario cannot be constructed.
+        // directory unlistable, so the scenario cannot be constructed and
+        // this test verifies nothing. Said out loud so a root CI runner does
+        // not silently lose the contract; GitHub-hosted runners are not root.
+        eprintln!("SKIPPED: unlistable-directory scenario needs a non-root user");
         fs::remove_dir_all(&test_dir).expect("Cleanup");
         return;
     }
@@ -590,7 +593,11 @@ fn test_exit_code_2_on_unlistable_directory_operand() {
     fs::create_dir(&locked).expect("Create locked dir");
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).expect("Lock dir");
     if fs::read_dir(&locked).is_ok() {
-        // Running as root: mode 000 does not make the directory unlistable.
+        // Running as root (e.g. in a container): mode 000 does not make the
+        // directory unlistable, so the scenario cannot be constructed and
+        // this test verifies nothing. Said out loud so a root CI runner does
+        // not silently lose the contract; GitHub-hosted runners are not root.
+        eprintln!("SKIPPED: unlistable-directory scenario needs a non-root user");
         fs::remove_dir_all(&test_dir).expect("Cleanup");
         return;
     }
@@ -612,4 +619,166 @@ fn test_exit_code_2_on_unlistable_directory_operand() {
     );
 
     fs::remove_dir_all(&test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_trusted_detectors_ignores_repository_detector_file() {
+    let test_dir = setup_scan_dir("trusted_detectors_flag", false);
+    fs::write(
+        test_dir.join("detectors.toml"),
+        "[[detectors]]\nname = \"Nothing\"\npattern = \"ZZZNEVERZZZ\"\nfinding_type = \"x\"\nseverity = \"LOW\"\n",
+    )
+    .expect("write repo detectors");
+    fs::write(test_dir.join("creds.txt"), "AKIAABCDEFGHIJKLMNOP\n").expect("write secret");
+
+    let run = |extra: &[&str]| {
+        let mut args = vec!["scan", "creds.txt"];
+        args.extend_from_slice(extra);
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .current_dir(&test_dir)
+            .args(&args)
+            .env_remove("KEYWATCH_CONFIG_PATH")
+            .status()
+            .expect("run key-watch")
+            .code()
+    };
+
+    assert_eq!(
+        run(&[]),
+        Some(0),
+        "without the flag the repository detector file replaces the set"
+    );
+    assert_eq!(
+        run(&["--trusted-detectors"]),
+        Some(1),
+        "--trusted-detectors must keep the built-in rules"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_no_repo_config_ignores_discovered_config_only() {
+    let test_dir = setup_scan_dir("no_repo_config_flag", false);
+    fs::write(
+        test_dir.join(".keywatch.toml"),
+        "[overrides.AWSKeyDetector]\nenabled = false\n",
+    )
+    .expect("write repo config");
+    fs::write(test_dir.join("creds.txt"), "AKIAABCDEFGHIJKLMNOP\n").expect("write secret");
+
+    let run = |extra: &[&str]| {
+        let mut args = vec!["scan", "creds.txt", "--no-baseline-discovery"];
+        args.extend_from_slice(extra);
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .current_dir(&test_dir)
+            .args(&args)
+            .env_remove("KEYWATCH_CONFIG_PATH")
+            .status()
+            .expect("run key-watch")
+            .code()
+    };
+
+    assert_eq!(
+        run(&[]),
+        Some(0),
+        "the discovered config disables the detector without the flag"
+    );
+    assert_eq!(
+        run(&["--no-repo-config"]),
+        Some(1),
+        "--no-repo-config must ignore the discovered config"
+    );
+    assert_eq!(
+        run(&["--trusted-detectors"]),
+        Some(0),
+        "--trusted-detectors alone must still honor the discovered config"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_max_file_size_skips_large_files_as_unscannable() {
+    let test_dir = setup_scan_dir("max_file_size", false);
+    // 2 MB of filler with a secret on the last line.
+    let mut big = "filler line\n".repeat(175_000);
+    big.push_str("AWS_KEY=AKIAABCDEFGHIJKLMNOP\n");
+    fs::write(test_dir.join("big.txt"), &big).expect("write big file");
+
+    let run = |extra: &[&str]| {
+        let mut args = vec!["scan", "big.txt", "--no-baseline-discovery"];
+        args.extend_from_slice(extra);
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .current_dir(&test_dir)
+            .args(&args)
+            .env_remove("KEYWATCH_CONFIG_PATH")
+            .status()
+            .expect("run key-watch")
+            .code()
+    };
+
+    assert_eq!(run(&[]), Some(1), "without a cap the secret is found");
+    assert_eq!(
+        run(&["--max-file-size", "1"]),
+        Some(0),
+        "over the cap the file is skipped, not failed"
+    );
+    assert_eq!(
+        run(&["--max-file-size", "1", "--fail-on-unscannable"]),
+        Some(1),
+        "the skip is visible to --fail-on-unscannable"
+    );
+    assert_eq!(
+        run(&["--max-file-size", "3"]),
+        Some(1),
+        "under the cap the file scans normally"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_sarif_format_through_the_cli() {
+    let test_dir = setup_scan_dir("sarif_cli", false);
+    fs::write(test_dir.join("creds.txt"), "AKIAABCDEFGHIJKLMNOP\n").expect("write secret");
+    let report_path = test_dir.join("report.sarif");
+
+    let status = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+        .current_dir(&test_dir)
+        .args([
+            "scan",
+            "creds.txt",
+            "--no-baseline-discovery",
+            "--format",
+            "sarif",
+            "--output",
+            report_path.to_str().unwrap(),
+        ])
+        .env_remove("KEYWATCH_CONFIG_PATH")
+        .status()
+        .expect("run key-watch");
+    assert_eq!(
+        status.code(),
+        Some(1),
+        "the finding still drives the exit code"
+    );
+
+    let sarif: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&report_path).expect("read report"))
+            .expect("report must be valid JSON");
+    assert_eq!(sarif["version"], "2.1.0");
+    let result = &sarif["runs"][0]["results"][0];
+    assert_eq!(result["ruleId"], "AWS Access Key");
+    assert_eq!(result["level"], "error");
+    assert_eq!(
+        result["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+        "creds.txt"
+    );
+    assert_eq!(
+        result["locations"][0]["physicalLocation"]["region"]["startLine"],
+        1
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
 }

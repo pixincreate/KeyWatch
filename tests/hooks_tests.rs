@@ -894,3 +894,78 @@ fn test_cli_init_conflicts_with_scan_targets() {
         "init should reject extra positional scan targets"
     );
 }
+
+/// End-to-end range semantics with the real binary and real git: only the
+/// commits between the remote tip and the local tip are scanned.
+#[cfg(unix)]
+#[test]
+fn test_pre_push_scans_only_the_pushed_range_end_to_end() {
+    let temp_dir = unique_temp_dir("pre_push_range_e2e");
+    fs::create_dir_all(&temp_dir).expect("create temp dir");
+    let git = real_git_path();
+    let run_git = |args: &[&str]| {
+        let output = std::process::Command::new(&git)
+            .args(args)
+            .current_dir(&temp_dir)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+
+    run_git(&["init", "--quiet"]);
+    run_git(&["config", "user.email", "test@example.com"]);
+    run_git(&["config", "user.name", "test"]);
+    run_git(&["config", "core.hooksPath", ".git/hooks"]);
+
+    // Commit 1 carries the secret and plays the already-pushed remote tip.
+    fs::write(
+        temp_dir.join("old.txt"),
+        "master_api_key = \"abcdefghijklmnopqrstuvwxyz1234\"\n",
+    )
+    .expect("write old secret");
+    run_git(&["add", "old.txt"]);
+    run_git(&["commit", "--quiet", "-m", "already pushed"]);
+    let remote_tip = run_git(&["rev-parse", "HEAD"]);
+
+    // Commit 2 is clean and is what the push publishes.
+    fs::write(temp_dir.join("new.txt"), "nothing secret\n").expect("write clean file");
+    run_git(&["add", "new.txt"]);
+    run_git(&["commit", "--quiet", "-m", "clean change"]);
+    let local_tip = run_git(&["rev-parse", "HEAD"]);
+
+    let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
+
+    // Pushing only the clean commit must pass even though history holds a
+    // secret: the range excludes the remote tip.
+    let output = run_hook_with_packaged_keywatch(
+        &hook,
+        &temp_dir,
+        &format!("refs/heads/main {local_tip} refs/heads/main {remote_tip}\n"),
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "a clean pushed range must pass: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    // Pushing the secret-bearing commit itself must block.
+    let output = run_hook_with_packaged_keywatch(
+        &hook,
+        &temp_dir,
+        &format!("refs/heads/main {remote_tip} refs/heads/main {ZERO_SHA}\n"),
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "a pushed secret must block: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}

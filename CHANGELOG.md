@@ -15,6 +15,11 @@ All notable changes to this project will be documented in this file.
 - `scan --git-history --rev-range <range>` restricts a history scan to a revision range; the pre-push hook uses it to scan exactly the pushed commits
 - Detectors for GitHub fine-grained PATs (`github_pat_`), GitHub refresh tokens (`ghr_`), AWS temporary keys (`ASIA`/`ABIA`/`ACCA`), AWS secret access keys (context-gated), modern Slack bot tokens, Slack app tokens (`xapp-`), Slack webhook URLs, and modern OpenAI project keys (`sk-proj-`/`sk-svcacct-`/`sk-admin-`)
 - Non-verbose scans print the location, type and redacted match of every finding instead of only a count
+- GitHub classic tokens are validated against their built-in CRC32 checksum, so base62 lookalike strings are rejected offline
+- UTF-16 files and staged blobs with a byte-order mark are decoded and scanned instead of being skipped as binary
+- Base64 runs of 24 or more characters are decoded and their text is scanned once more, so an encoded credential cannot pass unseen
+- `--trusted-detectors` and `--no-repo-config` split the two behaviors of `--no-config-discovery`, which remains as their combination
+- `--max-file-size <MB>` skips larger files and reports them as unscannable
 
 ### Changed
 

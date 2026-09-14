@@ -67,6 +67,10 @@ pattern = "\\b(?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36,255}\\b"
 finding_type = "GitHub Token"
 severity = "HIGH"
 keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+# Classic 40-character tokens carry a CRC32 checksum in their last six
+# characters; validating it offline rejects lookalike strings. Longer
+# bodies pass unchecked so a future format is not silently dropped.
+validate = "github-token-checksum"
 
 [[detectors]]
 name = "GitHubFineGrainedPATDetector"

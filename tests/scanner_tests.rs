@@ -275,9 +275,16 @@ fn test_multiple_detections_in_line() {
     };
 
     let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
-    assert!(
-        findings.len() >= 2,
-        "Should find multiple secrets on one line"
+    let types: Vec<&str> = findings
+        .iter()
+        .map(|finding| finding.finding_type.as_str())
+        .collect();
+    assert_eq!(
+        types,
+        vec!["Password", "Email Address"],
+        // The password value swallows the rest of the line, the email is its
+        // own finding, and the AKIA fragment is too short for any detector.
+        "every secret on the line must be reported exactly once"
     );
 
     fs::remove_file(test_file).expect("Cleanup");
@@ -671,9 +678,10 @@ fn test_detect_aadhaar() {
         .iter()
         .filter(|f| f.finding_type == "Aadhaar Card Number")
         .collect();
-    assert!(
-        !aadhaar_findings.is_empty(),
-        "Should detect Aadhaar numbers"
+    assert_eq!(
+        aadhaar_findings.len(),
+        1,
+        "exactly the Verhoeff-valid, labeled number is reported: {findings:?}"
     );
 
     fs::remove_file(test_file).expect("Cleanup");
@@ -2602,4 +2610,131 @@ fn test_scan_reports_are_byte_identical_across_runs() -> Result<(), String> {
 
     let _ = fs::remove_dir_all(&dir);
     Ok(())
+}
+
+#[test]
+fn test_utf16_files_with_bom_are_scanned() {
+    // Windows tools write .env files as UTF-16 with a byte-order mark; the
+    // NUL bytes previously classified them as binary and hid their secrets.
+    let test_dir = unique_temp_dir("utf16_bom");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("create test dir");
+
+    let secret = "AWS_KEY=AKIAABCDEFGHIJKLMNOP\nplain second line\n";
+    let mut little_endian = vec![0xFF, 0xFE];
+    for unit in secret.encode_utf16() {
+        little_endian.extend_from_slice(&unit.to_le_bytes());
+    }
+    fs::write(test_dir.join("le.env"), &little_endian).expect("write utf16le");
+
+    let mut big_endian = vec![0xFE, 0xFF];
+    for unit in secret.encode_utf16() {
+        big_endian.extend_from_slice(&unit.to_be_bytes());
+    }
+    fs::write(test_dir.join("be.env"), &big_endian).expect("write utf16be");
+
+    let options = ScanArgs {
+        paths: vec![test_dir.to_str().unwrap().to_string()],
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
+
+    let aws_hits = findings
+        .iter()
+        .filter(|finding| finding.finding_type == "AWS Access Key")
+        .count();
+    assert_eq!(aws_hits, 2, "both byte orders must be decoded and scanned");
+    assert!(
+        findings.iter().all(|finding| finding.line_number == 1),
+        "line numbers must come from the decoded text"
+    );
+    assert!(
+        metadata.unscannable_files.is_empty(),
+        "UTF-16 files must not be reported as binary"
+    );
+
+    fs::remove_dir_all(&test_dir).expect("cleanup");
+}
+
+#[test]
+fn test_base64_wrapped_secrets_are_decoded_and_scanned() {
+    let test_dir = unique_temp_dir("base64_decode");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("create test dir");
+
+    // base64 of "AWS_KEY=AKIAABCDEFGHIJKLMNOP" — the encoded form defeats
+    // every format-anchored detector unless the run is decoded first.
+    fs::write(
+        test_dir.join("wrapped.txt"),
+        "config = \"QVdTX0tFWT1BS0lBQUJDREVGR0hJSktMTU5PUA==\"\n",
+    )
+    .expect("write wrapped");
+    // base64 of harmless text, plus a hex digest that is alphabet-valid but
+    // decodes to non-printable bytes: neither may produce a finding.
+    fs::write(
+        test_dir.join("harmless.txt"),
+        "a = \"bm90aGluZyBzZWNyZXQgaW4gaGVyZSBhdCBhbGw=\"\n\
+         b = 8b0e7153bf7c3706d85c524e440066559a6656c90bd5482a90a29b9fa5ff5180\n",
+    )
+    .expect("write harmless");
+
+    let options = ScanArgs {
+        paths: vec![test_dir.to_str().unwrap().to_string()],
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
+
+    assert!(
+        findings.iter().any(|finding| {
+            finding.finding_type == "AWS Access Key"
+                && finding.file_path.ends_with("wrapped.txt")
+                && finding.line_number == 1
+                && finding.matched_content == "AKIAABCDEFGHIJKLMNOP"
+        }),
+        "the decoded AWS key must be reported at the original line: {findings:?}"
+    );
+    assert!(
+        !findings
+            .iter()
+            .any(|finding| finding.file_path.ends_with("harmless.txt")
+                && finding.finding_type == "AWS Access Key"),
+        "harmless encoded text must not produce credential findings"
+    );
+
+    fs::remove_dir_all(&test_dir).expect("cleanup");
+}
+
+#[test]
+fn test_json_escaped_private_key_is_detected() {
+    // A PEM pasted into JSON carries literal backslash-n escapes on one
+    // line; the multiline private key detector must still match it. This
+    // pins behavior the base64/escaped-secrets work depends on.
+    let test_dir = unique_temp_dir("json_escaped_pem");
+    let _ = fs::remove_dir_all(&test_dir);
+    fs::create_dir_all(&test_dir).expect("create test dir");
+    fs::write(
+        test_dir.join("sa.json"),
+        "{\"type\": \"service_account\", \"private_key\": \"-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ\\n-----END PRIVATE KEY-----\\n\"}\n",
+    )
+    .expect("write sa.json");
+
+    let options = ScanArgs {
+        paths: vec![test_dir.to_str().unwrap().to_string()],
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    let (findings, _) = run_scan(&options, None).expect("run_scan should succeed");
+
+    for expected in ["Private Key Content", "GCP Service Account Key"] {
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.finding_type == expected),
+            "{expected} must be detected in a JSON-escaped key: {findings:?}"
+        );
+    }
+
+    fs::remove_dir_all(&test_dir).expect("cleanup");
 }

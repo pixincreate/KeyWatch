@@ -402,6 +402,7 @@ fn staged_blob_oid(path: &str) -> Result<Option<String>, ScannerError> {
 /// scan would report the file as clean.
 pub(super) fn scan_index_blobs(
     paths: &[String],
+    max_bytes: Option<u64>,
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, usize, Vec<String>), ScannerError> {
@@ -421,6 +422,21 @@ pub(super) fn scan_index_blobs(
             .map_err(|source| ScannerError::RunGitCatFile { source })?;
         if !output.status.success() {
             skipped.push(path.clone());
+            continue;
+        }
+        // Over the size cap: skipped as unscannable, never silently clean.
+        if max_bytes.is_some_and(|cap| output.stdout.len() as u64 > cap) {
+            skipped.push(path.clone());
+            continue;
+        }
+        // A UTF-16 blob (a Windows-written .env is the common case) is full
+        // of NUL bytes; a byte-order mark identifies it, so decode and scan
+        // the text instead of skipping it as binary.
+        if let Some(text) = crate::scanner::lines::decode_utf16_bom(&output.stdout) {
+            let (blob_findings, blob_lines) =
+                scan_content(&text, path, multiline_detectors, &context);
+            findings.extend(blob_findings);
+            total_lines += blob_lines;
             continue;
         }
         // Genuinely binary content (NUL bytes) is skipped, matching file mode.

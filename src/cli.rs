@@ -128,9 +128,20 @@ pub struct ScanArgs {
     #[arg(long)]
     pub config: Option<String>,
 
-    /// Disable automatic config discovery (an explicit --config still loads)
+    /// Shorthand for --trusted-detectors plus --no-repo-config, kept for
+    /// compatibility (installed hooks pass it)
     #[arg(long, default_value_t = false)]
     pub no_config_discovery: bool,
+
+    /// Use only built-in or operator-supplied detector rules; a detectors.toml
+    /// inside the scanned repository is ignored
+    #[arg(long, default_value_t = false)]
+    pub trusted_detectors: bool,
+
+    /// Do not discover .keywatch.toml in the scanned tree (an explicit
+    /// --config still loads)
+    #[arg(long, default_value_t = false)]
+    pub no_repo_config: bool,
     /// Exit 1 when any scanned file could not be read (Strict exit mode only;
     /// not applied by --update-baseline)
     #[arg(long, default_value_t = false)]
@@ -138,6 +149,11 @@ pub struct ScanArgs {
     /// Output format for the report (json or sarif)
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     pub format: OutputFormat,
+
+    /// Skip files larger than this many megabytes and report them as
+    /// unscannable (default: no limit)
+    #[arg(long, value_name = "MB", value_parser = clap::value_parser!(u64).range(1..))]
+    pub max_file_size: Option<u64>,
 }
 
 impl ScanArgs {

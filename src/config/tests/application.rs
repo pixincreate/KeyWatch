@@ -293,8 +293,8 @@ validate = "luhn"
     assert!(gift.has_keywords("giftcard = ABCD-EFGH-NOPQ"));
     let reported = |line: &str, det: &crate::detector::Detector| {
         det.regex
-            .find_iter(line)
-            .any(|m| det.accepts_match(m.as_str()))
+            .captures_iter(line)
+            .any(|captures| det.accepts_captures(&captures))
     };
     assert!(
         !reported("giftcard = ABCD-EFGH-JKLM", gift),
