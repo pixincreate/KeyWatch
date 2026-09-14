@@ -128,6 +128,42 @@ enforce_repository_policy() {
     return 0
 }
 
+# git feeds pre-push one line per ref on stdin:
+# <local ref> <local sha> <remote ref> <remote sha>
+scan_pushed_refs() {
+    local local_ref local_sha remote_ref remote_sha range scan_status status=0
+
+    while read -r local_ref local_sha remote_ref remote_sha; do
+        [ -n "$local_sha" ] || continue
+        case "$local_sha" in
+            *[!0]*) ;;
+            *) continue ;;
+        esac
+        # The remote tip may not exist locally (never fetched, or pruned);
+        # fall back to the ref's full history rather than failing on an
+        # invalid range. Scans run with stdin closed so a child can never
+        # swallow the remaining ref lines.
+        range="$local_sha"
+        case "$remote_sha" in
+            *[!0]*)
+                if git cat-file -e "${remote_sha}^{commit}" 2>/dev/null; then
+                    range="${remote_sha}..${local_sha}"
+                fi
+                ;;
+        esac
+        "$KEYWATCH_BIN" scan --git-history --rev-range "$range" --exit-mode critical --no-config-discovery < /dev/null
+        scan_status=$?
+        if [ "$scan_status" -eq 1 ]; then
+            echo "ERROR: Secret detected in $local_ref. Run '$KEYWATCH_BIN scan --git-history --rev-range $range --no-config-discovery' to inspect." >&2
+            status=1
+        elif [ "$scan_status" -ne 0 ]; then
+            echo "Error: $KEYWATCH_BIN scan failed for $local_ref (exit code: $scan_status)" >&2
+            status=1
+        fi
+    done
+    return $status
+}
+
 main() {
     local remote_name="${1:-origin}"
     local remote_url_arg="${2:-}"
@@ -139,8 +175,8 @@ main() {
     fi
     remote_url=$(resolve_remote_url "$remote_name" "$remote_url_arg")
     enforce_repository_policy "$remote_url" || exit 1
-    "$KEYWATCH_BIN" scan . --exit-mode critical --no-config-discovery
-    exit $?
+    scan_pushed_refs || exit 1
+    exit 0
 }
 
 main "$@"

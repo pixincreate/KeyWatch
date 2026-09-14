@@ -864,35 +864,35 @@
     },
     {
       "file_path": "./tests/hooks_tests.rs",
-      "line_number": 295,
+      "line_number": 389,
       "finding_type": "Email Address",
       "matched_content_hash": "3fea8b798a88a2e9649a3ea443b8c944734f11128bbd451cd3dfde4c4eebe4b7",
       "plugin_name": "EmailDetector"
     },
     {
       "file_path": "./tests/hooks_tests.rs",
-      "line_number": 324,
+      "line_number": 418,
       "finding_type": "Email Address",
       "matched_content_hash": "a925ccefb3339d83f6d9d23811f6c4a878eabf6df2a389a1c98fa13db0d336a6",
       "plugin_name": "EmailDetector"
     },
     {
       "file_path": "./tests/hooks_tests.rs",
-      "line_number": 350,
+      "line_number": 444,
       "finding_type": "Email Address",
       "matched_content_hash": "79a3e36bd5010edb6d96aae4cbd22eced96e2991b2e1c1ae0bf2cdd5ab29c589",
       "plugin_name": "EmailDetector"
     },
     {
       "file_path": "./tests/hooks_tests.rs",
-      "line_number": 538,
+      "line_number": 642,
       "finding_type": "Base64 Encoded String",
       "matched_content_hash": "554736805d6e994bf786b21a30653266d29aa65775bbc17eb9f910d2556da91b",
       "plugin_name": "Base64Detector"
     },
     {
       "file_path": "./tests/hooks_tests.rs",
-      "line_number": 682,
+      "line_number": 794,
       "finding_type": "AWS Access Key",
       "matched_content_hash": "3f733150de7916d4778298d7f90493889c38b76876b80c058e439851ce60cb2b",
       "plugin_name": "AWSKeyDetector"

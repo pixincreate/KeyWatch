@@ -66,6 +66,23 @@ fn run_hook(
     keywatch_script: &str,
     cwd: &Path,
 ) -> Output {
+    run_hook_with_stdin(hook, hook_args, git_script, keywatch_script, cwd, "")
+}
+
+/// Runs the hook with data on stdin. git feeds pre-push one line per pushed
+/// ref (`<local ref> <local sha> <remote ref> <remote sha>`), and the hook
+/// scans nothing without them.
+#[cfg(unix)]
+fn run_hook_with_stdin(
+    hook: &str,
+    hook_args: &[&str],
+    git_script: &str,
+    keywatch_script: &str,
+    cwd: &Path,
+    stdin_data: &str,
+) -> Output {
+    use std::io::Write;
+
     let bin_dir = cwd.join("bin");
     fs::create_dir_all(&bin_dir).expect("create fake bin dir");
     write_executable(&bin_dir.join("git"), git_script);
@@ -80,20 +97,85 @@ fn run_hook(
         std::env::var("PATH").unwrap_or_default()
     );
 
-    std::process::Command::new("bash")
+    let mut child = std::process::Command::new("bash")
         .arg(&hook_path)
         .args(hook_args)
         .current_dir(cwd)
         .env("PATH", path)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn hook");
+    child
+        .stdin
+        .take()
+        .expect("hook stdin")
+        .write_all(stdin_data.as_bytes())
+        .expect("write hook stdin");
+    child.wait_with_output().expect("run hook")
+}
+
+/// Absolute path of the real git binary, resolved before the fake `bin`
+/// directory is prepended to PATH.
+#[cfg(unix)]
+fn real_git_path() -> String {
+    let output = std::process::Command::new("sh")
+        .args(["-c", "command -v git"])
         .output()
-        .expect("run hook")
+        .expect("locate real git");
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+/// A fake `git` that fails remote lookups (like the old stub) but passes
+/// every other subcommand through to real git, so `scan --git-history`
+/// inside the hook works against a real repository.
+#[cfg(unix)]
+fn passthrough_git_blocking_remote() -> String {
+    format!(
+        "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then exit 1; fi\nexec '{}' \"$@\"\n",
+        real_git_path()
+    )
+}
+
+/// Initializes a repository in `dir`, commits every existing file, and
+/// returns the commit id. Hook resolution is pinned locally so a global
+/// core.hooksPath on the developer machine cannot interfere.
+#[cfg(unix)]
+fn commit_all_in_new_repo(dir: &Path) -> String {
+    let git = real_git_path();
+    let run = |args: &[&str]| {
+        let output = std::process::Command::new(&git)
+            .args(args)
+            .current_dir(dir)
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+    run(&["init", "--quiet"]);
+    run(&["config", "user.email", "test@example.com"]);
+    run(&["config", "user.name", "test"]);
+    run(&["config", "core.hooksPath", ".git/hooks"]);
+    run(&["add", "-A"]);
+    run(&["commit", "--quiet", "-m", "fixture"]);
+    run(&["rev-parse", "HEAD"])
 }
 
 #[cfg(unix)]
-fn run_hook_with_packaged_keywatch(hook: &str, cwd: &Path) -> Output {
+const ZERO_SHA: &str = "0000000000000000000000000000000000000000";
+
+#[cfg(unix)]
+fn run_hook_with_packaged_keywatch(hook: &str, cwd: &Path, stdin_data: &str) -> Output {
+    use std::io::Write;
+
     let bin_dir = cwd.join("bin");
     fs::create_dir_all(&bin_dir).expect("create fake bin dir");
-    write_executable(&bin_dir.join("git"), "#!/bin/bash\nexit 1\n");
+    write_executable(&bin_dir.join("git"), &passthrough_git_blocking_remote());
     fs::copy(
         env!("CARGO_BIN_EXE_key-watch"),
         bin_dir.join(generated_binary_name()),
@@ -113,13 +195,25 @@ fn run_hook_with_packaged_keywatch(hook: &str, cwd: &Path) -> Output {
         std::env::var("PATH").unwrap_or_default()
     );
 
-    std::process::Command::new("bash")
+    let mut child = std::process::Command::new("bash")
         .arg(&hook_path)
         .arg("origin")
         .current_dir(cwd)
         .env("PATH", path)
         .env_remove("KEYWATCH_CONFIG_PATH")
-        .output()
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn hook with packaged KeyWatch");
+    child
+        .stdin
+        .take()
+        .expect("hook stdin")
+        .write_all(stdin_data.as_bytes())
+        .expect("write hook stdin");
+    child
+        .wait_with_output()
         .expect("run hook with packaged KeyWatch")
 }
 
@@ -176,12 +270,12 @@ fn test_hook_generation_pre_push() {
     );
     assert!(hook.contains("ALLOWED_REPOS"), "Should set allowed repos");
     assert!(
-        hook.contains("scan . --exit-mode critical"),
-        "Should use scan subcommand for pre-push"
+        hook.contains("scan --git-history --rev-range \"$range\" --exit-mode critical"),
+        "Should scan exactly the pushed revision range, not the worktree"
     );
     assert!(
-        hook.matches("scan . --exit-mode critical").count() == 1,
-        "Should invoke KeyWatch exactly once for scanning"
+        hook.matches("\"$KEYWATCH_BIN\" scan --git-history").count() == 1,
+        "Should have exactly one scan invocation site"
     );
     assert!(
         hook.contains("resolve_remote_url"),
@@ -417,19 +511,24 @@ fn test_pre_push_uses_named_remote_push_url_when_argv_url_is_absent() {
         None,
         None,
     ));
-    let git_script = "#!/bin/bash\nif [ \"$1 $2 $3\" = \"remote get-url --push\" ] && [ \"$4\" = \"mirror\" ]; then printf 'https://push.example/org/repo.git\\n'; exit 0; fi\nif [ \"$1 $2 $3\" = \"remote get-url mirror\" ]; then printf 'https://fetch.example/org/repo.git\\n'; exit 0; fi\nexit 1\n";
-    let output = run_hook(
+    let git_script = "#!/bin/bash\nif [ \"$1\" = \"cat-file\" ]; then exit 0; fi\nif [ \"$1 $2 $3\" = \"remote get-url --push\" ] && [ \"$4\" = \"mirror\" ]; then printf 'https://push.example/org/repo.git\\n'; exit 0; fi\nif [ \"$1 $2 $3\" = \"remote get-url mirror\" ]; then printf 'https://fetch.example/org/repo.git\\n'; exit 0; fi\nexit 1\n";
+    let local_sha = "1111111111111111111111111111111111111111";
+    let remote_sha = "2222222222222222222222222222222222222222";
+    let output = run_hook_with_stdin(
         &hook,
         &["mirror"],
         git_script,
         &keywatch_script_that_records_args(&marker),
         &temp_dir,
+        &format!("refs/heads/main {local_sha} refs/heads/main {remote_sha}\n"),
     );
 
     assert!(output.status.success());
     assert_eq!(
         fs::read_to_string(&marker).expect("read scanner args"),
-        "scan . --exit-mode critical --no-config-discovery\n"
+        format!(
+            "scan --git-history --rev-range {remote_sha}..{local_sha} --exit-mode critical --no-config-discovery\n"
+        )
     );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
@@ -510,18 +609,23 @@ fn test_pre_push_scans_unnormalizable_remote_when_no_filters_exist() {
 
     let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
     let git_script = "#!/bin/bash\nif [ \"$1\" = \"remote\" ]; then printf 'not-a-repo\\n'; exit 0; fi\nexit 1\n";
-    let output = run_hook(
+    let local_sha = "1111111111111111111111111111111111111111";
+    let output = run_hook_with_stdin(
         &hook,
         &[],
         git_script,
         &keywatch_script_that_records_args(&marker),
         &temp_dir,
+        &format!("refs/heads/main {local_sha} refs/heads/main {ZERO_SHA}\n"),
     );
 
     assert!(output.status.success());
     assert_eq!(
         fs::read_to_string(&marker).expect("read scanner args"),
-        "scan . --exit-mode critical --no-config-discovery\n"
+        format!(
+            "scan --git-history --rev-range {local_sha} --exit-mode critical --no-config-discovery\n"
+        ),
+        "a new ref (all-zero remote sha) must scan the full reachable history"
     );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
 }
@@ -539,6 +643,8 @@ fn test_pre_push_ignores_repository_config_that_disables_scanning() {
     )
     .expect("write critical secret");
 
+    let head = commit_all_in_new_repo(&temp_dir);
+
     let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
     let keywatch_script = format!(
         "#!/bin/bash\nKEYWATCH_CONFIG_PATH=\"{}\" exec \"{}\" \"$@\"\n",
@@ -547,12 +653,13 @@ fn test_pre_push_ignores_repository_config_that_disables_scanning() {
             .display(),
         env!("CARGO_BIN_EXE_key-watch")
     );
-    let output = run_hook(
+    let output = run_hook_with_stdin(
         &hook,
         &["origin"],
-        "#!/bin/bash\nexit 1\n",
+        &passthrough_git_blocking_remote(),
         &keywatch_script,
         &temp_dir,
+        &format!("refs/heads/main {head} refs/heads/main {ZERO_SHA}\n"),
     );
 
     assert_eq!(
@@ -576,9 +683,14 @@ fn test_pre_push_ignores_repository_detector_overrides() {
         "master_api_key = \"abcdefghijklmnopqrstuvwxyz1234\"\n",
     )
     .expect("write high-severity secret");
+    let head = commit_all_in_new_repo(&temp_dir);
 
     let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
-    let output = run_hook_with_packaged_keywatch(&hook, &temp_dir);
+    let output = run_hook_with_packaged_keywatch(
+        &hook,
+        &temp_dir,
+        &format!("refs/heads/main {head} refs/heads/main {ZERO_SHA}\n"),
+    );
 
     assert_eq!(
         output.status.code(),
