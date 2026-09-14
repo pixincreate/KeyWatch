@@ -136,8 +136,9 @@ sk-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX\n\
             "SendGrid API Key",
             "Base64 Encoded String",
             "Base64 Encoded String",
-            // The OpenAI and Kimi detectors match the same sk- token.
-            "Kimi/Moonshot API Key",
+            // 48+ char sk- tokens are OpenAI's legacy format; the Kimi
+            // detector is upper-bounded so it cannot mislabel them.
+            "OpenAI API Key",
         ],
         "Should find secrets"
     );
@@ -204,6 +205,10 @@ AZURE_STORAGE=DefaultEndpointsProtocol=https;AccountName=examplestore;
         vec![
             "AWS Access Key",
             "Generic Key/Secret",
+            // The AWS secret key rule needs aws...secret context on the
+            // line; the generic and base64 detectors match the same value
+            // with different spans, so they stay separate findings.
+            "AWS Secret Access Key",
             "Base64 Encoded String",
             "Generic Key/Secret",
         ],
@@ -464,6 +469,9 @@ fn test_multiple_files_scan() {
             .map(|finding| (finding.file_path.as_str(), finding.finding_type.as_str()))
             .collect::<Vec<_>>(),
         vec![
+            // AWS_KEY= reaches the generic detector through its `_key`
+            // branch; the AKIA value is too short for AWSKeyDetector.
+            (test_file1.to_str().unwrap(), "Generic Key/Secret"),
             // The password line is matched by both PasswordDetector and
             // GenericKeyValueDetector; the overlap collapses to one finding.
             (test_file2.to_str().unwrap(), "Generic Key/Secret"),

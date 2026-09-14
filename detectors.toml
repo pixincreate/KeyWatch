@@ -1,12 +1,29 @@
 [[detectors]]
 name = "AWSKeyDetector"
-pattern = "\\bAKIA[0-9A-Z]{16}\\b"
+# AKIA = long-term key, ASIA = temporary/STS, ABIA = bearer, ACCA = context.
+pattern = "\\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\\b"
 finding_type = "AWS Access Key"
 severity = "HIGH"
-keywords = ["AKIA"]
+keywords = ["AKIA", "ASIA", "ABIA", "ACCA"]
 # AWS's own documentation example key appears in READMEs everywhere and is
 # never a real credential; exact-match allowlist so nothing else is lost.
 allowlist = ["^AKIAIOSFODNN7EXAMPLE$"]
+
+[[detectors]]
+name = "AWSSecretKeyDetector"
+# AWS secret access keys are 40 base64 characters with no prefix, so a bare
+# pattern matches every base64 run. Require an aws...secret context on the
+# line and gate the value on entropy.
+# The value must end after exactly 40 characters: without the terminator a
+# longer base64 run (a policy blob, a hash) would match as a truncated
+# 40-character prefix and hash/redact the wrong value.
+pattern = "(?i)\\baws[a-z0-9_\\-\\.]{0,30}(?:secret|private)[a-z0-9_\\-\\.]{0,30}[\\s'\":=]+[\"']?([A-Za-z0-9/+=]{40})(?:[^A-Za-z0-9/+=]|$)"
+finding_type = "AWS Secret Access Key"
+severity = "HIGH"
+keywords = ["aws"]
+entropy = 3.5
+# The documentation example secret that pairs with AKIAIOSFODNN7EXAMPLE.
+allowlist = ["wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"]
 
 [[detectors]]
 name = "GoogleAPIKeyDetector"
@@ -17,17 +34,47 @@ keywords = ["AIza"]
 
 [[detectors]]
 name = "SlackTokenDetector"
-pattern = "\\bxox[pboa]-[0-9]{12}-[0-9]{12}-[0-9]{12}-[a-z0-9]{32}\\b"
+# Numeric team/user segments are 10-13 digits. Legacy xoxp ends in 32 hex;
+# modern xoxb ends in 24 alphanumerics; xoxa/xoxr carry an extra one-digit
+# version segment. Keywords must cover every prefix the pattern accepts, or
+# the uncovered prefix never reaches the regex.
+pattern = "\\bxox[abprs]-(?:\\d-)?(?:[0-9]{10,13}-)+[a-zA-Z0-9]{24,34}\\b"
 finding_type = "Slack Token"
 severity = "HIGH"
-keywords = ["xoxb-", "xoxp-", "xoxo-", "xoxr-"]
+keywords = ["xoxa-", "xoxb-", "xoxp-", "xoxr-", "xoxs-"]
+
+[[detectors]]
+name = "SlackAppTokenDetector"
+pattern = "(?i)\\bxapp-\\d-[A-Z0-9]+-\\d+-[a-z0-9]+\\b"
+finding_type = "Slack App Token"
+severity = "HIGH"
+keywords = ["xapp-"]
+
+[[detectors]]
+name = "SlackWebhookDetector"
+pattern = "https://hooks\\.slack\\.com/(?:services|workflows)/[A-Za-z0-9+/]{40,50}"
+finding_type = "Slack Webhook URL"
+severity = "MEDIUM"
+keywords = ["hooks.slack.com"]
 
 [[detectors]]
 name = "GitHubTokenDetector"
-pattern = "\\b(?i)(github|ghp|gho|ghu|ghs)_[0-9a-zA-Z]{36,255}\\b"
+# Classic tokens: ghp_ (PAT), gho_ (OAuth), ghu_ (user-to-server), ghs_
+# (server-to-server), ghr_ (refresh), each + 36 base62 chars. The old
+# "github_" branch could never match: fine-grained PATs contain an
+# underscore that [0-9a-zA-Z] stops at, and no keyword covered it.
+pattern = "\\b(?:ghp|gho|ghu|ghs|ghr)_[0-9a-zA-Z]{36,255}\\b"
 finding_type = "GitHub Token"
 severity = "HIGH"
-keywords = ["ghp_", "gho_", "ghu_", "ghs_"]
+keywords = ["ghp_", "gho_", "ghu_", "ghs_", "ghr_"]
+
+[[detectors]]
+name = "GitHubFineGrainedPATDetector"
+# github_pat_ + 82 word characters (22-char id, underscore, 59-char secret).
+pattern = "\\bgithub_pat_[0-9A-Za-z_]{82}\\b"
+finding_type = "GitHub Fine-Grained PAT"
+severity = "HIGH"
+keywords = ["github_pat_"]
 
 [[detectors]]
 name = "JWTokenDetector"
@@ -127,13 +174,20 @@ name = "SSNDetector"
 pattern = "\\b\\d{3}-\\d{2}-\\d{4}\\b"
 finding_type = "Social Security Number"
 severity = "HIGH"
+# Any ddd-dd-dddd run (dates, part numbers, version strings) matches the
+# shape, so restrict to lines that name an SSN — the same context gate
+# HighEntropyDetector uses.
+keywords = ["ssn", "social security", "social_security", "social-security"]
 
 [[detectors]]
 name = "GenericKeyValueDetector"
 pattern = "(?i)(api_?key|secret|password|token|access_?key|security_?key|_key|credential|auth)\\s*[:=]\\s*(?-i)[\"']?([a-zA-Z0-9\\-_=]{10,})[\"']?"
 finding_type = "Generic Key/Secret"
 severity = "HIGH"
-keywords = ["api_key", "secret", "password", "token", "access_key", "credential"]
+# Every pattern alternative needs a covering keyword: without "auth" and
+# "_key" here, `auth = ...` and `encryption_key = ...` lines never reached
+# the regex at all.
+keywords = ["api_key", "secret", "password", "token", "access_key", "credential", "auth", "_key"]
 entropy = 2.5
 # An unquoted, all-lowercase snake_case value is a variable reference, not a
 # credential: `let payment_method_token = card_token;` reads identically to
@@ -148,6 +202,9 @@ allowlist = [
   # Placeholder values in templates and .env.example files (case-sensitive:
   # mixed-case shapes are plausibly real weak credentials).
   "[=:]\\s*[\"']?(changeme|changeit|your(-[a-z0-9]+)+|replace(-[a-z0-9]+)+|placeholder|dummy|xxxxx+)",
+  # The AWS documentation example secret; its slash stops this pattern's
+  # value class, so only the leading fragment is visible in the match.
+  "wJalrXUtnFEMI",
 ]
 
 [[detectors]]
@@ -182,7 +239,7 @@ allowlist = ["^wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY$"]
 
 [[detectors]]
 name = "HighEntropyDetector"
-pattern = "\\b[a-f0-9]{48,}\\b|\\b[A-Fa-f0-9]{48,}\\b"
+pattern = "\\b[A-Fa-f0-9]{48,}\\b"
 finding_type = "High Entropy String"
 severity = "MEDIUM"
 # Hex has 16 symbols, so entropy cannot exceed log2(16) = 4.0 and reaches it
@@ -197,10 +254,19 @@ keywords = ["key", "secret", "token", "password", "credential", "auth", "bearer"
 
 [[detectors]]
 name = "StripeAPIKeyDetector"
-pattern = "\\b(?:sk|pk)_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
+# sk_ = secret key, rk_ = restricted key. Publishable pk_ keys are split
+# into their own LOW detector: they are designed to be public.
+pattern = "\\b(?:sk|rk)_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
 finding_type = "Stripe API Key"
 severity = "HIGH"
-keywords = ["sk_test_", "sk_live_", "pk_test_", "pk_live_"]
+keywords = ["sk_test_", "sk_live_", "rk_test_", "rk_live_"]
+
+[[detectors]]
+name = "StripePublishableKeyDetector"
+pattern = "\\bpk_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
+finding_type = "Stripe Publishable Key"
+severity = "LOW"
+keywords = ["pk_test_", "pk_live_"]
 
 [[detectors]]
 name = "PaymentGatewayKeyDetector"
@@ -285,6 +351,15 @@ severity = "HIGH"
 keywords = ["sk-"]
 
 [[detectors]]
+name = "OpenAIProjectKeyDetector"
+# Modern project/service-account/admin keys contain hyphens after the
+# prefix, which the legacy [a-zA-Z0-9]{48,} run stops at.
+pattern = "\\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}\\b"
+finding_type = "OpenAI API Key"
+severity = "HIGH"
+keywords = ["sk-proj-", "sk-svcacct-", "sk-admin-"]
+
+[[detectors]]
 name = "OpenCodeAPIKeyDetector"
 pattern = "(?i)(?:opencode|OPENCODE_API_KEY)[\\s'\":=]+[\"']?(sk-[a-zA-Z0-9]{20,})[\"']?"
 finding_type = "OpenCode API Key"
@@ -310,13 +385,6 @@ pattern = "cloudinary://[0-9]+:[0-9A-Za-z\\-_]+@[0-9A-Za-z\\-_]+"
 finding_type = "Cloudinary URL"
 severity = "HIGH"
 keywords = ["cloudinary://"]
-
-[[detectors]]
-name = "PrivateKeyContentDetector"
-pattern = "(?s)-----BEGIN RSA PRIVATE KEY-----.*?-----END RSA PRIVATE KEY-----"
-finding_type = "Private Key Content"
-severity = "HIGH"
-keywords = ["BEGIN RSA PRIVATE KEY"]
 
 [[detectors]]
 name = "DockerHubTokenDetector"
@@ -352,7 +420,8 @@ keywords = ["sq0csp-"]
 
 [[detectors]]
 name = "GoogleOAuthTokenDetector"
-pattern = "ya29\\.[0-9A-Za-z\\-_]+"
+# Minimum length so short bare-prefix fragments in prose do not report.
+pattern = "ya29\\.[0-9A-Za-z\\-_]{20,}"
 finding_type = "Google OAuth Token"
 severity = "HIGH"
 keywords = ["ya29."]
@@ -365,24 +434,35 @@ severity = "HIGH"
 # Real Aadhaar numbers satisfy the Verhoeff checksum; without it, any
 # 12-digit run (UUID tails, numeric ids) reports HIGH.
 validate = "verhoeff"
+# One in ten random 12-digit ids still passes Verhoeff, so also require the
+# line to name the document.
+keywords = ["aadhaar", "aadhar", "uidai"]
 
 [[detectors]]
 name = "VoterIDDetector"
 pattern = "\\b[A-Z]{3}\\d{7}\\b"
 finding_type = "Voter ID (EPIC)"
 severity = "HIGH"
+# Any three letters + seven digits (order ids, serials) matches the shape;
+# require the line to name the document.
+keywords = ["voter", "epic"]
 
 [[detectors]]
 name = "PANCardDetector"
 pattern = "\\b[A-Z]{5}\\d{4}[A-Z]\\b"
 finding_type = "PAN Card Number"
 severity = "HIGH"
+# Same shape as countless generated ids; require the line to name it.
+keywords = ["pan"]
 
 [[detectors]]
 name = "ABHADetector"
 pattern = "\\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{2}\\b"
 finding_type = "ABHA Health ID"
 severity = "HIGH"
+# ABHA has no public checksum, so any 14-digit run matches; require the
+# line to name it.
+keywords = ["abha", "health id", "health_id"]
 
 
 [[detectors]]
@@ -422,7 +502,9 @@ keywords = ["lsv2_pt_", "lsv2_sk_"]
 
 [[detectors]]
 name = "KimiMoonshotAPIKeyDetector"
-pattern = "\\bsk-[a-zA-Z0-9]{30,}\\b"
+# Upper-bounded at 47 so 48+ char keys report under the OpenAI detector
+# instead of being mislabeled by this one.
+pattern = "\\bsk-[a-zA-Z0-9]{30,47}\\b"
 finding_type = "Kimi/Moonshot API Key"
 severity = "HIGH"
 keywords = ["sk-"]
@@ -464,7 +546,8 @@ keywords = ["ddapp_"]
 
 [[detectors]]
 name = "NewRelicAPIKeyDetector"
-pattern = "\\bNRAK-[a-z0-9]{27}\\b"
+# Real NRAK keys are uppercase; the old lowercase-only class never matched.
+pattern = "(?i)\\bNRAK-[a-z0-9]{27}\\b"
 finding_type = "New Relic API Key"
 severity = "HIGH"
 keywords = ["NRAK-"]

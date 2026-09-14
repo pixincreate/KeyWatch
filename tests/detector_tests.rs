@@ -897,3 +897,154 @@ fn test_detector_severities_match_credential_impact() {
     assert_eq!(severity_of("GCPServiceAccountKeyDetector"), Severity::High);
     assert_eq!(severity_of("CertificateDetector"), Severity::Low);
 }
+
+/// One realistic sample per format-anchored detector, run through the same
+/// keyword-gate + regex + accept chain the scanner uses. This is the
+/// regression net for the keyword/pattern desync class: `auth = ...`,
+/// `github_pat_...`, `xoxa-...` and NRAK keys all shipped as dead branches
+/// because nothing asserted that each detector fires on its own token.
+#[test]
+fn test_every_format_detector_fires_on_a_realistic_sample() {
+    let samples: &[(&str, &str)] = &[
+        ("AWSKeyDetector", "aws_access_key_id = AKIA1234567890ABCDEF"),
+        ("AWSKeyDetector", "sts creds: ASIA1234567890ABCDEF"),
+        (
+            "AWSSecretKeyDetector",
+            "aws_secret_access_key = 'zx8Kp3mQ9rT2wY5vB1nD4hJ7gF0sL6cA9eR2tU5w'",
+        ),
+        (
+            "GitHubTokenDetector",
+            "token = ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+        ),
+        (
+            "GitHubTokenDetector",
+            "refresh = ghr_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+        ),
+        (
+            "GitHubFineGrainedPATDetector",
+            "github_pat_11ABCDEFGHIJKLMNOPQRST_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456",
+        ),
+        (
+            "SlackTokenDetector",
+            "SLACK_BOT_TOKEN=xoxb-1234567890123-1234567890123-AbCdEfGhIjKlMnOpQrStUvWx",
+        ),
+        (
+            "SlackTokenDetector",
+            "legacy xoxp-123456789012-123456789012-123456789012-abcdef0123456789abcdef0123456789", // keywatch:ignore
+        ),
+        (
+            "SlackTokenDetector",
+            "xoxa-2-123456789012-123456789012-123456789012-abcdef0123456789abcdef0123456789", // keywatch:ignore
+        ),
+        (
+            "SlackTokenDetector",
+            "session xoxs-123456789012-123456789012-123456789012-abcdef0123456789abcdef0123456789", // keywatch:ignore
+        ),
+        (
+            "SlackAppTokenDetector",
+            "xapp-1-A012ABCDEF-1234567890123-abcdef1234567890abcdef1234567890abcdef12",
+        ),
+        (
+            "SlackWebhookDetector",
+            "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX",
+        ),
+        ("GenericKeyValueDetector", "auth = \"kJ8s2mQ94xhTr3p\""),
+        (
+            "GenericKeyValueDetector",
+            "encryption_key = \"Zx9phi3TqL84nWs2v\"",
+        ),
+        (
+            "NewRelicAPIKeyDetector",
+            "NEW_RELIC_API_KEY=NRAK-ABC1234567890DEFGHIJ1234567",
+        ),
+        (
+            "OpenAIAPIKeyDetector",
+            "OPENAI_KEY=sk-Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0Uv1Wx2Yz3Ab4Cd5Ef6", // keywatch:ignore
+        ),
+        (
+            "OpenAIProjectKeyDetector",
+            "api-key: sk-proj-Ab12Cd34Ef56Gh78Ij90Kl12Mn34Op56Qr78St90",
+        ),
+        (
+            "KimiMoonshotAPIKeyDetector",
+            "moonshot sk-Ab1Cd2Ef3Gh4Ij5Kl6Mn7Op8Qr9St0",
+        ),
+        ("StripeAPIKeyDetector", "key = sk_live_51AbCdEfGhIj"),
+        ("StripeAPIKeyDetector", "restricted = rk_live_51AbCdEfGhIj"),
+        (
+            "StripePublishableKeyDetector",
+            "frontend = pk_live_51AbCdEfGhIj", // keywatch:ignore
+        ),
+        ("AadhaarCardDetector", "aadhaar: 2341 2341 2346"),
+        ("PANCardDetector", "pan: ABCDE1234F"),
+        ("VoterIDDetector", "voter epic: ABC1234567"),
+        ("SSNDetector", "ssn: 123-45-6789"),
+        ("ABHADetector", "abha id 12345678901234"),
+        (
+            "GoogleAPIKeyDetector",
+            "AIzaSyA1234567890abcdefghijklmnopqrstuv", // keywatch:ignore
+        ),
+        (
+            "JWTokenDetector",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",
+        ),
+        ("SSHPrivateKeyDetector", "-----BEGIN RSA PRIVATE KEY-----"),
+        ("DatabaseURLDetector", "postgres://user:pass@host/db"),
+        (
+            "MongoDBConnectionStringDetector",
+            "mongodb://user:pass@cluster0.example.net",
+        ),
+        (
+            "SendGridAPIKeyDetector",
+            "SG.ABCDEFGHIJKLMNOPQRSTUV.abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+        ),
+        (
+            "DigitalOceanTokenDetector",
+            "dop_v1_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        ),
+        (
+            "NPMTokenDetector",
+            "npm_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        ),
+        (
+            "HerokuAPIKeyDetector",
+            "heroku_key = 12345678-1234-1234-1234-123456789012",
+        ),
+        (
+            "GroqAPIKeyDetector",
+            "gsk_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwx49",
+        ),
+        (
+            "HuggingFaceTokenDetector",
+            "hf_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh",
+        ),
+        (
+            "GitLabPersonalAccessTokenDetector",
+            "glpat-ABCDEFGHIJKLMNOPQRST",
+        ),
+        (
+            "HashicorpVaultTokenDetector",
+            "hvs.ABCDEFGHIJKLMNOPQRSTUVWX",
+        ),
+        (
+            "GoogleOAuthTokenDetector",
+            "token: ya29.a0AbCdEfGhIjKlMnOpQrStUv",
+        ),
+        (
+            "ShopifyAccessTokenDetector",
+            "shpat_0123456789abcdef0123456789abcdef",
+        ),
+        (
+            "MasterAPIKeyDetector",
+            "master_api_key = \"abcdefghijklmnopqrstuvwxyz1234\"",
+        ),
+    ];
+
+    for (expected_detector, line) in samples {
+        let names = reported_by(line);
+        assert!(
+            names.contains(&expected_detector.to_string()),
+            "{expected_detector} must fire on {line:?}, but only {names:?} did"
+        );
+    }
+}
