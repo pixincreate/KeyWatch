@@ -211,7 +211,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - id: keywatch
-        uses: pixincreate/KeyWatch@v2
+        uses: pixincreate/KeyWatch@v3
         with:
           paths: "."
           exit-mode: strict
@@ -236,8 +236,8 @@ The Action exposes `findings-count` and `exit-code` as step outputs.
 ## Container image
 
 ```sh
-docker pull ghcr.io/pixincreate/keywatch:2
-docker run --rm --volume "$PWD:/workspace:ro" ghcr.io/pixincreate/keywatch:2 scan .
+docker pull ghcr.io/pixincreate/keywatch:3
+docker run --rm --volume "$PWD:/workspace:ro" ghcr.io/pixincreate/keywatch:3 scan .
 ```
 
 Images are tagged `x.y.z`, `x.y`, `x`, and `latest`.

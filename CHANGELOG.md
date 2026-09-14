@@ -6,6 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ## [3.0.0] - 2026-09-14
 
+### Breaking changes
+
+- A nonexistent scan path, a symlink operand, or an operand that is not a regular file or directory is a hard error (exit 2) instead of a silent clean pass; scripts that relied on the old exit 0 must handle the error
+- Pre-push hooks scan the pushed revision ranges from the hook's stdin instead of the worktree; reinstall hooks with `key-watch hook install pre-push` to pick up the new script
+- `scan --git-history` walks every ref (`git log --all`) instead of only the checked-out branch; pass `--rev-range` to narrow the walk
+- Unknown keys in `.keywatch.toml` and detector files are rejected instead of silently ignored; fix any misspelled keys before upgrading (`description` on rules remains accepted)
+- Identity-number detectors (SSN, Aadhaar, PAN, Voter ID, ABHA) require the line to name the document; bare number dumps without a label on the same line are no longer flagged
+- Baseline migration: fingerprints now anchor to the repository root, so baselines written from a subdirectory by earlier releases stop suppressing, and entries from the renamed Stripe/Kimi detectors re-fire once; run `key-watch scan . --update-baseline` after upgrading to refresh the baseline
+
 ### Added
 
 - `scan --staged` scans only the lines a commit adds
@@ -26,23 +35,15 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - Pre-commit hooks scan the staged diff instead of whole files
-- Pre-push hooks scan the pushed revision ranges from the hook's stdin instead of the worktree, so uncommitted files no longer block a push and removed-but-pushed secrets are caught
-- `scan --git-history` walks every ref (`git log --all`), so secrets on side branches are found; pass `--rev-range` to narrow the walk
 - Config discovery searches parent directories up to the repository root
 - Hook messages abbreviate the home directory as `~`
 - Findings for the same file, line and matched text collapse to the highest severity across all scan modes, so overlapping detectors report a secret once
 - Reports redact matched text by default; `--show-secrets` opts into raw values, and matches shorter than 8 characters are always described by length only
 - Reports summarise exclusions as a count plus a sample instead of listing every path, and report git-rendered binary files as `unscannable` rather than `excluded`
 - Lockfiles (`Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `npm-shrinkwrap.json`, `go.sum`, and other generated manifests) are excluded from scans by default
-- A nonexistent scan path, a symlink operand, or an operand that is not a regular file or directory is a hard error (exit 2) instead of a silent clean pass
 - A directory that cannot be listed is reported as unscannable, so `--fail-on-unscannable` catches it
-- Baseline fingerprints anchor paths to the repository root, so a baseline created in a subdirectory suppresses the same finding in staged and history scans
-- Baselines written from a subdirectory by earlier releases record cwd-relative paths and stop suppressing until `key-watch scan . --update-baseline` refreshes them to repository-root paths
-- Unknown keys in `.keywatch.toml` and detector files are rejected instead of silently ignored
 - KeyWatch warns on stderr when an external detector file replaces the embedded set, when config overrides disable detectors, and when `KEYWATCH_CONFIG_PATH` is set but ignored
 - Stripe publishable keys (`pk_`) report as LOW under their own detector; `rk_` restricted keys are detected as secrets
-- Identity-number detectors (SSN, Aadhaar, PAN, Voter ID, ABHA) require the line to name the document, matching the context gate `HighEntropyDetector` already used; bare number dumps without a label on the same line are no longer flagged
-- Upgrade note: baseline entries record the detector name and finding type, so entries created by the renamed detectors (`pk_` keys moved to `StripePublishableKeyDetector`; 48+ character `sk-` keys moved from the Kimi label to `OpenAIAPIKeyDetector`) re-fire once after upgrading; run `key-watch scan . --update-baseline` to refresh them
 - SARIF reports no longer claim `precision: very-high` for every rule and omit `semanticVersion` when unknown
 
 ### Fixed
