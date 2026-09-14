@@ -553,7 +553,7 @@ fn test_mixed_file_and_directory_paths_are_scanned_once() {
 }
 
 #[test]
-fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
+fn test_nonexistent_operand_fails_the_scan() {
     let missing_path = temp_dir().join(format!(
         "keywatch_missing_{}",
         std::time::SystemTime::now()
@@ -568,24 +568,19 @@ fn test_nonexistent_paths_are_ignored_without_counting_as_scanned() {
         ..Default::default()
     };
 
-    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
+    // A typo'd operand must be a hard error, not a silent clean pass: a CI
+    // job scanning a wrong path would otherwise report "No secrets found"
+    // forever.
+    let error = run_scan(&options, None).expect_err("missing operand must fail the scan");
     assert!(
-        findings.is_empty(),
-        "Missing paths should not produce findings"
-    );
-    assert_eq!(
-        metadata.files_scanned, 0,
-        "Missing paths should not be counted as scanned"
-    );
-    assert!(
-        metadata.excluded_files.is_empty(),
-        "Missing paths should not be marked excluded"
+        error.to_string().contains("Scan path not found"),
+        "unexpected error: {error}"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
+fn test_explicit_symlink_operand_fails_the_scan() -> Result<(), String> {
     let test_dir = unique_temp_dir("explicit_symlink_skip");
     let outside_file = test_dir.join("outside-secret.txt");
     let link_path = test_dir.join("linked-secret.txt");
@@ -606,12 +601,12 @@ fn test_explicit_symlink_path_is_skipped() -> Result<(), String> {
         ..Default::default()
     };
 
-    let (findings, metadata) = run_scan(&options, None).expect("run_scan should succeed");
-
-    assert!(findings.is_empty(), "Symlink target should not be scanned");
-    assert_eq!(
-        metadata.files_scanned, 0,
-        "Symlink should not count as scanned"
+    // Explicitly naming a symlink must error: KeyWatch never follows
+    // symlinks, and silently scanning zero files reads as a clean pass.
+    let error = run_scan(&options, None).expect_err("symlink operand must fail the scan");
+    assert!(
+        error.to_string().contains("is a symlink"),
+        "unexpected error: {error}"
     );
 
     fs::remove_dir_all(&test_dir).map_err(|error| format!("cleanup: {error}"))?;

@@ -424,11 +424,13 @@ fn shannon_entropy(input: &str) -> f64 {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DetectorsConfig {
     detectors: Vec<DetectorConfig>,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DetectorConfig {
     name: String,
     pattern: String,
@@ -478,31 +480,70 @@ pub(crate) fn untrusted_root(scan_path: &str, cwd: &std::path::Path) -> std::pat
     start
 }
 
-fn find_detectors_config(
+/// Resolves `KEYWATCH_CONFIG_PATH`, warning on stderr whenever a set value
+/// is ignored: a typo'd operator path silently falling back to another
+/// detector set is indistinguishable from working configuration.
+fn env_detectors_config(
     include_repository_config: bool,
     untrusted_roots: &[std::path::PathBuf],
 ) -> Option<std::path::PathBuf> {
-    std::env::var("KEYWATCH_CONFIG_PATH")
-        .map(std::path::PathBuf::from)
-        .ok()
-        .filter(|path| path.exists())
-        // KEYWATCH_CONFIG_PATH is an operator channel. A repository can reach
-        // it through .envrc/direnv or a devcontainer, so in trusted mode a
-        // a value pointing back into the tree being scanned — at or below any
-        // untrusted root — is ignored.
-        .filter(|path| {
-            include_repository_config
-                || untrusted_roots.is_empty()
-                || !untrusted_roots.iter().any(|root| is_within(path, root))
-        })
-        .filter(|path| !crate::utils::is_world_writable(path))
+    let path = std::path::PathBuf::from(std::env::var_os("KEYWATCH_CONFIG_PATH")?);
+    if !path.exists() {
+        eprintln!(
+            "keywatch: KEYWATCH_CONFIG_PATH '{}' does not exist; ignoring it",
+            path.display()
+        );
+        return None;
+    }
+    // KEYWATCH_CONFIG_PATH is an operator channel. A repository can reach
+    // it through .envrc/direnv or a devcontainer, so in trusted mode a
+    // value pointing back into the tree being scanned — at or below any
+    // untrusted root — is ignored.
+    if !include_repository_config
+        && !untrusted_roots.is_empty()
+        && untrusted_roots.iter().any(|root| is_within(&path, root))
+    {
+        eprintln!(
+            "keywatch: KEYWATCH_CONFIG_PATH '{}' points inside the scanned tree; ignoring it in trusted mode",
+            path.display()
+        );
+        return None;
+    }
+    if crate::utils::is_world_writable(&path) {
+        eprintln!(
+            "keywatch: KEYWATCH_CONFIG_PATH '{}' is world-writable; ignoring it",
+            path.display()
+        );
+        return None;
+    }
+    Some(path)
+}
+
+/// Which channel supplied an external detector file. Only the repository
+/// channel draws a stderr warning: the tree being scanned replacing the
+/// detector set is the hijack case, while `KEYWATCH_CONFIG_PATH`, the user
+/// config directory and the binary directory are operator-managed (the
+/// Docker image sets the env var on every run).
+enum DetectorConfigChannel {
+    Operator,
+    Repository,
+}
+
+fn find_detectors_config(
+    include_repository_config: bool,
+    untrusted_roots: &[std::path::PathBuf],
+) -> Option<(std::path::PathBuf, DetectorConfigChannel)> {
+    env_detectors_config(include_repository_config, untrusted_roots)
+        .map(|path| (path, DetectorConfigChannel::Operator))
         .or_else(|| {
             if !include_repository_config {
                 return None;
             }
 
             let repository_config = std::path::PathBuf::from(DETECTORS_FILE_NAME);
-            repository_config.exists().then_some(repository_config)
+            repository_config
+                .exists()
+                .then_some((repository_config, DetectorConfigChannel::Repository))
         })
         // Trusted mode uses the embedded detector set. A repository can
         // redirect HOME or XDG_CONFIG_HOME (.envrc, devcontainer) and drop a
@@ -517,6 +558,7 @@ fn find_detectors_config(
             dirs::config_dir()
                 .map(|config_directory| config_directory.join("keywatch").join(DETECTORS_FILE_NAME))
                 .filter(|path| path.exists())
+                .map(|path| (path, DetectorConfigChannel::Operator))
         })
         .or_else(|| {
             if !include_repository_config {
@@ -531,6 +573,7 @@ fn find_detectors_config(
                         .map(|directory| directory.join(DETECTORS_FILE_NAME))
                 })
                 .filter(|path| path.exists())
+                .map(|path| (path, DetectorConfigChannel::Operator))
         })
 }
 
@@ -549,12 +592,24 @@ fn initialize_detectors_from_config(
     untrusted_roots: &[std::path::PathBuf],
 ) -> Result<Vec<Detector>, DetectorInitError> {
     let toml_contents = match find_detectors_config(include_repository_config, untrusted_roots) {
-        Some(config_path) => Cow::Owned(fs::read_to_string(&config_path).map_err(|source| {
-            DetectorInitError::ReadConfig {
-                path: config_path,
-                source,
+        Some((config_path, channel)) => {
+            // A repository-supplied file REPLACES the embedded set. Said out
+            // loud on stderr: it would otherwise silently disable detection
+            // for whoever scans the clone. Operator channels stay quiet so
+            // the warning keeps meaning something.
+            if matches!(channel, DetectorConfigChannel::Repository) {
+                eprintln!(
+                    "keywatch: using the scanned repository's '{}' instead of the embedded detector set",
+                    config_path.display()
+                );
             }
-        })?),
+            Cow::Owned(fs::read_to_string(&config_path).map_err(|source| {
+                DetectorInitError::ReadConfig {
+                    path: config_path,
+                    source,
+                }
+            })?)
+        }
         None => Cow::Borrowed(EMBEDDED_DETECTORS_CONFIG),
     };
 

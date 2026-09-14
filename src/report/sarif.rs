@@ -38,6 +38,7 @@ pub fn create_sarif_report(
         #[serde(skip_serializing_if = "Option::is_none")]
         version: Option<String>,
         information_uri: &'static str,
+        #[serde(skip_serializing_if = "Option::is_none")]
         semantic_version: Option<String>,
     }
 
@@ -100,11 +101,10 @@ pub fn create_sarif_report(
             let uri = finding.file_path;
             let start_line = finding.line_number;
 
+            // No per-rule confidence model exists, so no `precision` claim is
+            // made: a blanket "very-high" on entropy-gated LOW rules was a
+            // false statement to SARIF consumers.
             let mut properties = BTreeMap::new();
-            properties.insert(
-                "precision".to_string(),
-                serde_json::Value::String("very-high".to_string()),
-            );
             properties.insert(
                 "severity".to_string(),
                 serde_json::Value::String(severity_str.to_string()),

@@ -22,10 +22,18 @@ pub enum ScannerError {
     CaptureGitStdout,
     #[error("git process error: {source}")]
     GitProcess { source: io::Error },
-    #[error("git log exited with non-zero status")]
-    GitLogNonZero,
-    #[error("git diff exited with non-zero status")]
-    GitDiffNonZero,
+    #[error("git log failed: {stderr}")]
+    GitLogNonZero { stderr: String },
+    #[error("git diff failed: {stderr}")]
+    GitDiffNonZero { stderr: String },
+    #[error("Scan path not found: '{path}'")]
+    ScanPathMissing { path: String },
+    #[error("Cannot read scan path '{path}': {source}")]
+    ScanPathUnreadable { path: String, source: io::Error },
+    #[error("Scan path '{path}' is a symlink; KeyWatch does not follow symlinks")]
+    ScanPathSymlink { path: String },
+    #[error("Scan path '{path}' is not a regular file or directory")]
+    ScanPathUnsupported { path: String },
     #[error("Invalid exclude pattern '{pattern}': {source}")]
     InvalidExcludePattern {
         pattern: String,

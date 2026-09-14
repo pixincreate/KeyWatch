@@ -65,10 +65,52 @@ fn normalize_fingerprint_path(path: &str) -> String {
     normalized.to_string()
 }
 
+/// Anchors finding paths for fingerprinting. Scan modes spell the same file
+/// differently — the staged diff is repository-root-relative while a
+/// filesystem scan is relative to the invocation directory — so inside a
+/// repository every fingerprint path is re-anchored to the repository root.
+/// Outside one (or with `Default`), paths are normalized as-is.
+#[derive(Clone, Default)]
+pub struct PathAnchor {
+    /// Directory that relative finding paths are resolved against.
+    pub scan_dir: PathBuf,
+    /// Enclosing repository root, when there is one.
+    pub repo_root: Option<PathBuf>,
+}
+
+/// Repository-root-relative spelling of a finding path, resolved lexically
+/// (the file may no longer exist, e.g. a staged-only or historical path).
+/// Falls back to plain normalization when the path leaves the repository or
+/// no repository is known.
+fn anchored_fingerprint_path(path: &str, anchor: &PathAnchor) -> String {
+    if let Some(root) = &anchor.repo_root {
+        let candidate = Path::new(path);
+        let absolute = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            anchor.scan_dir.join(candidate)
+        };
+        let mut resolved = PathBuf::new();
+        for component in absolute.components() {
+            match component {
+                std::path::Component::CurDir => {}
+                std::path::Component::ParentDir => {
+                    resolved.pop();
+                }
+                other => resolved.push(other),
+            }
+        }
+        if let Ok(relative) = resolved.strip_prefix(root) {
+            return normalize_fingerprint_path(&relative.to_string_lossy());
+        }
+    }
+    normalize_fingerprint_path(path)
+}
+
 impl BaselineFingerprint {
-    fn from_finding(finding: &Finding) -> Self {
+    fn from_finding(finding: &Finding, anchor: &PathAnchor) -> Self {
         Self {
-            file_path: normalize_fingerprint_path(&finding.file_path),
+            file_path: anchored_fingerprint_path(&finding.file_path, anchor),
             finding_type: finding.finding_type.clone(),
             matched_content_hash: hash_content(&finding.matched_content),
             plugin_name: finding.detector_name.clone(),
@@ -186,9 +228,11 @@ impl Baseline {
         self.entries.iter().map(BaselineFingerprint::from).collect()
     }
 
-    fn entry_from_finding(finding: &Finding) -> BaselineEntry {
+    fn entry_from_finding(finding: &Finding, anchor: &PathAnchor) -> BaselineEntry {
         BaselineEntry {
-            file_path: finding.file_path.clone(),
+            // Stored anchored so the committed baseline is stable no matter
+            // which directory or scan mode produced the entry.
+            file_path: anchored_fingerprint_path(&finding.file_path, anchor),
             line_number: finding.line_number,
             finding_type: finding.finding_type.clone(),
             matched_content_hash: hash_content(&finding.matched_content),
@@ -196,22 +240,24 @@ impl Baseline {
         }
     }
 
-    pub fn filter_findings(&self, findings: Vec<Finding>) -> Vec<Finding> {
+    pub fn filter_findings(&self, findings: Vec<Finding>, anchor: &PathAnchor) -> Vec<Finding> {
         let fingerprints = self.build_fingerprints();
         findings
             .into_iter()
-            .filter(|finding| !fingerprints.contains(&BaselineFingerprint::from_finding(finding)))
+            .filter(|finding| {
+                !fingerprints.contains(&BaselineFingerprint::from_finding(finding, anchor))
+            })
             .collect()
     }
 
-    pub fn from_findings(findings: &[Finding]) -> Self {
+    pub fn from_findings(findings: &[Finding], anchor: &PathAnchor) -> Self {
         let mut entries = Vec::new();
         let mut fingerprints = HashSet::new();
 
         for finding in findings {
-            let fingerprint = BaselineFingerprint::from_finding(finding);
+            let fingerprint = BaselineFingerprint::from_finding(finding, anchor);
             if fingerprints.insert(fingerprint) {
-                entries.push(Self::entry_from_finding(finding));
+                entries.push(Self::entry_from_finding(finding, anchor));
             }
         }
 
@@ -221,7 +267,7 @@ impl Baseline {
         }
     }
 
-    pub fn update_with_findings(&mut self, findings: &[Finding]) {
+    pub fn update_with_findings(&mut self, findings: &[Finding], anchor: &PathAnchor) {
         // First occurrence wins within one scan, matching `from_findings`.
         // Pre-existing entries refresh their recorded line number — code
         // edits move findings around — while entries added by this call keep
@@ -234,7 +280,7 @@ impl Baseline {
             .collect();
         let mut seen: HashSet<BaselineFingerprint> = HashSet::new();
         for finding in findings {
-            let fingerprint = BaselineFingerprint::from_finding(finding);
+            let fingerprint = BaselineFingerprint::from_finding(finding, anchor);
             if !seen.insert(fingerprint.clone()) {
                 continue;
             }
@@ -242,7 +288,7 @@ impl Baseline {
                 Some(&entry_index) => self.entries[entry_index].line_number = finding.line_number,
                 None => {
                     index.insert(fingerprint, self.entries.len());
-                    self.entries.push(Self::entry_from_finding(finding));
+                    self.entries.push(Self::entry_from_finding(finding, anchor));
                 }
             }
         }
@@ -297,7 +343,7 @@ mod tests {
             matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
             detector_name: "AWSKeyDetector".to_string(),
         };
-        let baseline = Baseline::from_findings(&[recorded]);
+        let baseline = Baseline::from_findings(&[recorded], &super::PathAnchor::default());
 
         let seen_again = Finding {
             file_path: "secrets.txt".to_string(),
@@ -309,35 +355,81 @@ mod tests {
         };
 
         assert!(
-            baseline.filter_findings(vec![seen_again]).is_empty(),
+            baseline
+                .filter_findings(vec![seen_again], &super::PathAnchor::default())
+                .is_empty(),
             "a baseline entry must suppress the same finding under any path spelling"
         );
     }
 
     #[test]
     fn update_with_findings_refreshes_line_numbers_of_known_entries() {
-        let mut baseline = Baseline::from_findings(&[Finding {
-            file_path: "secrets.txt".to_string(),
-            line_number: 7,
-            finding_type: "AWS".to_string(),
-            severity: crate::report::Severity::High,
-            matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
-            detector_name: "AWSKeyDetector".to_string(),
-        }]);
+        let mut baseline = Baseline::from_findings(
+            &[Finding {
+                file_path: "secrets.txt".to_string(),
+                line_number: 7,
+                finding_type: "AWS".to_string(),
+                severity: crate::report::Severity::High,
+                matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                detector_name: "AWSKeyDetector".to_string(),
+            }],
+            &super::PathAnchor::default(),
+        );
 
         // The secret moved down after an edit; the update must move the
         // recorded line with it instead of adding a duplicate entry.
-        baseline.update_with_findings(&[Finding {
-            file_path: "secrets.txt".to_string(),
-            line_number: 42,
+        baseline.update_with_findings(
+            &[Finding {
+                file_path: "secrets.txt".to_string(),
+                line_number: 42,
+                finding_type: "AWS".to_string(),
+                severity: crate::report::Severity::High,
+                matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
+                detector_name: "AWSKeyDetector".to_string(),
+            }],
+            &super::PathAnchor::default(),
+        );
+
+        assert_eq!(baseline.entries.len(), 1, "no duplicate entry");
+        assert_eq!(baseline.entries[0].line_number, 42);
+    }
+
+    #[test]
+    fn anchored_fingerprints_unify_subdirectory_and_staged_spellings() {
+        // The bug this guards against: a baseline written by `key-watch
+        // scan .` from repo/sub records "creds.txt", while the staged diff
+        // reports the same file as "sub/creds.txt" — and the baseline
+        // suppressed nothing.
+        let repo_root = std::path::PathBuf::from("/repo");
+        let file_scan_from_subdir = super::PathAnchor {
+            scan_dir: std::path::PathBuf::from("/repo/sub"),
+            repo_root: Some(repo_root.clone()),
+        };
+        let staged_scan = super::PathAnchor {
+            scan_dir: repo_root.clone(),
+            repo_root: Some(repo_root),
+        };
+
+        let make = |path: &str| Finding {
+            file_path: path.to_string(),
+            line_number: 1,
             finding_type: "AWS".to_string(),
             severity: crate::report::Severity::High,
             matched_content: "AKIAIOSFODNN7EXAMPLE".to_string(),
             detector_name: "AWSKeyDetector".to_string(),
-        }]);
+        };
 
-        assert_eq!(baseline.entries.len(), 1, "no duplicate entry");
-        assert_eq!(baseline.entries[0].line_number, 42);
+        let baseline = Baseline::from_findings(&[make("./creds.txt")], &file_scan_from_subdir);
+        assert_eq!(
+            baseline.entries[0].file_path, "sub/creds.txt",
+            "entries are stored repository-root-relative"
+        );
+        assert!(
+            baseline
+                .filter_findings(vec![make("sub/creds.txt")], &staged_scan)
+                .is_empty(),
+            "a subdirectory-created baseline must suppress the staged-mode finding"
+        );
     }
 
     #[test]
