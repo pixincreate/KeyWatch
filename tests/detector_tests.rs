@@ -914,11 +914,11 @@ fn test_every_format_detector_fires_on_a_realistic_sample() {
         ),
         (
             "GitHubTokenDetector",
-            "token = ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+            "token = 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",
         ),
         (
             "GitHubTokenDetector",
-            "refresh = ghr_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij",
+            "refresh = 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",
         ),
         (
             "GitHubFineGrainedPATDetector",

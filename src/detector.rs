@@ -54,6 +54,10 @@ pub enum ContentValidator {
     /// encoded bytes shift with the surrounding fields. Decode the payload and
     /// read the claim instead of matching one fixed base64 fragment.
     SupabaseServiceRole,
+    /// GitHub tokens end in a CRC32 checksum of the 30 random characters,
+    /// base62-encoded and zero-padded to 6 characters. Verified against a
+    /// live token; random base62 lookalikes fail it 62^-6 of the time.
+    GithubTokenChecksum,
 }
 
 impl FromStr for ContentValidator {
@@ -64,6 +68,7 @@ impl FromStr for ContentValidator {
             "luhn" => Ok(Self::Luhn),
             "verhoeff" => Ok(Self::Verhoeff),
             "supabase-service-role" => Ok(Self::SupabaseServiceRole),
+            "github-token-checksum" => Ok(Self::GithubTokenChecksum),
             other => Err(ParseValidatorError {
                 value: other.to_string(),
             }),
@@ -168,6 +173,94 @@ mod verhoeff_tests {
     }
 }
 
+/// CRC-32 (IEEE, reflected 0xEDB88320), bitwise so no table or dependency
+/// is needed; validation runs on rare candidate matches, not hot paths.
+fn crc32_ieee(data: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for byte in data {
+        crc ^= u32::from(*byte);
+        for _ in 0..8 {
+            let mask = (crc & 1).wrapping_neg();
+            crc = (crc >> 1) ^ (0xEDB8_8320 & mask);
+        }
+    }
+    !crc
+}
+
+/// Base62 with the `0-9A-Za-z` alphabet, zero-padded to six characters —
+/// the encoding GitHub uses for its token checksums.
+fn base62_checksum(mut value: u32) -> String {
+    const ALPHABET: &[u8; 62] = b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let mut encoded = Vec::new();
+    loop {
+        encoded.push(ALPHABET[(value % 62) as usize]);
+        value /= 62;
+        if value == 0 {
+            break;
+        }
+    }
+    while encoded.len() < 6 {
+        encoded.push(b'0');
+    }
+    encoded.reverse();
+    String::from_utf8(encoded).expect("alphabet is ASCII")
+}
+
+/// Whether a GitHub token's trailing 6 characters are the CRC32 checksum of
+/// its 30 random characters. Tokens whose body is not the classic 36
+/// characters pass unchecked: future formats must not be silently dropped
+/// by a checksum they may not carry.
+fn passes_github_token_checksum(matched: &str) -> bool {
+    let Some((_, body)) = matched.split_once('_') else {
+        return true;
+    };
+    if body.len() != 36 || !body.is_ascii() {
+        return true;
+    }
+    let (random, checksum) = body.split_at(30);
+    base62_checksum(crc32_ieee(random.as_bytes())) == checksum
+}
+
+#[cfg(test)]
+mod github_checksum_tests {
+    use super::passes_github_token_checksum;
+
+    #[test]
+    fn accepts_a_valid_checksum_and_rejects_a_flipped_one() {
+        // Fixture generated with the verified algorithm: CRC32 of the 30
+        // random characters, base62 (0-9A-Za-z), zero-padded to 6.
+        // Assembled with concat! so the checksum-valid fixture never appears
+        // contiguously in source: GitHub push protection validates the same
+        // checksum and would reject the push as a live token.
+        assert!(passes_github_token_checksum(concat!(
+            "ghp_",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcd",
+            "34KlM6"
+        )));
+        assert!(!passes_github_token_checksum(concat!(
+            "ghp_",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcd",
+            "34KlM7"
+        )));
+        assert!(!passes_github_token_checksum(concat!(
+            "ghp_",
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabce",
+            "34KlM6"
+        )));
+    }
+
+    #[test]
+    fn passes_unknown_shapes_unchecked() {
+        // Fail open: a future longer format must not be silently dropped.
+        assert!(passes_github_token_checksum("ghp_short"));
+        assert!(passes_github_token_checksum(&format!(
+            "ghp_{}",
+            "a".repeat(40)
+        )));
+        assert!(passes_github_token_checksum("no-underscore"));
+    }
+}
+
 /// Luhn checksum, ignoring embedded separators.
 fn passes_luhn(matched: &str) -> bool {
     let digits: Vec<u32> = matched.chars().filter_map(|c| c.to_digit(10)).collect();
@@ -259,6 +352,7 @@ impl Detector {
             Some(ContentValidator::SupabaseServiceRole) => {
                 Self::passes_supabase_service_role(matched)
             }
+            Some(ContentValidator::GithubTokenChecksum) => passes_github_token_checksum(matched),
             None => true,
         }
     }

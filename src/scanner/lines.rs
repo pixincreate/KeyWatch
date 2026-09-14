@@ -157,6 +157,10 @@ pub(super) struct LineScanContext<'detectors> {
     /// lost; matching lines simply pay the gate plus their real passes.
     /// `None` when a gate cannot be built (fail open).
     unconditional_gate: Option<Regex>,
+    /// Base64 runs long enough to hide an encoded credential. Candidates are
+    /// decoded and their text is scanned once more, so `echo QVdTX0tFWT0...`
+    /// does not smuggle a key past every format-anchored detector.
+    base64_candidates: Regex,
 }
 
 impl<'detectors> LineScanContext<'detectors> {
@@ -185,6 +189,8 @@ impl<'detectors> LineScanContext<'detectors> {
             line_detectors,
             prefilter,
             unconditional_gate,
+            base64_candidates: Regex::new(r"[A-Za-z0-9+/]{24,}={0,2}")
+                .expect("base64 candidate pattern is valid"),
         }
     }
 }
@@ -209,6 +215,63 @@ pub(super) fn scan_line_detectors(
         return;
     }
 
+    run_line_detectors(line, line_number, path, context, scratch, findings);
+    scan_decoded_base64(line, line_number, path, context, scratch, findings);
+}
+
+/// Decodes base64 runs on the line and scans the decoded text once (no
+/// recursive decoding), attributing findings to the original line. Decoded
+/// content must be printable text of a credential-plausible length;
+/// anything else (hashes, compressed data, images) is rejected before any
+/// detector runs.
+fn scan_decoded_base64(
+    line: &str,
+    line_number: usize,
+    path: &str,
+    context: &LineScanContext<'_>,
+    scratch: &mut LineScratch,
+    findings: &mut Vec<Finding>,
+) {
+    /// Shorter decoded payloads cannot hold a credential worth reporting.
+    const MIN_DECODED_LENGTH: usize = 16;
+
+    let candidates: Vec<String> = context
+        .base64_candidates
+        .find_iter(line)
+        .map(|candidate| candidate.as_str().to_string())
+        .collect();
+    for candidate in candidates {
+        let Some(decoded) = crate::utils::decode_base64_standard(&candidate) else {
+            continue;
+        };
+        if decoded.len() < MIN_DECODED_LENGTH
+            || !decoded
+                .iter()
+                .all(|byte| byte.is_ascii_graphic() || matches!(byte, b' ' | b'\n' | b'\r' | b'\t'))
+        {
+            continue;
+        }
+        let Ok(text) = String::from_utf8(decoded) else {
+            continue;
+        };
+        for decoded_line in text.lines() {
+            run_line_detectors(decoded_line, line_number, path, context, scratch, findings);
+        }
+    }
+}
+
+/// The detector matching core, shared by the raw line and its decoded
+/// base64 payloads. Inline suppression is handled by the caller on the raw
+/// line only: a marker hidden inside encoded content must not suppress.
+fn run_line_detectors(
+    line: &str,
+    line_number: usize,
+    path: &str,
+    context: &LineScanContext<'_>,
+    scratch: &mut LineScratch,
+    findings: &mut Vec<Finding>,
+) {
+    to_lowercase_into(line, &mut scratch.lowered_line);
     context
         .prefilter
         .candidates_into(&scratch.lowered_line, &mut scratch.candidates);
@@ -684,5 +747,58 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![1049]
         );
+    }
+}
+
+/// Decodes UTF-16 content that starts with a byte-order mark, lossily so a
+/// broken pair cannot abort a scan. Returns `None` when no BOM is present:
+/// without one, distinguishing UTF-16 from binary is guesswork, and guessing
+/// wrong would scan garbage. Windows tools that write UTF-16 (`Out-File`,
+/// Notepad) write the BOM.
+pub(super) fn decode_utf16_bom(bytes: &[u8]) -> Option<String> {
+    let (first, second) = (bytes.first()?, bytes.get(1)?);
+    let little_endian = match (first, second) {
+        (0xFF, 0xFE) => true,
+        (0xFE, 0xFF) => false,
+        _ => return None,
+    };
+    let units = bytes[2..].chunks_exact(2).map(|pair| {
+        if little_endian {
+            u16::from_le_bytes([pair[0], pair[1]])
+        } else {
+            u16::from_be_bytes([pair[0], pair[1]])
+        }
+    });
+    Some(
+        char::decode_utf16(units)
+            .map(|unit| unit.unwrap_or(char::REPLACEMENT_CHARACTER))
+            .collect(),
+    )
+}
+
+#[cfg(test)]
+mod utf16_tests {
+    use super::decode_utf16_bom;
+
+    #[test]
+    fn decodes_both_byte_orders_and_rejects_bomless_input() {
+        let mut little = vec![0xFF, 0xFE];
+        for unit in "AKIA test".encode_utf16() {
+            little.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(decode_utf16_bom(&little).as_deref(), Some("AKIA test"));
+
+        let mut big = vec![0xFE, 0xFF];
+        for unit in "AKIA test".encode_utf16() {
+            big.extend_from_slice(&unit.to_be_bytes());
+        }
+        assert_eq!(decode_utf16_bom(&big).as_deref(), Some("AKIA test"));
+
+        assert_eq!(decode_utf16_bom(b"plain ascii"), None);
+        assert_eq!(decode_utf16_bom(b""), None);
+        // A lone unpaired surrogate decodes to the replacement character
+        // instead of failing.
+        let broken = [0xFF, 0xFE, 0x00, 0xD8];
+        assert!(decode_utf16_bom(&broken).is_some());
     }
 }

@@ -121,7 +121,7 @@ fn resolve_scan_args(args: &ScanArgs) -> Result<ScanArgs, RunCliError> {
 }
 
 fn load_scan_config(args: &ScanArgs) -> Result<Option<config::KeywatchConfig>, RunCliError> {
-    match args.config.is_some() || !args.no_config_discovery {
+    match args.config.is_some() || !(args.no_config_discovery || args.no_repo_config) {
         true => config::KeywatchConfig::load_for_paths(args.config.as_deref(), &args.paths)
             .map_err(Into::into),
         false => Ok(None),

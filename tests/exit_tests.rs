@@ -613,3 +613,120 @@ fn test_exit_code_2_on_unlistable_directory_operand() {
 
     fs::remove_dir_all(&test_dir).expect("Cleanup");
 }
+
+#[test]
+fn test_trusted_detectors_ignores_repository_detector_file() {
+    let test_dir = setup_scan_dir("trusted_detectors_flag", false);
+    fs::write(
+        test_dir.join("detectors.toml"),
+        "[[detectors]]\nname = \"Nothing\"\npattern = \"ZZZNEVERZZZ\"\nfinding_type = \"x\"\nseverity = \"LOW\"\n",
+    )
+    .expect("write repo detectors");
+    fs::write(test_dir.join("creds.txt"), "AKIAABCDEFGHIJKLMNOP\n").expect("write secret");
+
+    let run = |extra: &[&str]| {
+        let mut args = vec!["scan", "creds.txt"];
+        args.extend_from_slice(extra);
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .current_dir(&test_dir)
+            .args(&args)
+            .env_remove("KEYWATCH_CONFIG_PATH")
+            .status()
+            .expect("run key-watch")
+            .code()
+    };
+
+    assert_eq!(
+        run(&[]),
+        Some(0),
+        "without the flag the repository detector file replaces the set"
+    );
+    assert_eq!(
+        run(&["--trusted-detectors"]),
+        Some(1),
+        "--trusted-detectors must keep the built-in rules"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_no_repo_config_ignores_discovered_config_only() {
+    let test_dir = setup_scan_dir("no_repo_config_flag", false);
+    fs::write(
+        test_dir.join(".keywatch.toml"),
+        "[overrides.AWSKeyDetector]\nenabled = false\n",
+    )
+    .expect("write repo config");
+    fs::write(test_dir.join("creds.txt"), "AKIAABCDEFGHIJKLMNOP\n").expect("write secret");
+
+    let run = |extra: &[&str]| {
+        let mut args = vec!["scan", "creds.txt", "--no-baseline-discovery"];
+        args.extend_from_slice(extra);
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .current_dir(&test_dir)
+            .args(&args)
+            .env_remove("KEYWATCH_CONFIG_PATH")
+            .status()
+            .expect("run key-watch")
+            .code()
+    };
+
+    assert_eq!(
+        run(&[]),
+        Some(0),
+        "the discovered config disables the detector without the flag"
+    );
+    assert_eq!(
+        run(&["--no-repo-config"]),
+        Some(1),
+        "--no-repo-config must ignore the discovered config"
+    );
+    assert_eq!(
+        run(&["--trusted-detectors"]),
+        Some(0),
+        "--trusted-detectors alone must still honor the discovered config"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}
+
+#[test]
+fn test_max_file_size_skips_large_files_as_unscannable() {
+    let test_dir = setup_scan_dir("max_file_size", false);
+    // 2 MB of filler with a secret on the last line.
+    let mut big = "filler line\n".repeat(175_000);
+    big.push_str("AWS_KEY=AKIAABCDEFGHIJKLMNOP\n");
+    fs::write(test_dir.join("big.txt"), &big).expect("write big file");
+
+    let run = |extra: &[&str]| {
+        let mut args = vec!["scan", "big.txt", "--no-baseline-discovery"];
+        args.extend_from_slice(extra);
+        Command::new(env!("CARGO_BIN_EXE_key-watch"))
+            .current_dir(&test_dir)
+            .args(&args)
+            .env_remove("KEYWATCH_CONFIG_PATH")
+            .status()
+            .expect("run key-watch")
+            .code()
+    };
+
+    assert_eq!(run(&[]), Some(1), "without a cap the secret is found");
+    assert_eq!(
+        run(&["--max-file-size", "1"]),
+        Some(0),
+        "over the cap the file is skipped, not failed"
+    );
+    assert_eq!(
+        run(&["--max-file-size", "1", "--fail-on-unscannable"]),
+        Some(1),
+        "the skip is visible to --fail-on-unscannable"
+    );
+    assert_eq!(
+        run(&["--max-file-size", "3"]),
+        Some(1),
+        "under the cap the file scans normally"
+    );
+
+    fs::remove_dir_all(test_dir).expect("Cleanup");
+}

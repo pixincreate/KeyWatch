@@ -107,7 +107,7 @@ fn resolve_detectors(
     args: &ScanArgs,
     config: Option<&KeywatchConfig>,
 ) -> Result<Vec<Detector>, ScannerError> {
-    let mut detectors = if args.no_config_discovery {
+    let mut detectors = if args.no_config_discovery || args.trusted_detectors {
         initialize_trusted_detectors(&untrusted_roots(args))
     } else {
         initialize_detectors()
@@ -242,8 +242,12 @@ fn scan_staged(
         unscannable_from_diff,
     } = staged;
 
-    let (blob_findings, blob_lines, skipped) =
-        scan_index_blobs(&unscannable_from_diff, multiline_detectors, line_detectors)?;
+    let (blob_findings, blob_lines, skipped) = scan_index_blobs(
+        &unscannable_from_diff,
+        args.max_file_size.map(|megabytes| megabytes * 1024 * 1024),
+        multiline_detectors,
+        line_detectors,
+    )?;
     findings.extend(blob_findings);
     metadata.total_lines += blob_lines;
     metadata.files_scanned += unscannable_from_diff.len() - skipped.len();
@@ -393,16 +397,21 @@ fn scan_filesystem(
     let exclude_patterns = compile_exclude_patterns(args, config)?;
     let line_scan_context = LineScanContext::new(line_detectors);
     let scan_base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let max_bytes = args.max_file_size.map(|megabytes| megabytes * 1024 * 1024);
 
+    let settings = FileScanSettings {
+        exclude_patterns: &exclude_patterns,
+        excluded_baseline,
+        scan_base_dir: &scan_base_dir,
+        max_bytes,
+    };
     let results: Vec<FileOutcome> = unique_paths
         .into_par_iter()
         .map(|(path, roots)| {
             scan_one_path(
                 &path,
                 &roots,
-                &exclude_patterns,
-                excluded_baseline,
-                &scan_base_dir,
+                &settings,
                 multiline_detectors,
                 &line_scan_context,
             )
@@ -440,12 +449,19 @@ fn normalized_path_key(path: &str) -> String {
 /// Scans a single path and classifies the outcome. Streamed: memory stays
 /// bounded for huge files, invalid UTF-8 decodes lossily instead of skipping
 /// the file, and a NUL byte marks the file binary (reported as unscannable).
+/// Per-scan settings shared by every file worker: what to skip and how
+/// large a file may be.
+struct FileScanSettings<'scan> {
+    exclude_patterns: &'scan [Pattern],
+    excluded_baseline: Option<&'scan PathBuf>,
+    scan_base_dir: &'scan Path,
+    max_bytes: Option<u64>,
+}
+
 fn scan_one_path(
     path: &str,
     roots: &[Option<String>],
-    exclude_patterns: &[Pattern],
-    excluded_baseline: Option<&PathBuf>,
-    scan_base_dir: &Path,
+    settings: &FileScanSettings<'_>,
     multiline_detectors: &[&Detector],
     line_scan_context: &LineScanContext<'_>,
 ) -> FileOutcome {
@@ -453,8 +469,8 @@ fn scan_one_path(
         return FileOutcome::skipped_but_reported(path.to_string());
     }
 
-    if matches_exclude_patterns(path, roots, exclude_patterns)
-        || is_baseline_file(path, scan_base_dir, excluded_baseline)
+    if matches_exclude_patterns(path, roots, settings.exclude_patterns)
+        || is_baseline_file(path, settings.scan_base_dir, settings.excluded_baseline)
         || is_default_excluded_file(path)
     {
         return FileOutcome::skipped_but_reported(path.to_string());
@@ -471,6 +487,11 @@ fn scan_one_path(
     if file_type.is_symlink() || !file_type.is_file() {
         return FileOutcome::ignored();
     }
+    // Over the size cap: unscannable, never silently clean. The cap bounds
+    // scan time on huge single files (throughput is per-file).
+    if settings.max_bytes.is_some_and(|cap| metadata.len() > cap) {
+        return FileOutcome::unreadable(path.to_string());
+    }
 
     let mut reader = match fs::File::open(path) {
         Ok(file) => BufReader::new(file),
@@ -479,6 +500,31 @@ fn scan_one_path(
         }
         Err(_) => return FileOutcome::unreadable(path.to_string()),
     };
+    // A UTF-16 file (Windows `.env` files are the common case) is full of
+    // NUL bytes and would otherwise be dropped as binary. A byte-order mark
+    // identifies it reliably; decode and scan the text.
+    match std::io::BufRead::fill_buf(&mut reader) {
+        Ok(head) if head.starts_with(&[0xFF, 0xFE]) || head.starts_with(&[0xFE, 0xFF]) => {
+            let mut bytes = Vec::new();
+            if std::io::Read::read_to_end(&mut reader, &mut bytes).is_err() {
+                return FileOutcome::unreadable(path.to_string());
+            }
+            let Some(text) = lines::decode_utf16_bom(&bytes) else {
+                return FileOutcome::unreadable(path.to_string());
+            };
+            let (findings, total_lines) =
+                lines::scan_content(&text, path, multiline_detectors, line_scan_context);
+            return FileOutcome {
+                findings,
+                lines_seen: total_lines,
+                scanned: true,
+                excluded: None,
+                unscannable: None,
+            };
+        }
+        Ok(_) => {}
+        Err(_) => return FileOutcome::unreadable(path.to_string()),
+    }
     let scanned = match scan_file_stream(&mut reader, path, multiline_detectors, line_scan_context)
     {
         Ok(scanned) => scanned,

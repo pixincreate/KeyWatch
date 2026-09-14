@@ -71,8 +71,11 @@ Reports never contain the full matched text unless you pass `--show-secrets`.
 | `--update-baseline` | Record the current findings in the baseline instead of reporting them |
 | `--prune-baseline` | With `--update-baseline`, also remove baseline entries that no longer match anything |
 | `--config <path>` | Use a specific `.keywatch.toml` configuration file |
-| `--no-config-discovery` | Ignore configuration and detector files found in the scanned repository |
+| `--trusted-detectors` | Ignore a `detectors.toml` supplied by the scanned repository; use only built-in or operator rules |
+| `--no-repo-config` | Do not look for `.keywatch.toml` in the scanned tree; an explicit `--config` still loads |
+| `--no-config-discovery` | Shorthand for `--trusted-detectors` plus `--no-repo-config`; the installed hooks pass it |
 | `--show-secrets` | Include the full matched text in reports |
+| `--max-file-size <MB>` | Skip files larger than this size and report them as unscannable |
 
 Notes:
 
