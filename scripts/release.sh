@@ -69,7 +69,7 @@ validate_changelog_for_pr() {
         exit 1
     fi
 
-    if grep -q "\[$VERSION\]" CHANGELOG.md; then
+    if grep -Fq "## [$VERSION]" CHANGELOG.md; then
         echo "Error: Version $VERSION already exists in CHANGELOG.md"
         echo "This release appears to already be documented"
         exit 1
@@ -82,7 +82,7 @@ validate_changelog_for_tag() {
         exit 1
     fi
 
-    if ! grep -q "\[$VERSION\]" CHANGELOG.md; then
+    if ! grep -Fq "## [$VERSION]" CHANGELOG.md; then
         echo "Error: Version $VERSION not found in CHANGELOG.md"
         echo "Please merge the release PR before tagging"
         exit 1
@@ -192,11 +192,7 @@ create_pr() {
 }
 
 create_tag() {
-    if [[ "$PUBLISH_CRATES" == "true" ]]; then
-        ensure_clean_master
-    else
-        ensure_clean_master
-    fi
+    ensure_clean_master
     validate_changelog_for_tag
 
     echo "This will create and push tag v$VERSION, triggering the release workflow."
@@ -245,4 +241,4 @@ if [[ "$FUNCTION" != "create_pr" && "$FUNCTION" != "create_tag" && "$FUNCTION" !
     exit 1
 fi
 
-eval "$FUNCTION"
+"$FUNCTION"

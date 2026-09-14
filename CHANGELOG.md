@@ -10,24 +10,33 @@ All notable changes to this project will be documented in this file.
 - Baselines are auto-discovered from `.keywatch-baseline.json`; `--no-baseline-discovery` opts out
 - `update-baseline` workflow regenerates the baseline via a pull request
 - `scan --fail-on-unscannable` fails a strict scan when a file could not be read; the pre-commit hook passes it so an unscannable staged file cannot pass silently
+- CI scans this repository with KeyWatch and fails if the committed baseline has drifted
+- `--prune-baseline` rewrites the baseline from current findings, dropping entries for deleted files and rotated credentials; requires `--update-baseline` and a whole-tree scan, and prints what it dropped
+- `scan --git-history --rev-range <range>` restricts a history scan to a revision range; the pre-push hook uses it to scan exactly the pushed commits
+- Detectors for GitHub fine-grained PATs (`github_pat_`), GitHub refresh tokens (`ghr_`), AWS temporary keys (`ASIA`/`ABIA`/`ACCA`), AWS secret access keys (context-gated), modern Slack bot tokens, Slack app tokens (`xapp-`), Slack webhook URLs, and modern OpenAI project keys (`sk-proj-`/`sk-svcacct-`/`sk-admin-`)
+- Non-verbose scans print the location, type and redacted match of every finding instead of only a count
 
 ### Changed
 
 - Pre-commit hooks scan the staged diff instead of whole files
+- Pre-push hooks scan the pushed revision ranges from the hook's stdin instead of the worktree, so uncommitted files no longer block a push and removed-but-pushed secrets are caught
+- `scan --git-history` walks every ref (`git log --all`), so secrets on side branches are found; pass `--rev-range` to narrow the walk
 - Config discovery searches parent directories up to the repository root
 - Hook messages abbreviate the home directory as `~`
 - Findings for the same file, line and matched text collapse to the highest severity across all scan modes, so overlapping detectors report a secret once
-
-### Added
-
-- CI scans this repository with KeyWatch and fails if the committed baseline has drifted
-- `--prune-baseline` rewrites the baseline from current findings, dropping entries for deleted files and rotated credentials; requires `--update-baseline` and a whole-tree scan, and prints what it dropped
-
-### Changed
-
 - Reports redact matched text by default; `--show-secrets` opts into raw values, and matches shorter than 8 characters are always described by length only
 - Reports summarise exclusions as a count plus a sample instead of listing every path, and report git-rendered binary files as `unscannable` rather than `excluded`
-- Lockfiles (`Cargo.lock`, `package-lock.json`, `yarn.lock`, `go.sum`, and other generated manifests) are excluded from scans by default
+- Lockfiles (`Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`, `npm-shrinkwrap.json`, `go.sum`, and other generated manifests) are excluded from scans by default
+- A nonexistent scan path, a symlink operand, or an operand that is not a regular file or directory is a hard error (exit 2) instead of a silent clean pass
+- A directory that cannot be listed is reported as unscannable, so `--fail-on-unscannable` catches it
+- Baseline fingerprints anchor paths to the repository root, so a baseline created in a subdirectory suppresses the same finding in staged and history scans
+- Baselines written from a subdirectory by earlier releases record cwd-relative paths and stop suppressing until `key-watch scan . --update-baseline` refreshes them to repository-root paths
+- Unknown keys in `.keywatch.toml` and detector files are rejected instead of silently ignored
+- KeyWatch warns on stderr when an external detector file replaces the embedded set, when config overrides disable detectors, and when `KEYWATCH_CONFIG_PATH` is set but ignored
+- Stripe publishable keys (`pk_`) report as LOW under their own detector; `rk_` restricted keys are detected as secrets
+- Identity-number detectors (SSN, Aadhaar, PAN, Voter ID, ABHA) require the line to name the document, matching the context gate `HighEntropyDetector` already used; bare number dumps without a label on the same line are no longer flagged
+- Upgrade note: baseline entries record the detector name and finding type, so entries created by the renamed detectors (`pk_` keys moved to `StripePublishableKeyDetector`; 48+ character `sk-` keys moved from the Kimi label to `OpenAIAPIKeyDetector`) re-fire once after upgrading; run `key-watch scan . --update-baseline` to refresh them
+- SARIF reports no longer claim `precision: very-high` for every rule and omit `semanticVersion` when unknown
 
 ### Fixed
 
@@ -58,9 +67,18 @@ All notable changes to this project will be documented in this file.
 - Custom rules in `.keywatch.toml` support `allowlist`, `keywords`, `entropy` and `validate`, matching built-in detector definitions
 - Pre-push repository filters fail closed on Windows drive-path remotes instead of misparsing the drive letter as a host
 - Chunked streaming scans no longer duplicate multiline matches that land inside the window overlap
+- `GenericKeyValueDetector` reaches its `auth` and `_key` pattern branches; the keyword prefilter previously never let `auth = ...` or `encryption_key = ...` lines reach the regex
+- `NewRelicAPIKeyDetector` matches real uppercase NRAK keys; the lowercase-only class could never fire
+- `SlackTokenDetector` keyword and pattern prefixes agree; `xoxa-` tokens were unreachable and `xoxr-` was inert
+- 48+ character `sk-` tokens report as OpenAI keys instead of being mislabeled Kimi/Moonshot
+- The same file passed under two spellings (`dup.txt ./dup.txt`) reports each finding once
+- Errors from failed `git diff`/`git log` include one summarized stderr line instead of letting git dump pages of usage text
+- `--fail-on-unscannable` names the unscannable files in its summary instead of printing "No secrets found." next to exit code 1
+- The AWS documentation example secret in `.env.example` files is no longer flagged by `GenericKeyValueDetector`
+- The composite Action publishes its effective exit code on report failures instead of a stale `0`, and `findings-count` stays numeric (`-1` when unknown)
 - Files with invalid UTF-8 are decoded lossily and scanned instead of silently skipped; NUL-containing files are reported as `unscannable`
 - `Finding`'s `plugin_name` field is now `detector_name` in the code; the JSON report and baseline schema still emit/accept `plugin_name`
-- `CustomRule.description` was parsed but never surfaced and has been dropped (configs carrying it keep parsing)
+- `CustomRule.description` is accepted and ignored so configuration files written for earlier releases keep parsing (the text was never surfaced)
 - False-positive reductions in the built-in detectors: AWS's documentation example key, placeholder values (`changeme`, `your-api-key-here`, `replace-me-please`), RFC 2606 example-domain emails and noreply conventions, fictional 555 phone numbers, npm/shield checksum prefixes, and non-Verhoeff 12-digit runs no longer report as Aadhaar
 - `--baseline` naming a missing file is an error instead of silently scanning with an empty baseline
 - Baseline files with an unknown format version are rejected instead of silently accepted
