@@ -1,0 +1,123 @@
+# These credentials are synthetic. These cases do not measure provider validity.
+[[cases]]
+name = "Typed password"
+input = 'const DB_PASSWORD: &str = "OldHarmlessFixture783!";'
+detector = "PasswordDetector"
+[[cases]]
+name = "Lifetime password"
+input = '''const PWD: &'static str = "OldHarmlessFixture783!";'''
+detector = "PasswordDetector"
+[[cases]]
+name = "JSON password"
+input = '{"password":"hunter2"}'
+detector = "PasswordDetector"
+[[cases]]
+name = "JSON token"
+input = '{"api_key":"aB3xK9mQ2pR7/q7"}'
+detector = "GenericKeyValueDetector"
+[[cases]]
+name = "Bare apikey"
+input = 'apikey="aB3xK9mQ2pR7/q7"'
+detector = "GenericKeyValueDetector"
+[[cases]]
+name = "Bare accesskey"
+input = 'accesskey="aB3xK9mQ2pR7/q7"'
+detector = "GenericKeyValueDetector"
+[[cases]]
+name = "Bare securitykey"
+input = 'securitykey="aB3xK9mQ2pR7/q7"'
+detector = "GenericKeyValueDetector"
+[[cases]]
+name = "Slash and plus token"
+input = 'api_key="aB3xK9mQ2pR7/+z8"'
+detector = "GenericKeyValueDetector"
+[[cases]]
+name = "Quoted snake credential"
+input = 'api_key="q7m2_c9v8_x5z1"'
+detector = "GenericKeyValueDetector"
+[[cases]]
+name = "Quoted kebab credential"
+input = 'api_key="1234-5678-9012"'
+detector = "GenericKeyValueDetector"
+[[cases]]
+name = "Passphrase"
+input = 'PWD=Correct-Horse-Battery-Staple'
+detector = "PasswordDetector"
+[[cases]]
+name = "Extended placeholder"
+input = 'PASSWORD="dummy7!"'
+detector = "PasswordDetector"
+[[cases]]
+name = "Embedded placeholder"
+input = 'PWD="notdummy9!"'
+detector = "PasswordDetector"
+[[cases]]
+name = "Extended token placeholder"
+input = 'api_key="changemeA7q9Z2"'
+detector = "GenericKeyValueDetector"
+[[cases]]
+name = "Quoted code expression"
+input = 'password="config.db_password.clone()"'
+detector = "PasswordDetector"
+[[cases]]
+name = "AWS key"
+input = 'AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP'
+detector = "AWSKeyDetector"
+[[cases]]
+name = "Payment underscored key"
+input = 'api_key_live_aB3dE6gH9j'
+detector = "PaymentGatewayKeyDetector"
+[[cases]]
+name = "Payment bare key"
+input = 'apikey_live_aB3dE6gH9j'
+detector = "PaymentGatewayKeyDetector"
+[[cases]]
+name = "Hyphenated service account"
+input = 'service-account-key="aB3xK9mQ2pR7nH6vD8sJ4"'
+detector = "ServiceAccountKeyDetector"
+[[cases]]
+name = "Bare service account"
+input = 'serviceaccountkey="aB3xK9mQ2pR7nH6vD8sJ4"'
+detector = "ServiceAccountKeyDetector"
+[[cases]]
+name = "Exact password placeholder"
+input = 'password="dummy"'
+[[cases]]
+name = "Exact token placeholder"
+input = 'api_key="changeme"'
+[[cases]]
+name = "Exact documentation placeholder"
+input = 'token="your-api-key-here"'
+[[cases]]
+name = "Empty typed password"
+input = 'const DB_PASSWORD: &str = "";'
+[[cases]]
+name = "Empty JSON password"
+input = '{"password":""}'
+[[cases]]
+name = "Proto declaration"
+input = 'string password = 2;'
+[[cases]]
+name = "Unquoted snake reference"
+input = 'token: request_data_v2'
+[[cases]]
+name = "Unquoted camel reference"
+input = 'secret = globalState'
+[[cases]]
+name = "Unquoted constant reference"
+input = 'config_key = VAULT_BACKEND_PATH'
+[[cases]]
+name = "Unquoted function reference"
+input = 'password = config.db_password.clone()'
+[[cases]]
+name = "Shell directory reference"
+input = 'docker run -v $PWD:/app example'
+[[cases]]
+name = "Loopback address"
+input = '127.0.0.1'
+[[cases]]
+name = "Example email"
+input = 'example@example.com'
+[[cases]]
+name = "Base64-like identifier"
+input = 'PaymentMethodServiceEligibilityRequest'

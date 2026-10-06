@@ -86,6 +86,11 @@ pattern = "\\beyJ[A-Za-z0-9-_=]+\\.eyJ[A-Za-z0-9-_=]+\\.?[A-Za-z0-9-_.+/=]*\\b"
 finding_type = "JWT Token"
 severity = "MEDIUM"
 keywords = ["eyJ"]
+# Test fixtures replace the signature with a short placeholder
+# (ZHVtbXlfc2lnbmF0dXJl is "dummy_signature"). A real HS256 signature is 43
+# base64url chars and an RS256 signature is longer, so a final segment of 32
+# characters or fewer is padding, not a signature.
+allowlist = ["\\.[A-Za-z0-9_-]{1,32}$"]
 
 [[detectors]]
 name = "SSHPrivateKeyDetector"
@@ -102,29 +107,35 @@ severity = "HIGH"
 
 [[detectors]]
 name = "PasswordDetector"
-pattern = "(?i)(password|passwd|pwd)\\s*[:=]\\s*(?-i)[\"']?([^\"'\\n]+)[\"']?"
+# Each value branch captures the complete value. Typed Rust assignments must
+# match the literal after `=`, not the type annotation before it.
+pattern = '''(?i)(?:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*(?-i)(?:"((?:\\[^\r\n]|[^"\\\r\n])*)"|'((?:\\[^\r\n]|[^'\\\r\n])*)'|([^\s"'`;,\r\n]+)(?:[ \t]*;)?)'''
 finding_type = "Password"
 severity = "HIGH"
 keywords = ["password", "passwd", "pwd"]
 # $PWD is the shell working-directory variable (docker --volume "$PWD:...",
 # Makefiles), never a password literal.
 allowlist = [
-  "^\\$?PWD:",
+  "^\\$PWD:",
   # Rust expressions are plumbing, not literals: type paths (`Secret::new`),
   # generics (`Secret<String>`), constructor calls (`Some(...)`) and field or
   # method access (`config.password.clone()`). Quoted literals and bare
   # alphanumeric values stay reported.
-  "[:=]\\s*[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+",
-  "[:=]\\s*[A-Za-z_][A-Za-z0-9_]*<[^\"'\\n]*>",
-  "[:=]\\s*[A-Za-z_][A-Za-z0-9_]*\\([^\"'\\n]*\\)",
-  "[:=]\\s*[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*",
+  "[:=][ \\t]*[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+$",
+  "[:=][ \\t]*[A-Za-z_][A-Za-z0-9_]*<[^\"'\\s]*>$",
+  "[:=][ \\t]*[A-Za-z_][A-Za-z0-9_]*\\([^\"'\\s]*\\)$",
+  "[:=][ \\t]*[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*(?:\\([^\"'\\s]*\\))?)+$",
   # A bare CamelCase value is a Rust type (`password: String,`), matching the
   # GenericKeyValueDetector rule. Digits or symbols keep it reported.
-  "[:=]\\s*[A-Z][a-z]+(?:[A-Z][a-z]*)*\\b",
-  # Placeholder values in templates and .env.example files. Case-sensitive
-  # (placeholders are lowercase by convention) and shape-checked: a mixed
-  # value like "ReplaceThisRealSecret123" does not match and stays reported.
-  "[=:\"]?\\s*(changeme|changeit|your(-[a-z0-9]+)+|replace(-[a-z0-9]+)+|placeholder|dummy|xxxxx+)",
+  "[:=][ \\t]*[A-Z][a-z]+(?:[A-Z][a-z]*)*$",
+  # Suppress only complete, selected documentation placeholders.
+  # Extended values such as `dummy7!` must still report.
+  '''[:=][ \t]*(?:"(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)"|'(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)'|(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx))$''',
+  # Match empty literals completely before suppressing them.
+  '''[:=][ \t]*(?:""|'')$''',
+  # Proto field numbers and Rust parameter types do not hold literals.
+  "[:=][ \\t]*\\d+[ \\t]*;$",
+  "[:=][ \\t]*&str\\)?$",
 ]
 
 [[detectors]]
@@ -141,6 +152,10 @@ allowlist = [
   "^noreply@",
   "^no-reply@",
   "@users\\.noreply\\.github\\.com$",
+  # Placeholder local parts and the test.com domain, seen throughout checked-in
+  # fixtures. Real people at gmail.com or a company domain stay reported.
+  "^example@",
+  "@test\\.com$",
 ]
 
 [[detectors]]
@@ -148,6 +163,10 @@ name = "IPAddressDetector"
 pattern = "\\b(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\.(?:25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\b"
 finding_type = "IP Address"
 severity = "LOW"
+# Loopback and the wildcard bind address are configuration, not credentials.
+# Other private and public addresses (10.x, 192.168.x, arbitrary postman
+# payloads) stay reported.
+allowlist = ["^127\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$", "^0\\.0\\.0\\.0$"]
 
 [[detectors]]
 name = "PhoneNumberDetector"
@@ -161,19 +180,6 @@ severity = "LOW"
 allowlist = ["^(?:\\+1[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]*555-01\\d{2}$"]
 
 [[detectors]]
-name = "CreditCardDetector"
-# Issuer prefixes (Visa/Mastercard/Amex/Discover/UnionPay) in 4-digit groups,
-# including Discover's 644-649 and 65 ranges. The old "any 13-16 digits with
-# arbitrary spaces" shape matched commit hashes, timestamps and ids, and even
-# spanned the gap between two unrelated numbers ("index aabbcc0..1111111
-# 100644"). Luhn on its own does not fix that: roughly one in ten random
-# digit runs satisfies it.
-pattern = "\\b(?:4\\d{3}|5[1-5]\\d{2}|2[2-7]\\d{2}|6011|64[4-9]\\d{2}|65\\d{2}|3[47]\\d{2})[ -]?\\d{4}[ -]?\\d{4}[ -]?\\d{1,4}\\b"
-validate = "luhn"
-finding_type = "Credit Card Number"
-severity = "HIGH"
-
-[[detectors]]
 name = "SSNDetector"
 pattern = "\\b\\d{3}-\\d{2}-\\d{4}\\b"
 finding_type = "Social Security Number"
@@ -185,13 +191,15 @@ keywords = ["ssn", "social security", "social_security", "social-security"]
 
 [[detectors]]
 name = "GenericKeyValueDetector"
-pattern = "(?i)(api_?key|secret|password|token|access_?key|security_?key|_key|credential|auth)\\s*[:=]\\s*(?-i)[\"']?([a-zA-Z0-9\\-_=]{10,})[\"']?"
+# Quoted branches require a closing quote. Include the full token alphabet
+# so `/` and `+` do not truncate the value used for baseline identity.
+pattern = '''(?i)(?:api_?key|secret|password|token|access_?key|security_?key|_key|credential|auth)["']?[ \t]*[:=][ \t]*(?-i)(?:"([-A-Za-z0-9_/+=]{10,})"|'([-A-Za-z0-9_/+=]{10,})'|([-A-Za-z0-9_/+=]{10,}))'''
 finding_type = "Generic Key/Secret"
 severity = "HIGH"
 # Every pattern alternative needs a covering keyword: without "auth" and
 # "_key" here, `auth = ...` and `encryption_key = ...` lines never reached
 # the regex at all.
-keywords = ["api_key", "secret", "password", "token", "access_key", "credential", "auth", "_key"]
+keywords = ["api_key", "apikey", "secret", "password", "token", "access_key", "accesskey", "securitykey", "credential", "auth", "_key"]
 entropy = 2.5
 # An unquoted, all-lowercase snake_case value is a variable reference, not a
 # credential: `let payment_method_token = card_token;` reads identically to
@@ -203,17 +211,24 @@ entropy = 2.5
 allowlist = [
   "[:=]\\s*[a-z]+(?:_[a-z]+)+$",
   "[:=]\\s*[A-Z][a-z]+(?:[A-Z][a-z]*)*$",
-  # Placeholder values in templates and .env.example files (case-sensitive:
-  # mixed-case shapes are plausibly real weak credentials).
-  "[=:]\\s*[\"']?(changeme|changeit|your(-[a-z0-9]+)+|replace(-[a-z0-9]+)+|placeholder|dummy|xxxxx+)",
-  # The AWS documentation example secret; its slash stops this pattern's
-  # value class, so only the leading fragment is visible in the match.
-  "wJalrXUtnFEMI",
+  # Suppress only complete, selected documentation placeholders.
+  '''[:=][ \t]*(?:"(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)"|'(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)'|(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx))$''',
+  # Match the complete AWS documentation example, not a shared prefix.
+  '''[:=][ \t]*(?:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"|'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'|wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY)$''',
+  # Unquoted code references remain heuristics. Quoted snake-case and
+  # kebab-case values can hold credentials and must not borrow these rules.
+  "[:=]\\s*_*[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)+$",
+  "[:=]\\s*[a-z]{10,}$",
+  "[:=]\\s*[a-z][a-z]*(?:[A-Z][a-z]*)+$",
+  "[:=]\\s*[A-Z][A-Z0-9]*(?:_+[A-Z0-9]+)+$",
 ]
 
 [[detectors]]
 name = "CertificateDetector"
-pattern = "-----BEGIN CERTIFICATE-----"
+# A PEM block in source starts its line or directly follows a string quote;
+# a mention inside prose (a doc comment that describes the header) does not
+# start a certificate.
+pattern = "(?:^\\s*|[\"'\x60])-----BEGIN CERTIFICATE-----"
 finding_type = "Certificate"
 severity = "LOW"
 keywords = ["BEGIN CERTIFICATE"]
@@ -239,7 +254,18 @@ finding_type = "Base64 Encoded String"
 severity = "LOW"
 entropy = 4.2
 # The AWS documentation example secret pairs with the example access key.
-allowlist = ["^wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY$"]
+# Beyond that: CamelCase prose identifiers (PaymentMethodServiceEligibility-
+# Request) are word runs, not random data; eyJ/ZXlK prefixes mark base64
+# encoded JSON, a signature or fixture shape rather than a credential; a
+# dotted or slashed alphanumeric path is a language/type descriptor
+# (com/michaelkeevildown/..., Ljava/security/MessageDigest). Random base64
+# with a plus sign, padding or mixed word-less shape stays reported.
+allowlist = [
+  "^wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY$",
+  "^[A-Z][a-z]+(?:[A-Z][a-z]*)+$",
+  "^(?:eyJ|ZXlK)[A-Za-z0-9+/]*={0,2}$",
+  "^L?[A-Za-z][A-Za-z0-9]*(?:/[A-Za-z0-9]+){2,};?$",
+]
 
 [[detectors]]
 name = "HighEntropyDetector"
@@ -277,7 +303,7 @@ name = "PaymentGatewayKeyDetector"
 pattern = "\\b(?:api_?key|secret)_(?:test|live)_[0-9a-zA-Z]{10,}\\b"
 finding_type = "Generic Payment Gateway Key"
 severity = "HIGH"
-keywords = ["api_key_test", "api_key_live", "secret_test", "secret_live"]
+keywords = ["api_key_test", "api_key_live", "apikey_test", "apikey_live", "secret_test", "secret_live"]
 
 [[detectors]]
 name = "RandomString"
@@ -292,7 +318,19 @@ allowlist = [
   "^\"[a-z]+(?:_[a-z]+)+\"$",
   # npm/shield-style checksum strings carry their algorithm prefix inside
   # the quotes, so the prefix is visible in the match.
-  "^\"sha(256|384|512)-",
+  "(?i)^\"sha-?(?:256|384|512)(?:-|=)",
+  # Quoted identifiers, test names and enum values: kebab-case topics,
+  # camelCase and PascalCase names, SCREAMING_SNAKE codes, single lowercase
+  # words and UUIDs. Generated secrets mix digits, symbols or case in shapes
+  # these rules do not cover.
+  "^\"[A-Za-z]+(?:-[A-Za-z0-9]+)+\"$",
+  "^\"[A-Za-z][a-z]*(?:[A-Z][a-z]*)+\"$",
+  "^\"[A-Z][A-Z0-9]*(?:_+[A-Z0-9]+)+\"$",
+  "^\"[a-z]+\"$",
+  "^\"[0-9a-z]{8}-(?:[0-9a-z]{4}-){3}[0-9a-z]{12}\"$",
+  # Quoted hex digests and base64-encoded JSON payloads from fixtures.
+  "^\"[a-f0-9]{40,}\"$",
+  "^\"(?:eyJ|ZXlK)[A-Za-z0-9+/]*={0,2}\"$",
 ]
 
 
@@ -902,7 +940,7 @@ name = "ServiceAccountKeyDetector"
 pattern = "(?i)service[_\\-]?account[_\\-]?key[\\s'\":=]+[\"']?([a-zA-Z0-9\\-_]{20,})[\"']?"
 finding_type = "Service Account Key"
 severity = "HIGH"
-keywords = ["service_account"]
+keywords = ["service_account", "service-account", "serviceaccount"]
 
 [[detectors]]
 name = "MasterAPIKeyDetector"

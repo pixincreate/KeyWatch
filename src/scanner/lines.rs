@@ -1,12 +1,12 @@
 //! Per-line and chunk scanning: the keyword prefilter, the detector accept
 //! chain, and the stream/chunk drivers shared by every scan mode.
 
+use super::limits::{FindingBudget, MAX_INPUT_BYTES, MAX_LINE_BYTES, read_bounded};
 use crate::detector::Detector;
 use crate::report::Finding;
 use crate::scanner::ScannerError;
 use aho_corasick::AhoCorasick;
 use regex::Regex;
-use std::collections::HashSet;
 use std::io::BufRead;
 
 const INLINE_SUPPRESS: &str = "keywatch:ignore";
@@ -28,13 +28,34 @@ pub(super) fn read_raw_line<ReaderType: BufRead>(
     raw_line: &mut Vec<u8>,
 ) -> Result<bool, ScannerError> {
     raw_line.clear();
-    let bytes_read =
-        reader
-            .read_until(b'\n', raw_line)
+    let mut bytes_read = 0;
+    loop {
+        let available = reader
+            .fill_buf()
             .map_err(|source| ScannerError::ReadStream {
                 path: path.to_string(),
                 source,
             })?;
+        if available.is_empty() {
+            break;
+        }
+        let take = available
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map_or(available.len(), |position| position + 1);
+        if take > MAX_LINE_BYTES.saturating_sub(raw_line.len()) {
+            return Err(ScannerError::ResourceLimit {
+                reason: format!("Line exceeds {MAX_LINE_BYTES} bytes: {path}"),
+            });
+        }
+        let finished = available[take - 1] == b'\n';
+        raw_line.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        bytes_read += take;
+        if finished {
+            break;
+        }
+    }
     if bytes_read == 0 {
         return Ok(false);
     }
@@ -201,6 +222,7 @@ impl<'detectors> LineScanContext<'detectors> {
 pub(super) struct LineScratch {
     lowered_line: String,
     candidates: Vec<bool>,
+    pub(super) budget: FindingBudget,
 }
 pub(super) fn scan_line_detectors(
     line: &str,
@@ -209,14 +231,14 @@ pub(super) fn scan_line_detectors(
     context: &LineScanContext<'_>,
     scratch: &mut LineScratch,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), ScannerError> {
     to_lowercase_into(line, &mut scratch.lowered_line);
     if is_inline_suppressed(&scratch.lowered_line) {
-        return;
+        return Ok(());
     }
 
-    run_line_detectors(line, line_number, path, context, scratch, findings);
-    scan_decoded_base64(line, line_number, path, context, scratch, findings);
+    run_line_detectors(line, line_number, path, context, scratch, findings)?;
+    scan_decoded_base64(line, line_number, path, context, scratch, findings)
 }
 
 /// Decodes base64 runs on the line and scans the decoded text once (no
@@ -231,7 +253,7 @@ fn scan_decoded_base64(
     context: &LineScanContext<'_>,
     scratch: &mut LineScratch,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), ScannerError> {
     /// Shorter decoded payloads cannot hold a credential worth reporting.
     const MIN_DECODED_LENGTH: usize = 16;
 
@@ -255,9 +277,23 @@ fn scan_decoded_base64(
             continue;
         };
         for decoded_line in text.lines() {
-            run_line_detectors(decoded_line, line_number, path, context, scratch, findings);
+            run_line_detectors(decoded_line, line_number, path, context, scratch, findings)?;
+        }
+        let first_multiline = findings.len();
+        scan_multiline_chunk(
+            &text,
+            line_number - 1,
+            path,
+            context.line_detectors,
+            findings,
+            &mut scratch.budget,
+            false,
+        )?;
+        for finding in &mut findings[first_multiline..] {
+            finding.line_number = line_number;
         }
     }
+    Ok(())
 }
 
 /// The detector matching core, shared by the raw line and its decoded
@@ -270,7 +306,7 @@ fn run_line_detectors(
     context: &LineScanContext<'_>,
     scratch: &mut LineScratch,
     findings: &mut Vec<Finding>,
-) {
+) -> Result<(), ScannerError> {
     to_lowercase_into(line, &mut scratch.lowered_line);
     context
         .prefilter
@@ -294,6 +330,9 @@ fn run_line_detectors(
                 continue;
             };
             if detector.accepts_captures(&captures) {
+                scratch.budget.reserve(
+                    path.len() + matched.len() + detector.finding_type.len() + detector.name.len(),
+                )?;
                 findings.push(Finding {
                     file_path: path.to_string(),
                     line_number,
@@ -305,6 +344,7 @@ fn run_line_detectors(
             }
         }
     }
+    Ok(())
 }
 
 pub(super) fn scan_multiline_chunk(
@@ -313,39 +353,57 @@ pub(super) fn scan_multiline_chunk(
     path: &str,
     multiline_detectors: &[&Detector],
     findings: &mut Vec<Finding>,
-    reported: &mut HashSet<(usize, usize, String)>,
-) {
+    budget: &mut FindingBudget,
+    respect_suppression: bool,
+) -> Result<(), ScannerError> {
     if multiline_detectors.is_empty() {
-        return;
+        return Ok(());
     }
     let lowered_chunk = chunk.to_lowercase();
     for detector in multiline_detectors {
+        let mut previous_start = 0;
+        let mut line_in_chunk = 1;
+        let mut line_start = 0;
         if detector.has_keywords(&lowered_chunk) {
             for captures in detector.regex.captures_iter(chunk) {
                 let Some(matched) = captures.get(0) else {
                     continue;
                 };
-                let line_in_chunk = chunk[..matched.start()].matches('\n').count() + 1;
-                let line_start = chunk[..matched.start()]
-                    .rfind('\n')
-                    .map(|i| i + 1)
-                    .unwrap_or(0);
-                // Start position identifies a match exactly; sliding windows
-                // re-scan their carry, so the same match can be seen twice.
-                if !reported.insert((
-                    line_offset + line_in_chunk,
-                    matched.start() - line_start,
-                    detector.name.clone(),
-                )) {
+                if !matched.as_str().contains('\n') {
                     continue;
                 }
-                let line_content = chunk
-                    .lines()
-                    .nth(line_in_chunk.saturating_sub(1))
-                    .unwrap_or_default();
-                let line_is_suppressed = is_inline_suppressed(&line_content.to_lowercase());
+                let trimmed = matched.as_str().trim_end_matches(['\r', '\n']);
+                if !trimmed.contains('\n')
+                    && detector
+                        .regex
+                        .find(trimmed)
+                        .is_some_and(|found| found.as_str() == trimmed)
+                {
+                    // A trailing line delimiter does not create another
+                    // credential when the line-local pass covers the match.
+                    continue;
+                }
+                if !detector.accepts_captures(&captures) {
+                    continue;
+                }
+                // Matches occur in source order. Advance once through each
+                // intervening prefix instead of recounting the whole input.
+                for (offset, _) in chunk[previous_start..matched.start()].match_indices('\n') {
+                    line_in_chunk += 1;
+                    line_start = previous_start + offset + 1;
+                }
+                previous_start = matched.start();
+                let line_content = chunk[line_start..].split('\n').next().unwrap_or_default();
+                let line_is_suppressed =
+                    respect_suppression && is_inline_suppressed(&line_content.to_lowercase());
 
-                if !line_is_suppressed && detector.accepts_captures(&captures) {
+                if !line_is_suppressed {
+                    budget.reserve(
+                        path.len()
+                            + matched.len()
+                            + detector.finding_type.len()
+                            + detector.name.len(),
+                    )?;
                     findings.push(Finding {
                         file_path: path.to_string(),
                         line_number: line_offset + line_in_chunk,
@@ -358,16 +416,17 @@ pub(super) fn scan_multiline_chunk(
             }
         }
     }
+    Ok(())
 }
 pub(super) fn scan_content(
     content: &str,
     path: &str,
     multiline_detectors: &[&Detector],
     context: &LineScanContext<'_>,
-) -> (Vec<Finding>, usize) {
+) -> Result<(Vec<Finding>, usize), ScannerError> {
     let mut findings = Vec::new();
     let mut total_lines = 0;
-    let mut reported = HashSet::new();
+    let mut scratch = LineScratch::default();
 
     scan_multiline_chunk(
         content,
@@ -375,11 +434,16 @@ pub(super) fn scan_content(
         path,
         multiline_detectors,
         &mut findings,
-        &mut reported,
-    );
+        &mut scratch.budget,
+        true,
+    )?;
 
-    let mut scratch = LineScratch::default();
     for (line_idx, line) in content.lines().enumerate() {
+        if line.len() > MAX_LINE_BYTES {
+            return Err(ScannerError::ResourceLimit {
+                reason: format!("Line exceeds {MAX_LINE_BYTES} bytes: {path}"),
+            });
+        }
         total_lines += 1;
         scan_line_detectors(
             line,
@@ -388,13 +452,11 @@ pub(super) fn scan_content(
             context,
             &mut scratch,
             &mut findings,
-        );
+        )?;
     }
 
-    (findings, total_lines)
+    Ok((findings, total_lines))
 }
-const CHUNK_SIZE: usize = 1000;
-const OVERLAP_LINES: usize = 50;
 
 /// How a streaming scan treats NUL bytes: stdin is scanned through, while
 /// a filesystem file containing one is binary and stops the scan.
@@ -412,80 +474,27 @@ pub(super) struct StreamScan {
     pub(super) binary: bool,
 }
 
-/// Shared streaming core for stdin and file mode. Reads line by line so
-/// memory stays bounded regardless of input size, decodes lossily so one
-/// invalid byte cannot abort the scan, and runs multiline detectors over
-/// sliding windows whose carry keeps boundary-crossing secrets whole.
-///
-/// Multiline matches are deduplicated by start position: a secret entirely
-/// inside the carry would otherwise be reported by both adjacent windows.
-/// Matches longer than OVERLAP_LINES that cross a window boundary are still
-/// missed - inherent to a fixed window.
+/// Reads a bounded logical input and checks complete cross-line matches.
 fn scan_lines<R: BufRead>(
     reader: &mut R,
     path: &str,
     multiline_detectors: &[&Detector],
     context: &LineScanContext,
     binary_handling: BinaryHandling,
+    max_bytes: u64,
 ) -> Result<StreamScan, ScannerError> {
-    let mut findings = Vec::new();
-    let mut reported: HashSet<(usize, usize, String)> = HashSet::new();
-    let mut total_lines = 0;
-    let mut buffer: Vec<String> = Vec::with_capacity(CHUNK_SIZE + OVERLAP_LINES);
-    // Lines preceding buffer[0]: scan_multiline_chunk adds its 1-based
-    // in-window line index to this offset.
-    let mut lines_before_window = 0;
-    let mut scratch = LineScratch::default();
-    let mut binary = false;
-    let mut raw_line: Vec<u8> = Vec::new();
-
-    loop {
-        if !read_raw_line(reader, path, &mut raw_line)? {
-            break;
-        }
-        if matches!(binary_handling, BinaryHandling::StopAtNul) && raw_line.contains(&0) {
-            binary = true;
-            break;
-        }
-        total_lines += 1;
-        let line = String::from_utf8_lossy(&raw_line).into_owned();
-        scan_line_detectors(
-            &line,
-            total_lines,
-            path,
-            context,
-            &mut scratch,
-            &mut findings,
-        );
-        buffer.push(line);
-
-        if buffer.len() >= CHUNK_SIZE + OVERLAP_LINES {
-            let chunk = buffer.join("\n");
-            scan_multiline_chunk(
-                &chunk,
-                lines_before_window,
-                path,
-                multiline_detectors,
-                &mut findings,
-                &mut reported,
-            );
-            lines_before_window += buffer.len() - OVERLAP_LINES;
-            buffer.drain(..buffer.len() - OVERLAP_LINES);
-        }
-    }
-
-    if !binary && !buffer.is_empty() {
-        let chunk = buffer.join("\n");
-        scan_multiline_chunk(
-            &chunk,
-            lines_before_window,
+    let bytes = read_bounded(reader, path, max_bytes)?;
+    let binary = matches!(binary_handling, BinaryHandling::StopAtNul) && bytes.contains(&0);
+    let (findings, total_lines) = if binary {
+        (Vec::new(), 0)
+    } else {
+        scan_content(
+            &String::from_utf8_lossy(&bytes),
             path,
             multiline_detectors,
-            &mut findings,
-            &mut reported,
-        );
-    }
-
+            context,
+        )?
+    };
     Ok(StreamScan {
         findings,
         total_lines,
@@ -506,6 +515,7 @@ pub(super) fn scan_stream<ReaderType: BufRead>(
         multiline_detectors,
         &context,
         BinaryHandling::ScanThrough,
+        MAX_INPUT_BYTES,
     )?;
     Ok((scanned.findings, scanned.total_lines))
 }
@@ -518,6 +528,7 @@ pub(super) fn scan_file_stream<ReaderType: BufRead>(
     path: &str,
     multiline_detectors: &[&Detector],
     context: &LineScanContext,
+    max_bytes: u64,
 ) -> Result<StreamScan, ScannerError> {
     scan_lines(
         reader,
@@ -525,6 +536,7 @@ pub(super) fn scan_file_stream<ReaderType: BufRead>(
         multiline_detectors,
         context,
         BinaryHandling::StopAtNul,
+        max_bytes,
     )
 }
 

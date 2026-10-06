@@ -3,6 +3,9 @@
 KeyWatch scans files, directories, and git repositories for secrets such as API keys, tokens, passwords, and private keys.
 It runs as a command-line tool, as a git hook, as a GitHub Action, and as a container image.
 
+See `CHANGELOG.md` for differences between this source tree and published releases.
+Do not assume an installed binary or hook contains unreleased changes.
+
 ## Install
 
 Install with cargo:
@@ -64,8 +67,8 @@ Reports never contain the full matched text unless you pass `--show-secrets`.
 | Option                    | Purpose                                                                                                           |
 | ------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | `--exclude <patterns>`    | Skip paths that match these comma-separated glob patterns                                                         |
-| `--exit-mode <mode>`      | `strict` fails on any finding (default), `critical` fails only on HIGH or CRITICAL findings, `always` never fails |
-| `--fail-on-unscannable`   | Fail when a file or directory could not be read; applies in `strict` exit mode and not with `--update-baseline`   |
+| `--exit-mode <mode>`      | Set the finding policy: `strict` fails on any finding, `critical` fails on HIGH or CRITICAL findings, `always` ignores findings |
+| `--fail-on-unscannable`   | Fail on incomplete coverage in every exit mode; incomplete scans cannot update baselines |
 | `--baseline <path>`       | Use a specific baseline file                                                                                      |
 | `--no-baseline-discovery` | Do not look for a baseline file automatically                                                                     |
 | `--update-baseline`       | Record the current findings in the baseline instead of reporting them                                             |
@@ -75,31 +78,48 @@ Reports never contain the full matched text unless you pass `--show-secrets`.
 | `--no-repo-config`        | Do not look for `.keywatch.toml` in the scanned tree; an explicit `--config` still loads                          |
 | `--no-config-discovery`   | Shorthand for `--trusted-detectors` plus `--no-repo-config`; the installed hooks pass it                          |
 | `--show-secrets`          | Include the full matched text in reports                                                                          |
-| `--max-file-size <MB>`    | Skip files larger than this size and report them as unscannable                                                   |
+| `--max-file-size <MB>`    | Lower the 16 MiB input ceiling; larger inputs are unscannable |
+| `--scan-lockfiles`       | Include lockfiles excluded by the default noise policy |
 
 Notes:
 
-- Lock files such as `Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`, and `yarn.lock` are always skipped.
-  They contain checksums, not credentials.
+- Lockfiles such as `Cargo.lock`, `package-lock.json`, `pnpm-lock.yaml`, and `yarn.lock` are skipped by default to reduce checksum findings.
+  Lockfiles can contain credentials; use `--scan-lockfiles` when your policy requires them.
 - `--staged` reads the content you staged with `git add`, not the files on disk.
   A secret that is staged but already removed from the working copy is still found.
   A secret whose lines were staged in separate commits can span change hunks the diff never shows together; run `key-watch scan .` on the tree to catch that case.
 - `--git-history` scans every branch and tag.
   Use `--rev-range` to scan only a range of commits.
+  Shallow history produces incomplete coverage; fetch complete history before using a history gate.
+  KeyWatch does not fetch history automatically.
+  Text that Git renders as binary is scanned from its committed blobs, including deleted versions.
 - A scan path that does not exist, is a symbolic link, or cannot be read is an error.
   The scan never reports a clean result for input it could not read.
+  Recursive scans do not follow symbolic links; skipped links and unreadable entries produce incomplete coverage unless you exclude their paths.
 - Files that start with a UTF-16 byte-order mark are decoded and scanned.
   Other files that contain NUL bytes are treated as binary and reported as unscannable.
 - Base64 runs of 24 or more characters are decoded, and the decoded text is scanned as well.
   An encoded credential is reported at the line that contains it.
 - GitHub tokens are checked against their built-in checksum, so lookalike strings do not appear in results.
 
+JSON reports separate `finding_status` from `coverage`.
+The combined `status` is `INCOMPLETE` when requested inputs cannot be scanned completely, even when no finding exists.
+Reports include the scanner version and a fingerprint of the effective detector definitions.
+This fingerprint identifies rules; it does not authenticate the binary or describe every exclusion and suppression.
+Report and baseline files use atomic replacement and reject destination symlinks or unsafe immediate parent directories.
+Use directories whose parents and ancestors you control.
+
+Each logical input has a 16 MiB byte ceiling and a 1 MiB line ceiling.
+Scans also limit path records, finding counts, and retained finding text.
+Exceeding a limit produces incomplete coverage or a runtime error, not a clean report.
+See [Security and validation](docs/security-and-validation.md) for limits, measured workloads, and remaining risks.
+
 ### Exit codes
 
 | Code | Meaning                                                           |
 | ---- | ----------------------------------------------------------------- |
-| 0    | No secrets found, or `--exit-mode always`                         |
-| 1    | Secrets found, or an unreadable file with `--fail-on-unscannable` |
+| 0    | Finding policy passes and no explicit coverage failure applies |
+| 1    | Finding policy fails, or coverage is incomplete with `--fail-on-unscannable` |
 | 2    | Invalid input, configuration error, or runtime error              |
 
 ## Git hooks
@@ -111,6 +131,7 @@ KeyWatch installs two git hooks:
   Findings in lines you did not change never block a commit.
 - The **pre-push** hook scans the commits you are about to push.
   It runs in `critical` exit mode, so HIGH and CRITICAL findings block the push; MEDIUM and LOW findings are reported but do not block.
+  Incomplete coverage also blocks the push.
   Uncommitted files never block a push.
 
 Install and remove hooks inside a repository:
@@ -144,7 +165,7 @@ key-watch hook uninstall pre-commit --global
 - Hooks respect a committed baseline file and `keywatch:ignore` markers.
 - KeyWatch refuses to overwrite or remove a hook file it did not install.
 - The first push of a branch scans the full history of that branch, because every commit on it is new to the remote.
-  If that push reports old findings, record them in the baseline first.
+  Review old findings before accepting any in a baseline.
 - A global install sets `core.hooksPath` in your git configuration.
   Git then ignores each repository's own `.git/hooks` scripts.
   To keep a repository's own hooks instead, run `git config core.hooksPath .git/hooks` inside that repository.
@@ -153,7 +174,10 @@ key-watch hook uninstall pre-commit --global
 ## Baselines
 
 A baseline records findings you have reviewed and accepted, so later scans report only new findings.
-The baseline file stores fingerprints of the findings, never the secrets themselves, and is safe to commit.
+The baseline file stores unsalted hashes of matched text, not the plaintext secrets.
+An attacker can guess low-entropy values offline from these hashes.
+Review this disclosure risk before committing a baseline.
+Protect baseline changes and inline ignore markers through code review.
 
 ```sh
 # Record the current findings
@@ -165,6 +189,12 @@ key-watch scan .
 
 KeyWatch finds a committed `.keywatch-baseline.json` automatically.
 You do not need to pass `--baseline` on every scan.
+
+Detector corrections can change the matched text used for a fingerprint without changing the baseline file format.
+An entry created from a truncated match does not suppress a corrected, complete match.
+Review findings that reappear after an upgrade before you run `--update-baseline`.
+Do not accept them only to restore a clean scan.
+An incomplete scan cannot create, merge, or prune a baseline.
 
 ## Ignore a single line
 
@@ -192,6 +222,7 @@ enabled = false
 ```
 
 Unknown keys in the configuration file are rejected, so a misspelled key cannot silently weaken a scan.
+Unknown detector override names and duplicate detector names are also rejected before configuration changes apply.
 
 ## GitHub Action
 
@@ -218,8 +249,10 @@ jobs:
 ```
 
 The Action installs a released KeyWatch binary, verifies its checksum, and writes a JSON report.
+It fails on incomplete coverage, including reports from binaries that only expose unscannable file counts.
 It supports Linux x64 and macOS runners.
 Pin an exact release tag or commit SHA when you need a fixed version.
+Checksums from the same release detect corruption; they do not independently authenticate a compromised release publisher.
 
 | Input       | Default                | Purpose                                                              |
 | ----------- | ---------------------- | -------------------------------------------------------------------- |
@@ -277,11 +310,12 @@ Yellow boxes are external adapters such as git and the installed hook scripts, w
 
 ### Scan pipeline
 
-![KeyWatch scan pipeline](docs/architecture/scan-pipeline.svg)
-
-Path scans collect files and scan them in parallel.
-Stdin and git-based scans stream their input in overlapping chunks.
-`--update-baseline` writes the baseline instead of producing a report.
+Path scans collect files and process batches of four files in parallel.
+Stdin and Git blobs use bounded complete inputs.
+Git text scans inspect added lines and bounded addition hunks.
+Multiline matching scans each complete bounded input or hunk.
+Reports separate findings from coverage status.
+`--update-baseline` writes the baseline instead of producing a report, but rejects incomplete coverage.
 
 ### Detector and configuration trust
 
@@ -289,7 +323,8 @@ Stdin and git-based scans stream their input in overlapping chunks.
 
 Detector rules and repository configuration are separate systems.
 External detector sources take precedence, and the compiled-in rules are the fallback.
-Trusted scans ignore files supplied by the scanned repository but still honor explicit configuration and operator-supplied detector sources.
+Trusted scans use embedded detector rules and still honor configuration explicitly selected with `--config`.
+Repository baselines and inline suppressions remain policy inputs that require review.
 
 ### Core data types
 
@@ -298,7 +333,7 @@ Trusted scans ignore files supplied by the scanned repository but still honor ex
 - **Severity** — `Critical`, `High`, `Medium`, `Low`.
 - **KeywatchConfig** — parsed `.keywatch.toml`: custom rules, per-detector overrides, and exclude patterns.
 - **Baseline** — versioned fingerprint entries that filter out known findings.
-- **ScanMetadata** — files scanned, total lines, and skipped files, reported alongside findings.
+- **ScanMetadata** — files scanned, total lines, skipped files, coverage warnings, and the effective detector fingerprint.
 
 The diagram sources are in `docs/architecture/*.d2`.
 After editing them, run `scripts/render-diagrams.sh render` with D2 v0.7.1, or `scripts/render-diagrams.sh check` to detect stale images.

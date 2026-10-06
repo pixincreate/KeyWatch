@@ -33,6 +33,121 @@ fn run_update_baseline(cwd: &Path, baseline_path: &Path) {
     );
 }
 
+fn check_credential_changes_against_baseline(staged: bool) {
+    let directory = tempdir().expect("create fixture directory");
+    let repository = directory.path().join("repository");
+    fs::create_dir(&repository).expect("create fixture repository");
+    let file = repository.join("credentials.txt");
+    let baseline = directory.path().join("baseline.json");
+    let report = directory.path().join("report.json");
+    if staged {
+        let output = Command::new("git")
+            .arg("--version")
+            .output()
+            .expect("Git is required for staged baseline tests");
+        assert!(output.status.success(), "git --version failed");
+        assert!(
+            Command::new("git")
+                .args(["init", "--quiet"])
+                .current_dir(&repository)
+                .status()
+                .expect("initialize fixture repository")
+                .success()
+        );
+    }
+    let stage_file = || {
+        if staged {
+            assert!(
+                Command::new("git")
+                    .args(["add", "--", "credentials.txt"])
+                    .current_dir(&repository)
+                    .status()
+                    .expect("stage fixture")
+                    .success()
+            );
+        }
+    };
+    let scan = |update: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_key-watch"));
+        command.current_dir(&repository).args([
+            "scan",
+            "credentials.txt",
+            "--no-config-discovery",
+            "--no-baseline-discovery",
+            "--show-secrets",
+            "--baseline",
+        ]);
+        command.arg(&baseline);
+        if staged {
+            command.arg("--staged");
+        }
+        if update {
+            command.arg("--update-baseline");
+        } else {
+            command.arg("--output").arg(&report);
+        }
+        command.output().expect("scan baseline fixture")
+    };
+    for (original, changed, detector_name, expected_match) in [
+        (
+            r#"const DB_PASSWORD: &str = "OldHarmlessFixture783!";"#,
+            r#"const DB_PASSWORD: &str = "DifferentHarmlessFixture629!";"#,
+            "PasswordDetector",
+            r#"PASSWORD: &str = "DifferentHarmlessFixture629!""#,
+        ),
+        (
+            r#"api_key="aB3xK9mQ2pR7/q7""#,
+            r#"api_key="aB3xK9mQ2pR7/z8""#,
+            "GenericKeyValueDetector",
+            r#"api_key="aB3xK9mQ2pR7/z8""#,
+        ),
+    ] {
+        if baseline.exists() {
+            fs::remove_file(&baseline).expect("reset fixture baseline");
+        }
+        fs::write(&file, original).expect("write original credential");
+        stage_file();
+        let output = scan(true);
+        assert!(output.status.success(), "{output:?}");
+
+        for content in [original.to_string(), format!("\n\n{original}")] {
+            fs::write(&file, content).expect("move unchanged credential");
+            stage_file();
+            let output = scan(false);
+            assert!(output.status.success(), "{output:?}");
+            let data: serde_json::Value =
+                serde_json::from_slice(&fs::read(&report).expect("read report"))
+                    .expect("parse report");
+            assert!(data["findings"].as_array().unwrap().is_empty());
+            assert_eq!(data["suppressed_by_baseline"], 1);
+        }
+
+        fs::write(&file, format!("\n\n{changed}")).expect("change credential");
+        stage_file();
+        let output = scan(false);
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        let data: serde_json::Value =
+            serde_json::from_slice(&fs::read(&report).expect("read changed report"))
+                .expect("parse changed report");
+        assert_eq!(data["suppressed_by_baseline"], 0);
+        assert!(data["findings"].as_array().unwrap().iter().any(|finding| {
+            finding["plugin_name"] == detector_name
+                && finding["matched_content"] == expected_match
+                && finding["line_number"] == 3
+        }));
+    }
+}
+
+#[test]
+fn test_filesystem_baseline_suppresses_moved_values_but_not_changed_credentials() {
+    check_credential_changes_against_baseline(false);
+}
+
+#[test]
+fn test_staged_baseline_suppresses_moved_values_but_not_changed_credentials() {
+    check_credential_changes_against_baseline(true);
+}
+
 fn make_finding(file: &str, line: usize, ftype: &str, content: &str, detector: &str) -> Finding {
     Finding {
         file_path: file.to_string(),
