@@ -396,12 +396,14 @@ fn scan_filesystem(
     // Explicit operands are validated strictly: a typo'd path or an operand
     // the scanner will not read (symlink, device, FIFO) must not produce a
     // silent "No secrets found" pass.
+    let mut visited_paths = 0;
     for path_str in &args.paths {
-        if target_paths.len() + unlistable_dirs.len() >= limits::MAX_PATHS {
+        if visited_paths >= limits::MAX_PATHS {
             return Err(ScannerError::ResourceLimit {
                 reason: "Input count exceeds the scan budget".to_string(),
             });
         }
+        visited_paths += 1;
         let path = Path::new(path_str);
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
@@ -444,6 +446,7 @@ fn scan_filesystem(
                 path_str,
                 &mut unlistable_dirs,
                 &exclude_patterns,
+                &mut visited_paths,
             )?;
         } else {
             return Err(ScannerError::ScanPathUnsupported {

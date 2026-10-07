@@ -131,8 +131,11 @@ fn parse_object_size_response(oid: &str, response: &[u8]) -> Result<Option<u64>,
     let fields: Vec<_> = response.trim_end_matches('\n').split(' ').collect();
     match fields.as_slice() {
         [returned_oid, "missing"] if *returned_oid == oid => Ok(None),
-        [returned_oid, "blob", size] if *returned_oid == oid => {
-            size.parse::<u64>().map(Some).map_err(|_| invalid())
+        [returned_oid, kind, size]
+            if *returned_oid == oid && matches!(*kind, "blob" | "commit" | "tree" | "tag") =>
+        {
+            let size = size.parse::<u64>().map_err(|_| invalid())?;
+            Ok((*kind == "blob").then_some(size))
         }
         _ => Err(invalid()),
     }
@@ -777,12 +780,21 @@ mod tests {
                 parse_object_size_response(&oid, missing.as_bytes()).unwrap(),
                 None
             );
+            for kind in ["commit", "tree", "tag"] {
+                let response = format!("{oid} {kind} 166\n");
+                assert_eq!(
+                    parse_object_size_response(&oid, response.as_bytes()).unwrap(),
+                    None
+                );
+            }
             for response in [
                 String::new(),
                 format!("{oid} blob 1"),
                 format!("{oid} blob 18446744073709551616\n"),
                 format!("{} blob 1\n", "3".repeat(40)),
-                format!("{oid} tree 1\n"),
+                format!("{oid} unknown 1\n"),
+                format!("{oid} tree invalid\n"),
+                format!("{} commit 1\n", "3".repeat(40)),
                 format!("{oid} blob 1 extra\n"),
                 format!("{}\n", "1".repeat(256)),
             ] {
@@ -1066,6 +1078,19 @@ mod tests {
             Some("plain.txt")
         );
         assert_eq!(parse_diff_target_path("/dev/null"), None);
+        for (escape, character) in [
+            ('a', '\u{7}'),
+            ('b', '\u{8}'),
+            ('f', '\u{c}'),
+            ('v', '\u{b}'),
+        ] {
+            let quoted = format!("\"b/credentials\\{escape}.env\"");
+            let expected = format!("credentials{character}.env");
+            assert_eq!(
+                parse_diff_target_path(&quoted).as_deref(),
+                Some(expected.as_str())
+            );
+        }
     }
 
     #[test]
@@ -1078,5 +1103,23 @@ mod tests {
             parse_binary_marker_path("/dev/null and b/plain.bin differ"),
             Some(("plain.bin".to_string(), false))
         );
+        for (escape, character) in [
+            ('a', '\u{7}'),
+            ('b', '\u{8}'),
+            ('f', '\u{c}'),
+            ('v', '\u{b}'),
+        ] {
+            let previous = format!("\"a/credentials\\{escape}.env\"");
+            let current = format!("\"b/credentials\\{escape}.env\"");
+            let expected = format!("credentials{character}.env");
+            assert_eq!(
+                parse_binary_marker_path(&format!("{previous} and {current} differ")),
+                Some((expected.clone(), false))
+            );
+            assert_eq!(
+                parse_binary_marker_path(&format!("{previous} and /dev/null differ")),
+                Some((expected, true))
+            );
+        }
     }
 }

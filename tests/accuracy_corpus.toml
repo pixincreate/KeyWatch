@@ -121,3 +121,18 @@ input = 'example@example.com'
 [[cases]]
 name = "Base64-like identifier"
 input = 'PaymentMethodServiceEligibilityRequest'
+[[cases]]
+name = "Public Visa test number"
+input = '{"card_number":"4111111111111111"}'
+[[cases]]
+name = "Public Amex test number"
+input = '{"card_number":"378282246310005"}'
+[[cases]]
+name = "Public Mastercard test number"
+input = '{"card_number":"5555555555554444"}'
+[[cases]]
+name = "Unquoted access token reference"
+input = 'access_token: router_data_v2,'
+[[cases]]
+name = "Base64-like type in a declaration"
+input = 'let response: PaymentMethodServiceEligibilityRequest;'

@@ -110,6 +110,7 @@ pub(super) fn collect_files(
     root: &str,
     unlistable_dirs: &mut Vec<String>,
     exclude_patterns: &[Pattern],
+    visited_paths: &mut usize,
 ) -> Result<(), ScannerError> {
     // A directory that cannot be listed hides everything beneath it; record
     // it as unscannable instead of silently reporting a clean scan, so
@@ -125,12 +126,12 @@ pub(super) fn collect_files(
             }
         };
         for entry in entries {
-            if targets.len() + unlistable_dirs.len() + directories.len() >= super::limits::MAX_PATHS
-            {
+            if *visited_paths >= super::limits::MAX_PATHS {
                 return Err(ScannerError::ResourceLimit {
                     reason: "Filesystem input count exceeds the scan budget".to_string(),
                 });
             }
+            *visited_paths += 1;
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(_) => {

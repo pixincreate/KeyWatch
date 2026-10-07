@@ -443,7 +443,7 @@ fn binary_filenames_with_separator_text_cannot_become_lockfile_exclusions() {
                 && finding["plugin_name"] == "AWSKeyDetector")
     );
 }
-
+#[cfg(unix)]
 #[test]
 fn git_control_character_filenames_preserve_staged_and_deleted_history_paths() {
     let dir = repository();
@@ -694,6 +694,100 @@ fn git_preserves_unterminated_carriage_return_content() {
             "{mode}: {report}"
         );
     }
+}
+
+#[test]
+fn gitlinks_are_unscannable_without_hiding_ordinary_file_findings() {
+    let dir = repository();
+    fs::write(dir.path().join("credentials.env"), "ordinary text\n").unwrap();
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "--quiet", "-m", "Initial fixture"]);
+    let revision = Command::new("git")
+        .current_dir(dir.path())
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .unwrap();
+    assert!(revision.status.success());
+    let oid = String::from_utf8(revision.stdout).unwrap();
+    let credential = ["AKIA", "ABCDEFGHIJKLMNOP"].concat();
+    fs::write(
+        dir.path().join("credentials.env"),
+        format!("AWS_ACCESS_KEY_ID={credential}\n"),
+    )
+    .unwrap();
+    git(dir.path(), &["add", "credentials.env"]);
+    git(
+        dir.path(),
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            "160000",
+            oid.trim(),
+            "dependency",
+        ],
+    );
+    for history in [false, true] {
+        if history {
+            git(dir.path(), &["commit", "--quiet", "-m", "Gitlink fixture"]);
+        }
+        let args = if history {
+            vec![
+                "--git-history",
+                "--rev-range",
+                "HEAD~1..HEAD",
+                "--fail-on-unscannable",
+            ]
+        } else {
+            vec!["--staged", "--fail-on-unscannable"]
+        };
+        let (output, report) = scan(dir.path(), &args);
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        assert_eq!(report["coverage"], "INCOMPLETE");
+        assert_eq!(report["unscannable"]["count"], 1);
+        assert_eq!(report["unscannable"]["sample"][0], "dependency");
+        assert!(
+            report["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|finding| {
+                    finding["file_path"] == "credentials.env"
+                        && finding["plugin_name"] == "AWSKeyDetector"
+                })
+        );
+    }
+}
+
+#[test]
+fn directory_visit_budget_is_shared_across_explicit_roots() {
+    let dir = tempfile::tempdir().unwrap();
+    let roots = [dir.path().join("first"), dir.path().join("second")];
+    for root in &roots {
+        fs::create_dir(root).unwrap();
+        for index in 0..500 {
+            fs::create_dir(root.join(format!("empty-{index}"))).unwrap();
+        }
+        let (output, report) = scan(dir.path(), &[root.to_str().unwrap()]);
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(report["coverage"], "COMPLETE");
+    }
+    let mut command = Command::new(env!("CARGO_BIN_EXE_key-watch"));
+    command.current_dir(dir.path()).args([
+        "scan",
+        "--no-config-discovery",
+        "--no-baseline-discovery",
+        "--exit-mode",
+        "always",
+    ]);
+    for root in &roots {
+        for _ in 0..100 {
+            command.arg(root);
+        }
+    }
+    let output = command.output().unwrap();
+    assert_eq!(output.status.code(), Some(2), "{output:?}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("scan budget"));
 }
 
 #[test]

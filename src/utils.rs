@@ -114,6 +114,11 @@ pub(crate) fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
             Err(error) => return Err(error),
         };
         let result = (|| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                file.set_permissions(fs::Permissions::from_mode(0o600))?;
+            }
             file.write_all(content)?;
             file.sync_all()?;
             drop(file);

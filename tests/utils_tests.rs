@@ -74,3 +74,41 @@ fn test_write_to_file_rejects_world_writable_parent_without_changing_output() {
     assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
     assert_eq!(fs::read_to_string(output).unwrap(), "original content");
 }
+
+#[cfg(unix)]
+#[test]
+fn reports_remain_owner_readable_under_a_restrictive_umask() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+
+    let directory = tempdir().unwrap();
+    let input = directory.path().join("ordinary.txt");
+    fs::write(&input, "ordinary text\n").unwrap();
+    for existing in [false, true] {
+        let report = directory.path().join(format!("report-{existing}.json"));
+        if existing {
+            fs::write(&report, "original content").unwrap();
+        }
+        let output = Command::new("sh")
+            .args(["-c", "umask 0777; exec \"$@\"", "keywatch-umask"])
+            .arg(env!("CARGO_BIN_EXE_key-watch"))
+            .args([
+                "scan",
+                "--no-config-discovery",
+                "--no-baseline-discovery",
+                "--output",
+            ])
+            .arg(&report)
+            .arg(&input)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            fs::metadata(&report).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        let content: serde_json::Value =
+            serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+        assert_eq!(content["status"], "PASS");
+    }
+}

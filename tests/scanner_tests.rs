@@ -3039,3 +3039,38 @@ fn test_json_escaped_private_key_is_detected() {
 
     fs::remove_dir_all(&test_dir).expect("cleanup");
 }
+
+#[test]
+fn test_token_references_are_not_literals_but_quoted_values_report() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let file = directory.path().join("credentials.txt");
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    let reference = "access_token: router_data_v2";
+    fs::write(&file, reference).expect("write reference");
+    let (findings, metadata) = run_scan(&args, None).expect("scan reference");
+    assert!(metadata.is_complete());
+    assert!(
+        findings.is_empty(),
+        "a reference is not a credential: {findings:?}"
+    );
+
+    let (key, value) = reference.split_once(':').expect("reference assignment");
+    let literal = format!("{key}: {:?}", value.trim());
+    fs::write(&file, &literal).expect("write literal");
+    let (findings, metadata) = run_scan(&args, None).expect("scan literal");
+    assert!(metadata.is_complete());
+    let credential = findings
+        .iter()
+        .find(|finding| finding.detector_name == "GenericKeyValueDetector")
+        .expect("a quoted value must not inherit the reference exemption");
+    assert_eq!(
+        credential.matched_content,
+        format!("token: {:?}", value.trim())
+    );
+    assert_eq!(credential.line_number, 1);
+}
