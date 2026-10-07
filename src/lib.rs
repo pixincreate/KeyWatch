@@ -84,6 +84,9 @@ fn run_scan_command(args: &ScanArgs) -> Result<i32, RunCliError> {
     }
 
     if args.update_baseline {
+        if !scan_metadata.is_complete() {
+            return Err(RunCliError::IncompleteBaselineScan);
+        }
         update_baseline(&args, &findings, &mut loaded_baseline, prune, &anchor)?;
         return Ok(0);
     }
@@ -222,13 +225,13 @@ fn emit_scan_result(
     let suppressed = scan_metadata.suppressed_by_baseline;
     let severity_counts = report::get_severity_counts(&findings);
     let mut exit_code = calculate_exit_code(&findings, &args.exit_mode);
-    let unscannable_failure = args.fail_on_unscannable
-        && matches!(args.exit_mode, ExitMode::Strict)
-        && !scan_metadata.unscannable_files.is_empty();
+    let incomplete = !scan_metadata.is_complete();
+    let unscannable_failure = args.fail_on_unscannable && incomplete;
     if unscannable_failure {
         exit_code = 1;
     }
     let unscannable_count = scan_metadata.unscannable_files.len();
+    let coverage_warnings = scan_metadata.coverage_warnings.clone();
     let findings_count = findings.len();
     // Non-verbose runs still need to say WHERE each finding is; a bare count
     // forces a second scan with --verbose to act on anything. Matched text
@@ -273,12 +276,22 @@ fn emit_scan_result(
     for line in &finding_lines {
         emit(line)?;
     }
+    if !args.verbose {
+        for warning in coverage_warnings {
+            emit(&format!("WARNING: {warning}"))?;
+        }
+    }
     let summary = match findings_count {
         _ if args.verbose => report_out.clone(),
         // "No secrets found." next to exit code 1 is contradictory; name the
         // actual failure instead.
-        0 if unscannable_failure => format!(
-            "WARNING: {unscannable_count} file(s) could not be scanned (--fail-on-unscannable)"
+        0 if incomplete => format!(
+            "WARNING: Scan incomplete; {unscannable_count} file(s) could not be scanned{}",
+            if unscannable_failure {
+                " (--fail-on-unscannable)"
+            } else {
+                ""
+            }
         ),
         0 => "No secrets found.".to_string(),
         count => format!(

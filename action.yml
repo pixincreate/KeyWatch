@@ -236,7 +236,7 @@ runs:
         if ((${#extra_args[@]})); then
           for arg in "${extra_args[@]}"; do
             case "$arg" in
-              --verbose|--verbose=*|-v*|--format|--format=*|-f|-f*|--output|--output=*|-o|-o*|--exit-mode|--exit-mode=*|--config|--config=*|--no-config-discovery|--no-config-discovery=*)
+              --verbose|--verbose=*|-v*|--format|--format=*|-f|-f*|--output|--output=*|-o|-o*|--exit-mode|--exit-mode=*|--config|--config=*|--no-config-discovery|--no-config-discovery=*|--fail-on-unscannable|--fail-on-unscannable=*)
                 echo "ERROR: '$arg' is managed by action inputs and cannot be passed through args" >&2
                 exit 1
                 ;;
@@ -255,7 +255,7 @@ runs:
           mkdir -p "$(dirname -- "$report_path")"
         fi
 
-        keywatch_args=(scan --no-config-discovery)
+        keywatch_args=(scan --no-config-discovery --fail-on-unscannable)
         keywatch_args+=(--exit-mode "$INPUT_EXIT_MODE")
         if [ -n "$INPUT_CONFIG" ]; then
           keywatch_args+=(--config "$INPUT_CONFIG")
@@ -288,6 +288,10 @@ runs:
         fi
 
         action_status=$scan_status
+        if [ "$report_status" = "ok" ] && [ "$scan_status" -eq 0 ] && jq -e '.coverage == "INCOMPLETE" or ((.unscannable.count // 0) > 0)' "$report_path" >/dev/null; then
+          echo "ERROR: Scan coverage is incomplete" >&2
+          action_status=1
+        fi
         if [ "$report_status" != "ok" ] && [ "$scan_status" -eq 0 ]; then
           echo "ERROR: KeyWatch exited successfully but the JSON report is $report_status" >&2
           action_status=2

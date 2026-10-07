@@ -38,6 +38,10 @@ pub enum RunCliError {
         "--update-baseline could not resolve a baseline file: pass --baseline <path>, or run where .keywatch-baseline.json can be discovered or created"
     )]
     MissingBaselineForUpdate,
+    #[error(
+        "Cannot update a baseline from an incomplete scan; resolve coverage warnings and unscannable files first"
+    )]
+    IncompleteBaselineScan,
     #[error("Baseline file not found: '{path}' (pass --update-baseline to create it)")]
     BaselineNotFound { path: String },
     #[error(

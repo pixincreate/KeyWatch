@@ -109,6 +109,7 @@ impl fmt::Display for Severity {
 pub enum ScanStatus {
     Pass,
     Fail,
+    Incomplete,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -136,6 +137,14 @@ pub struct ScanMetadata {
     /// separately instead of masquerading as operator-requested skips.
     pub unscannable_files: Vec<String>,
     pub suppressed_by_baseline: usize,
+    pub coverage_warnings: Vec<String>,
+    pub detector_fingerprint: String,
+}
+
+impl ScanMetadata {
+    pub fn is_complete(&self) -> bool {
+        self.unscannable_files.is_empty() && self.coverage_warnings.is_empty()
+    }
 }
 
 /// How many paths an exclusion removed, and a bounded sample of them.
@@ -158,7 +167,12 @@ impl ExcludedSummary {
 
 #[derive(Serialize)]
 pub struct Report {
+    pub scanner_version: &'static str,
+    pub detector_fingerprint: String,
     pub status: ScanStatus,
+    pub finding_status: ScanStatus,
+    pub coverage: &'static str,
+    pub coverage_warnings: Vec<String>,
     pub findings: Vec<Finding>,
     pub files_scanned: usize,
     pub total_lines: usize,
@@ -178,7 +192,15 @@ pub fn create_report(
     scan_time: String,
     show_secrets: bool,
 ) -> Result<String, serde_json::Error> {
-    let status = if findings.is_empty() {
+    let finding_status = if findings.is_empty() {
+        ScanStatus::Pass
+    } else {
+        ScanStatus::Fail
+    };
+    let complete = metadata.is_complete();
+    let status = if !complete {
+        ScanStatus::Incomplete
+    } else if findings.is_empty() {
         ScanStatus::Pass
     } else {
         ScanStatus::Fail
@@ -195,7 +217,12 @@ pub fn create_report(
             .collect()
     };
     let report = Report {
+        scanner_version: env!("CARGO_PKG_VERSION"),
+        detector_fingerprint: metadata.detector_fingerprint,
         status,
+        finding_status,
+        coverage: if complete { "COMPLETE" } else { "INCOMPLETE" },
+        coverage_warnings: metadata.coverage_warnings,
         findings,
         files_scanned: metadata.files_scanned,
         total_lines: metadata.total_lines,

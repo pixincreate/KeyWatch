@@ -54,10 +54,8 @@ pub(super) fn baseline_exclusion(args: &ScanArgs) -> Option<PathBuf> {
     fs::canonicalize(baseline_path).ok()
 }
 
-/// Lockfiles hold checksums and resolved URLs, never credentials, and their
-/// generated hashes otherwise flood reports and baselines with "Random
-/// String" findings. Excluded by basename at any depth in every
-/// filesystem-backed mode, matching gitleaks; `--stdin` is unaffected.
+/// Lockfiles are excluded by default to reduce checksum noise.
+/// They can contain credentials; users can include them explicitly.
 const DEFAULT_EXCLUDED_FILES: [&str; 13] = [
     "bun.lock",
     "bun.lockb",
@@ -111,38 +109,71 @@ pub(super) fn collect_files(
     targets: &mut Vec<ScanTarget>,
     root: &str,
     unlistable_dirs: &mut Vec<String>,
-) {
+    exclude_patterns: &[Pattern],
+    visited_paths: &mut usize,
+) -> Result<(), ScannerError> {
     // A directory that cannot be listed hides everything beneath it; record
     // it as unscannable instead of silently reporting a clean scan, so
     // --fail-on-unscannable catches it.
-    let entries = match fs::read_dir(dir_path) {
-        Ok(entries) => entries,
-        Err(_) => {
-            unlistable_dirs.push(dir_path.to_string());
-            return;
-        }
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
+    let mut directories = vec![PathBuf::from(dir_path)];
+    let roots = [Some(root.to_string())];
+    while let Some(directory) = directories.pop() {
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(_) => {
+                unlistable_dirs.push(directory.display().to_string());
+                continue;
+            }
         };
-        if file_type.is_symlink() {
-            continue;
-        }
-        let path = entry.path();
-        if file_type.is_file() {
-            if let Some(path_str) = path.to_str() {
+        for entry in entries {
+            if *visited_paths >= super::limits::MAX_PATHS {
+                return Err(ScannerError::ResourceLimit {
+                    reason: "Filesystem input count exceeds the scan budget".to_string(),
+                });
+            }
+            *visited_paths += 1;
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => {
+                    unlistable_dirs.push(directory.display().to_string());
+                    continue;
+                }
+            };
+            let path = entry.path();
+            if path.file_name().is_some_and(|name| name == ".git") {
+                continue;
+            }
+            let Some(path_str) = path.to_str() else {
+                unlistable_dirs.push(path.display().to_string());
+                continue;
+            };
+            if matches_exclude_patterns(path_str, &roots, exclude_patterns) {
                 targets.push(ScanTarget {
                     path: path_str.to_string(),
                     root: Some(root.to_string()),
                 });
+                continue;
             }
-        } else if file_type.is_dir() && path.file_name().is_none_or(|name| name != ".git") {
-            if let Some(path_str) = path.to_str() {
-                collect_files(path_str, targets, root, unlistable_dirs);
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => {
+                    unlistable_dirs.push(path_str.to_string());
+                    continue;
+                }
+            };
+            if file_type.is_file() {
+                targets.push(ScanTarget {
+                    path: path_str.to_string(),
+                    root: Some(root.to_string()),
+                });
+            } else if file_type.is_dir() {
+                directories.push(path);
+            } else {
+                unlistable_dirs.push(path_str.to_string());
             }
         }
     }
+    Ok(())
 }
 
 pub(super) fn path_has_git_dir(path: &Path) -> bool {
