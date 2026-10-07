@@ -101,6 +101,30 @@ fn check_credential_changes_against_baseline(staged: bool) {
             "GenericKeyValueDetector",
             r#"api_key="aB3xK9mQ2pR7/z8""#,
         ),
+        (
+            "password: ${{ secrets.FIXTURE_TOKEN }}Literal783!",
+            "password: ${{ secrets.FIXTURE_TOKEN }}Literal629!",
+            "PasswordDetector",
+            "password: ${{ secrets.FIXTURE_TOKEN }}Literal629!",
+        ),
+        (
+            "password: ${{ secrets.FIXTURE_TOKEN }}: dummy",
+            "password: ${{ secrets.FIXTURE_TOKEN }}: placeholder",
+            "PasswordDetector",
+            "password: ${{ secrets.FIXTURE_TOKEN }}: placeholder",
+        ),
+        (
+            "api_key = aB3xK9mQ2pR7=dummy",
+            "api_key = aB3xK9mQ2pR7=placeholder",
+            "GenericKeyValueDetector",
+            "api_key = aB3xK9mQ2pR7=placeholder",
+        ),
+        (
+            "mongodb://user:Fixture783!@localhost:27017",
+            "mongodb://user:Fixture629!@localhost:27017",
+            "MongoDBConnectionStringDetector",
+            "mongodb://user:Fixture629!@localhost:27017",
+        ),
     ] {
         if baseline.exists() {
             fs::remove_file(&baseline).expect("reset fixture baseline");

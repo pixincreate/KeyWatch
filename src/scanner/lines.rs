@@ -18,10 +18,8 @@ fn is_inline_suppressed(lowered_line: &str) -> bool {
     lowered_line.contains(INLINE_SUPPRESS)
 }
 
-/// Reads one line into `raw_line` (cleared first), returning `false` at end
-/// of stream. Strips a trailing `\n` and `\r`. The caller decodes lossily:
-/// one invalid byte must not abort a scan. Shared by the stream and staged
-/// parsers so terminator handling exists in exactly one place.
+/// Reads a bounded patch line. Allows one prefix byte and a CRLF terminator.
+/// The parser checks content length after removing the patch prefix.
 pub(super) fn read_raw_line<ReaderType: BufRead>(
     reader: &mut ReaderType,
     path: &str,
@@ -43,7 +41,7 @@ pub(super) fn read_raw_line<ReaderType: BufRead>(
             .iter()
             .position(|byte| *byte == b'\n')
             .map_or(available.len(), |position| position + 1);
-        if take > MAX_LINE_BYTES.saturating_sub(raw_line.len()) {
+        if take > (MAX_LINE_BYTES + 3).saturating_sub(raw_line.len()) {
             return Err(ScannerError::ResourceLimit {
                 reason: format!("Line exceeds {MAX_LINE_BYTES} bytes: {path}"),
             });
@@ -62,10 +60,16 @@ pub(super) fn read_raw_line<ReaderType: BufRead>(
     if raw_line.last() == Some(&b'\n') {
         raw_line.pop();
     }
-    if raw_line.last() == Some(&b'\r') {
-        raw_line.pop();
-    }
     Ok(true)
+}
+
+pub(super) fn check_line_length(line: &str, path: &str) -> Result<(), ScannerError> {
+    if line.len() > MAX_LINE_BYTES {
+        return Err(ScannerError::ResourceLimit {
+            reason: format!("Line exceeds {MAX_LINE_BYTES} bytes: {path}"),
+        });
+    }
+    Ok(())
 }
 
 /// Lowercases `src` into `buf` without allocating a fresh string per line.
@@ -439,11 +443,7 @@ pub(super) fn scan_content(
     )?;
 
     for (line_idx, line) in content.lines().enumerate() {
-        if line.len() > MAX_LINE_BYTES {
-            return Err(ScannerError::ResourceLimit {
-                reason: format!("Line exceeds {MAX_LINE_BYTES} bytes: {path}"),
-            });
-        }
+        check_line_length(line, path)?;
         total_lines += 1;
         scan_line_detectors(
             line,

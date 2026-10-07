@@ -7,12 +7,136 @@ use crate::report::{Finding, ScanMetadata};
 use crate::scanner::ScannerError;
 use crate::scanner::files::{is_baseline_file, is_default_excluded_file, matches_exclude_patterns};
 use crate::scanner::lines::{
-    LineScanContext, LineScratch, read_raw_line, scan_content, scan_line_detectors,
-    scan_multiline_chunk,
+    LineScanContext, LineScratch, check_line_length, read_raw_line, scan_content,
+    scan_line_detectors, scan_multiline_chunk,
 };
 use glob::Pattern;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
+
+fn drain_git_stderr(stderr: Option<std::process::ChildStderr>) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut buffer = Vec::new();
+        if let Some(mut stderr) = stderr {
+            let mut chunk = [0u8; 8192];
+            while let Ok(count) = stderr.read(&mut chunk) {
+                if count == 0 {
+                    break;
+                }
+                let retained = count.min((64 * 1024usize).saturating_sub(buffer.len()));
+                buffer.extend_from_slice(&chunk[..retained]);
+            }
+        }
+        String::from_utf8_lossy(&buffer).into_owned()
+    })
+}
+
+/// One bounded request-response session for text post-image size checks.
+pub(super) struct GitObjectSizes {
+    child: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
+    stdout: BufReader<std::process::ChildStdout>,
+    stderr: Option<std::thread::JoinHandle<String>>,
+    cache: std::collections::BTreeMap<String, Option<u64>>,
+    finished: bool,
+}
+
+impl GitObjectSizes {
+    pub(super) fn new(repo_root: &Path) -> Result<Self, ScannerError> {
+        let mut child = std::process::Command::new("git")
+            .current_dir(repo_root)
+            .args(["cat-file", "--batch-check"])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|source| ScannerError::RunGitCatFile { source })?;
+        let stdin = child.stdin.take();
+        let stdout = child.stdout.take().expect("piped Git stdout");
+        let stderr = drain_git_stderr(child.stderr.take());
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+            stderr: Some(stderr),
+            cache: std::collections::BTreeMap::new(),
+            finished: false,
+        })
+    }
+
+    pub(super) fn size(&mut self, oid: &str) -> Result<Option<u64>, ScannerError> {
+        if let Some(size) = self.cache.get(oid) {
+            return Ok(*size);
+        }
+        if self.cache.len() >= MAX_PATHS {
+            return Err(ScannerError::ResourceLimit {
+                reason: "Git object count exceeds the scan budget".to_string(),
+            });
+        }
+        let stdin = self.stdin.as_mut().expect("open Git size session");
+        writeln!(stdin, "{oid}")
+            .and_then(|()| stdin.flush())
+            .map_err(|source| ScannerError::RunGitCatFile { source })?;
+        let mut response = Vec::new();
+        Read::by_ref(&mut self.stdout)
+            .take(257)
+            .read_until(b'\n', &mut response)
+            .map_err(|source| ScannerError::RunGitCatFile { source })?;
+        let size = parse_object_size_response(oid, &response)?;
+        self.cache.insert(oid.to_string(), size);
+        Ok(size)
+    }
+
+    pub(super) fn finish(mut self) -> Result<(), ScannerError> {
+        self.stdin.take();
+        let status = self
+            .child
+            .wait()
+            .map_err(|source| ScannerError::GitProcess { source })?;
+        self.finished = true;
+        let stderr = self.stderr.take().unwrap().join().unwrap_or_default();
+        if !status.success() {
+            return Err(ScannerError::ResourceLimit {
+                reason: format!(
+                    "Git object size lookup failed: {}",
+                    summarize_git_stderr(&stderr)
+                ),
+            });
+        }
+        Ok(())
+    }
+}
+
+impl Drop for GitObjectSizes {
+    fn drop(&mut self) {
+        self.stdin.take();
+        if !self.finished {
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
+        if let Some(stderr) = self.stderr.take() {
+            let _ = stderr.join();
+        }
+    }
+}
+
+fn parse_object_size_response(oid: &str, response: &[u8]) -> Result<Option<u64>, ScannerError> {
+    let invalid = || ScannerError::ResourceLimit {
+        reason: "Invalid Git object size response".to_string(),
+    };
+    if response.len() > 256 || response.last() != Some(&b'\n') {
+        return Err(invalid());
+    }
+    let response = std::str::from_utf8(response).map_err(|_| invalid())?;
+    let fields: Vec<_> = response.trim_end_matches('\n').split(' ').collect();
+    match fields.as_slice() {
+        [returned_oid, "missing"] if *returned_oid == oid => Ok(None),
+        [returned_oid, "blob", size] if *returned_oid == oid => {
+            size.parse::<u64>().map(Some).map_err(|_| invalid())
+        }
+        _ => Err(invalid()),
+    }
+}
 
 /// Runs `command`, feeds its stdout to `scan`, and reaps the child process.
 ///
@@ -35,22 +159,7 @@ pub(super) fn scan_git_output<T>(
     let stdout = child.stdout.take().ok_or(ScannerError::CaptureGitStdout)?;
     // Drained on its own thread: git can fill the stderr pipe (a full usage
     // dump) while this process is still reading stdout, deadlocking both.
-    let stderr = child.stderr.take();
-    let stderr_reader = std::thread::spawn(move || {
-        use std::io::Read;
-        let mut buffer = Vec::new();
-        if let Some(mut stderr) = stderr {
-            let mut chunk = [0u8; 8192];
-            while let Ok(count) = stderr.read(&mut chunk) {
-                if count == 0 {
-                    break;
-                }
-                let retained = count.min((64 * 1024usize).saturating_sub(buffer.len()));
-                buffer.extend_from_slice(&chunk[..retained]);
-            }
-        }
-        String::from_utf8_lossy(&buffer).into_owned()
-    });
+    let stderr_reader = drain_git_stderr(child.stderr.take());
     let scanned = scan(BufReader::new(stdout));
     if scanned.is_err() {
         let _ = child.kill();
@@ -172,6 +281,7 @@ struct StagedDiffState {
     next_line_number: usize,
     hunk_start: usize,
     hunk_added: Vec<String>,
+    pending_line: Option<(String, bool)>,
     hunk_bytes: usize,
     total_lines: usize,
     scanned_files: std::collections::BTreeSet<String>,
@@ -179,10 +289,31 @@ struct StagedDiffState {
     unscannable_from_diff: Vec<String>,
     unscannable_files: Vec<String>,
     current_oids: Vec<String>,
+    post_image_oid: Option<String>,
     history_blobs: std::collections::BTreeSet<(String, String)>,
 }
 
 impl StagedDiffState {
+    fn flush_pending_line(
+        &mut self,
+        preserve_cr: bool,
+        context: &LineScanContext<'_>,
+        scratch: &mut LineScratch,
+        findings: &mut Vec<Finding>,
+    ) -> Result<(), ScannerError> {
+        let Some((mut content, added)) = self.pending_line.take() else {
+            return Ok(());
+        };
+        if !preserve_cr && content.ends_with('\r') {
+            content.pop();
+        }
+        check_line_length(&content, "<staged>")?;
+        if added {
+            self.handle_added_line(&content, context, scratch, findings)?;
+        }
+        Ok(())
+    }
+
     /// Scans the buffered added lines of the hunk that just ended, or the
     /// whole diff when the stream ends.
     fn flush_hunk(
@@ -322,6 +453,7 @@ pub(super) fn scan_staged_diff<ReaderType: BufRead>(
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
 ) -> Result<StagedScan, ScannerError> {
+    let mut object_size = |_oid: &str| Ok(Some(0));
     scan_staged_diff_with_limit(
         reader,
         exclude_patterns,
@@ -332,13 +464,15 @@ pub(super) fn scan_staged_diff<ReaderType: BufRead>(
         DiffScanPolicy {
             max_bytes: MAX_INPUT_BYTES,
             scan_lockfiles: false,
+            object_size: &mut object_size,
         },
     )
 }
 
-pub(super) struct DiffScanPolicy {
+pub(super) struct DiffScanPolicy<'a> {
     pub max_bytes: u64,
     pub scan_lockfiles: bool,
+    pub object_size: &'a mut dyn FnMut(&str) -> Result<Option<u64>, ScannerError>,
 }
 
 pub(super) fn scan_staged_diff_with_limit<ReaderType: BufRead>(
@@ -348,7 +482,7 @@ pub(super) fn scan_staged_diff_with_limit<ReaderType: BufRead>(
     base_dir: &Path,
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
-    policy: DiffScanPolicy,
+    policy: DiffScanPolicy<'_>,
 ) -> Result<StagedScan, ScannerError> {
     let context = LineScanContext::new(line_detectors);
     let mut findings = Vec::new();
@@ -370,19 +504,30 @@ pub(super) fn scan_staged_diff_with_limit<ReaderType: BufRead>(
         }
         let line = String::from_utf8_lossy(&raw_line);
 
+        if state.in_hunk && line.starts_with('\\') {
+            // A no-newline marker preserves a final CR as file content.
+            check_line_length(&line[1..], "<staged>")?;
+            state.flush_pending_line(true, &context, &mut scratch, &mut findings)?;
+            continue;
+        }
+        state.flush_pending_line(false, &context, &mut scratch, &mut findings)?;
         if state.in_hunk {
             if let Some(content) = line.strip_prefix('+') {
-                state.handle_added_line(content, &context, &mut scratch, &mut findings)?;
+                state.pending_line = Some((content.to_string(), true));
                 continue;
             }
-            if line.starts_with('-') || line.starts_with('\\') {
+            if let Some(content) = line.strip_prefix('-') {
+                state.pending_line = Some((content.to_string(), false));
                 continue;
             }
         }
 
+        let line = line.strip_suffix('\r').unwrap_or(&line);
+        check_line_length(line, "<staged>")?;
+
         if line.starts_with("@@") {
             state.flush_hunk(multiline_detectors, &mut findings, &mut scratch.budget)?;
-            state.hunk_start = parse_hunk_new_start(&line);
+            state.hunk_start = parse_hunk_new_start(line);
             state.next_line_number = state.hunk_start;
             state.in_hunk = true;
             continue;
@@ -393,20 +538,29 @@ pub(super) fn scan_staged_diff_with_limit<ReaderType: BufRead>(
             state.in_hunk = false;
             state.current_path = None;
             state.current_oids.clear();
+            state.post_image_oid = None;
             continue;
         }
 
         if let Some(index) = line.strip_prefix("index ") {
-            state.current_oids = index
+            let oids: Vec<_> = index
                 .split_whitespace()
                 .next()
                 .unwrap_or("")
                 .split("..")
-                .filter(|oid| {
-                    (oid.len() == 40 || oid.len() == 64)
-                        && oid.bytes().all(|byte| byte.is_ascii_hexdigit())
-                        && oid.bytes().any(|byte| byte != b'0')
-                })
+                .collect();
+            let valid = |oid: &str| {
+                (oid.len() == 40 || oid.len() == 64)
+                    && oid.bytes().all(|byte| byte.is_ascii_hexdigit())
+                    && oid.bytes().any(|byte| byte != b'0')
+            };
+            state.post_image_oid = match oids.as_slice() {
+                [_, new] if valid(new) => Some((*new).to_string()),
+                _ => None,
+            };
+            state.current_oids = oids
+                .into_iter()
+                .filter(|oid| valid(oid))
                 .map(str::to_string)
                 .collect();
         }
@@ -420,21 +574,13 @@ pub(super) fn scan_staged_diff_with_limit<ReaderType: BufRead>(
                 policy.scan_lockfiles,
             );
             if let Some(path) = state.current_path.as_ref() {
-                for oid in state.current_oids.iter().rev().take(1) {
-                    let output = std::process::Command::new("git")
-                        .current_dir(base_dir)
-                        .args(["cat-file", "-s", oid])
-                        .output()
-                        .map_err(|source| ScannerError::RunGitCatFile { source })?;
-                    let size = String::from_utf8_lossy(&output.stdout)
-                        .trim()
-                        .parse::<u64>();
-                    if !output.status.success() || size.map_or(true, |size| size > policy.max_bytes)
-                    {
-                        state.unscannable_files.push(path.clone());
-                        state.current_path = None;
-                        break;
-                    }
+                let size = match state.post_image_oid.as_deref() {
+                    Some(oid) => (policy.object_size)(oid)?,
+                    None => None,
+                };
+                if size.is_none_or(|size| size > policy.max_bytes) {
+                    state.unscannable_files.push(path.clone());
+                    state.current_path = None;
                 }
             }
             continue;
@@ -461,6 +607,7 @@ pub(super) fn scan_staged_diff_with_limit<ReaderType: BufRead>(
         }
     }
 
+    state.flush_pending_line(false, &context, &mut scratch, &mut findings)?;
     state.flush_hunk(multiline_detectors, &mut findings, &mut scratch.budget)?;
 
     let metadata = ScanMetadata {
@@ -618,11 +765,67 @@ mod tests {
     use std::io::Cursor;
 
     #[test]
+    fn object_size_responses_require_matching_blob_identity_and_bounded_sizes() {
+        for oid in ["1".repeat(40), "2".repeat(64)] {
+            let response = format!("{oid} blob 1048576\n");
+            assert_eq!(
+                parse_object_size_response(&oid, response.as_bytes()).unwrap(),
+                Some(1048576)
+            );
+            let missing = format!("{oid} missing\n");
+            assert_eq!(
+                parse_object_size_response(&oid, missing.as_bytes()).unwrap(),
+                None
+            );
+            for response in [
+                String::new(),
+                format!("{oid} blob 1"),
+                format!("{oid} blob 18446744073709551616\n"),
+                format!("{} blob 1\n", "3".repeat(40)),
+                format!("{oid} tree 1\n"),
+                format!("{oid} blob 1 extra\n"),
+                format!("{}\n", "1".repeat(256)),
+            ] {
+                assert!(
+                    parse_object_size_response(&oid, response.as_bytes()).is_err(),
+                    "{response:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn missing_or_invalid_post_image_ids_cannot_skip_size_limits() {
+        let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
+        for index in [
+            "",
+            "index 1111111111111111111111111111111111111111..invalid 100644",
+            "index 1111111111111111111111111111111111111111..0000000000000000000000000000000000000000 100644",
+        ] {
+            let diff = format!(
+                "diff --git a/input.env b/input.env\n{index}\n--- a/input.env\n+++ b/input.env\n@@ -0,0 +1 @@\n+SECRET_VALUE\n"
+            );
+            let result = scan_staged_diff(
+                Cursor::new(diff),
+                &[],
+                None,
+                Path::new("."),
+                &[],
+                &[&detector],
+            )
+            .unwrap();
+            assert!(!result.metadata.is_complete(), "{index}");
+            assert_eq!(result.metadata.unscannable_files, ["input.env"]);
+            assert!(result.findings.is_empty());
+        }
+    }
+
+    #[test]
     fn test_scan_staged_diff_preserves_plus_prefixed_added_content() {
         let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
         let line_detectors = vec![&detector];
         let diff = "diff --git a/notes.txt b/notes.txt\n\
-            index aabbcc0..ddeeff1 100644\n\
+            index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644\n\
             --- /dev/null\n\
             +++ b/notes.txt\n\
             @@ -0,0 +1,3 @@\n\
@@ -692,11 +895,13 @@ mod tests {
         let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
         let line_detectors = vec![&detector];
         let diff = "diff --git a/first.txt b/first.txt\n\
+            index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644\n\
             --- a/first.txt\n\
             +++ b/first.txt\n\
             @@ -0,0 +7 @@\n\
             +SECRET_A\n\
             diff --git a/second.txt b/second.txt\n\
+            index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644\n\
             --- a/second.txt\n\
             +++ b/second.txt\n\
             @@ -0,0 +2 @@\n\
@@ -730,7 +935,7 @@ mod tests {
         let detector = make_detector("Line", r"SECRET_\w+", "Test", "HIGH");
         let line_detectors = vec![&detector];
         let diff = "diff --git a/img.png b/img.png\n\
-            index aabbcc0..ddeeff1 100644\n\
+            index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644\n\
             Binary files a/img.png and b/img.png differ\n";
 
         let staged = scan_staged_diff(
@@ -790,6 +995,7 @@ mod tests {
         let line_detectors = vec![&detector];
         let mut diff: Vec<u8> = Vec::new();
         diff.extend_from_slice(b"diff --git a/legacy.csv b/legacy.csv\n");
+        diff.extend_from_slice(b"index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644\n");
         diff.extend_from_slice(b"--- a/legacy.csv\n");
         diff.extend_from_slice(b"+++ b/legacy.csv\n");
         diff.extend_from_slice(b"@@ -0,0 +1,2 @@\n");
@@ -819,6 +1025,7 @@ mod tests {
         let detector = make_detector("Block", r"(?s)BEGIN KEY.*END KEY", "Test", "HIGH");
         let multiline_detectors = vec![&detector];
         let diff = "diff --git a/key.pem b/key.pem\n\
+            index 1111111111111111111111111111111111111111..2222222222222222222222222222222222222222 100644\n\
             --- a/key.pem\n\
             +++ b/key.pem\n\
             @@ -0,0 +5,3 @@\n\

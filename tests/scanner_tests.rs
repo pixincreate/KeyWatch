@@ -241,6 +241,14 @@ fn test_credential_literals_do_not_borrow_identifier_or_placeholder_exemptions()
     let file = directory.path().join("credentials.env");
     for (assignment, detector_name) in [
         (r#"api_key = "q7m2_c9v8_x5z1""#, "GenericKeyValueDetector"),
+        (
+            "api_key = aB3xK9mQ2pR7=placeholder",
+            "GenericKeyValueDetector",
+        ),
+        (
+            "api_key = aB3xK9mQ2pR7=globalState",
+            "GenericKeyValueDetector",
+        ),
         (r#"api_key = "1234-5678-9012""#, "GenericKeyValueDetector"),
         (r#"api_key = "changemeA7q9Z2""#, "GenericKeyValueDetector"),
         (
@@ -269,6 +277,112 @@ fn test_credential_literals_do_not_borrow_identifier_or_placeholder_exemptions()
             }),
             "report the complete credential literal: {assignment}"
         );
+    }
+}
+
+#[test]
+fn test_workflow_password_references_do_not_hide_literal_values() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("workflow.yml");
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    for (assignment, should_report) in [
+        ("password: ${{ secrets.GITHUB_TOKEN }}", false),
+        ("PASSWORD = ${{secrets.DATABASE_PASSWORD}}", false),
+        (r#"password: "${{ secrets.GITHUB_TOKEN }}""#, true),
+        ("password: ${{ secrets.GITHUB_TOKEN }}Literal783!", true),
+        ("password: ${{ secrets.GITHUB_TOKEN }} Literal783!", true),
+        ("password: ${{ secrets.GITHUB_TOKEN }}: dummy", true),
+        (
+            "password: ${{ secrets.GITHUB_TOKEN }}=config.password",
+            true,
+        ),
+        (
+            "password: ${{ secrets.GITHUB_TOKEN || 'Literal783!' }}",
+            true,
+        ),
+        ("password: ${{ 'Literal783!' }}", true),
+        ("password: ${{ secrets.GITHUB_TOKEN", true),
+    ] {
+        fs::write(&file, assignment).unwrap();
+        let (findings, _) = run_scan(&args, None).unwrap();
+        let password = findings
+            .iter()
+            .find(|finding| finding.detector_name == "PasswordDetector");
+        if should_report {
+            assert_eq!(password.unwrap().matched_content, assignment);
+        } else {
+            assert!(
+                password.is_none(),
+                "Reference reports a password: {assignment}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_mongodb_scheme_references_do_not_consume_unrelated_source() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("source.txt");
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    for source in [
+        "keywords = [\"mongodb://\", \"mongodb+srv://\"]\npattern = \"user:Fixture783!@localhost\"",
+        "mongodb://\nuser:Fixture783!@localhost",
+        "mongodb://user:\nFixture783!@localhost",
+        "mongodb://user:Fixture783!@\nlocalhost",
+    ] {
+        fs::write(&file, source).unwrap();
+        let (findings, _) = run_scan(&args, None).unwrap();
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| { finding.detector_name == "MongoDBConnectionStringDetector" }),
+            "Unrelated source reports a MongoDB credential: {source}"
+        );
+    }
+}
+
+#[test]
+fn test_mongodb_credentials_stop_at_authority_boundaries() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("connections.txt");
+    let authorities = [
+        "mongodb://user:Fixture783!@localhost:27017",
+        "mongodb+srv://user:p%40ss%3Aword%2F783@cluster.example.net",
+        "mongodb://user:Fixture783!@[::1]:27017",
+    ];
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    let mut expected = authorities;
+    expected.sort_unstable();
+    for suffix in ["", "/db?authSource=admin"] {
+        for separator in [",", " ", "\", \""] {
+            let source = authorities
+                .map(|authority| format!("{authority}{suffix}"))
+                .join(separator);
+            fs::write(&file, source).unwrap();
+            let (findings, _) = run_scan(&args, None).unwrap();
+            let mut mongodb: Vec<_> = findings
+                .iter()
+                .filter(|finding| finding.detector_name == "MongoDBConnectionStringDetector")
+                .map(|finding| finding.matched_content.as_str())
+                .collect();
+            mongodb.sort_unstable();
+            assert_eq!(mongodb, expected);
+        }
     }
 }
 

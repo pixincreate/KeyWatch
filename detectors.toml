@@ -109,7 +109,7 @@ severity = "HIGH"
 name = "PasswordDetector"
 # Each value branch captures the complete value. Typed Rust assignments must
 # match the literal after `=`, not the type annotation before it.
-pattern = '''(?i)(?:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*(?-i)(?:"((?:\\[^\r\n]|[^"\\\r\n])*)"|'((?:\\[^\r\n]|[^'\\\r\n])*)'|([^\s"'`;,\r\n]+)(?:[ \t]*;)?)'''
+pattern = '''(?i)(?:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*(?-i)(?:"((?:\\[^\r\n]|[^"\\\r\n])*)"|'((?:\\[^\r\n]|[^'\\\r\n])*)'|(\$\{\{[^\r\n]*)|([^\s"'`;,\r\n]+)(?:[ \t]*;)?)'''
 finding_type = "Password"
 severity = "HIGH"
 keywords = ["password", "passwd", "pwd"]
@@ -117,25 +117,28 @@ keywords = ["password", "passwd", "pwd"]
 # Makefiles), never a password literal.
 allowlist = [
   "^\\$PWD:",
+  # Only a complete, unquoted secret reference is exempt. Literal suffixes
+  # and fallback values remain part of the match and must report.
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*[:=][ \t]*\$\{\{[ \t]*secrets\.[A-Za-z_][A-Za-z0-9_]*[ \t]*\}\}[ \t]*$''',
   # Rust expressions are plumbing, not literals: type paths (`Secret::new`),
   # generics (`Secret<String>`), constructor calls (`Some(...)`) and field or
   # method access (`config.password.clone()`). Quoted literals and bare
   # alphanumeric values stay reported.
-  "[:=][ \\t]*[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+$",
-  "[:=][ \\t]*[A-Za-z_][A-Za-z0-9_]*<[^\"'\\s]*>$",
-  "[:=][ \\t]*[A-Za-z_][A-Za-z0-9_]*\\([^\"'\\s]*\\)$",
-  "[:=][ \\t]*[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*(?:\\([^\"'\\s]*\\))?)+$",
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*[A-Za-z_][A-Za-z0-9_]*(?:::[A-Za-z_][A-Za-z0-9_]*)+$''',
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*[A-Za-z_][A-Za-z0-9_]*<[^"'\s]*>$''',
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*[A-Za-z_][A-Za-z0-9_]*\([^"'\s]*\)$''',
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*(?:\([^"'\s]*\))?)+$''',
   # A bare CamelCase value is a Rust type (`password: String,`), matching the
   # GenericKeyValueDetector rule. Digits or symbols keep it reported.
-  "[:=][ \\t]*[A-Z][a-z]+(?:[A-Z][a-z]*)*$",
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*[A-Z][a-z]+(?:[A-Z][a-z]*)*$''',
   # Suppress only complete, selected documentation placeholders.
   # Extended values such as `dummy7!` must still report.
-  '''[:=][ \t]*(?:"(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)"|'(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)'|(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx))$''',
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*(?:"(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)"|'(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)'|(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx))$''',
   # Match empty literals completely before suppressing them.
-  '''[:=][ \t]*(?:""|'')$''',
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*(?::[ \t]*&[ \t]*(?:'[A-Za-z_][A-Za-z0-9_]*[ \t]+)?str[ \t]*=|[:=])[ \t]*(?:""|'')$''',
   # Proto field numbers and Rust parameter types do not hold literals.
-  "[:=][ \\t]*\\d+[ \\t]*;$",
-  "[:=][ \\t]*&str\\)?$",
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*[:=][ \t]*\d+[ \t]*;$''',
+  '''^(?i:password|passwd|\$?pwd)["']?[ \t]*[:=][ \t]*&str\)?$''',
 ]
 
 [[detectors]]
@@ -209,18 +212,18 @@ entropy = 2.5
 # A bare CamelCase value (no digits, no symbols) is a Rust type path in a
 # field declaration (`token: PaymentTokenData,`), not a credential either.
 allowlist = [
-  "[:=]\\s*[a-z]+(?:_[a-z]+)+$",
-  "[:=]\\s*[A-Z][a-z]+(?:[A-Z][a-z]*)*$",
+  "^[^:=]+[:=]\\s*[a-z]+(?:_[a-z]+)+$",
+  "^[^:=]+[:=]\\s*[A-Z][a-z]+(?:[A-Z][a-z]*)*$",
   # Suppress only complete, selected documentation placeholders.
-  '''[:=][ \t]*(?:"(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)"|'(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)'|(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx))$''',
+  '''^[^:=]+[:=][ \t]*(?:"(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)"|'(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx)'|(?:changeme|changeit|your-api-key-here|replace-me-please|placeholder|dummy|xxxxx))$''',
   # Match the complete AWS documentation example, not a shared prefix.
-  '''[:=][ \t]*(?:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"|'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'|wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY)$''',
+  '''^[^:=]+[:=][ \t]*(?:"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"|'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY'|wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY)$''',
   # Unquoted code references remain heuristics. Quoted snake-case and
   # kebab-case values can hold credentials and must not borrow these rules.
-  "[:=]\\s*_*[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)+$",
-  "[:=]\\s*[a-z]{10,}$",
-  "[:=]\\s*[a-z][a-z]*(?:[A-Z][a-z]*)+$",
-  "[:=]\\s*[A-Z][A-Z0-9]*(?:_+[A-Z0-9]+)+$",
+  "^[^:=]+[:=]\\s*_*[a-z][a-z0-9]*(?:_[a-z][a-z0-9]*)+$",
+  "^[^:=]+[:=]\\s*[a-z]{10,}$",
+  "^[^:=]+[:=]\\s*[a-z][a-z]*(?:[A-Z][a-z]*)+$",
+  "^[^:=]+[:=]\\s*[A-Z][A-Z0-9]*(?:_+[A-Z0-9]+)+$",
 ]
 
 [[detectors]]
@@ -416,7 +419,7 @@ keywords = ["AccountKey", "DefaultEndpointsProtocol"]
 
 [[detectors]]
 name = "MongoDBConnectionStringDetector"
-pattern = "mongodb(?:\\+srv)?://[^:]+:[^@]+@[^/]+"
+pattern = '''mongodb(?:\+srv)?://[^:/@?#"'`\s\\]+:[^/@?#"'`\s\\]+@(?:\[[0-9A-Fa-f:.]+\]|[A-Za-z0-9_.-]+)(?::[0-9]+)?'''
 finding_type = "MongoDB Connection String"
 severity = "HIGH"
 keywords = ["mongodb://", "mongodb+srv://"]

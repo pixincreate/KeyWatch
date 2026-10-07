@@ -563,6 +563,140 @@ fn staged_size_limit_applies_to_the_post_image_not_the_previous_blob() {
 }
 
 #[test]
+fn line_limits_count_content_not_git_prefixes_or_line_endings() {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    const LIMIT: usize = 1024 * 1024;
+    let credential = "AWS_ACCESS_KEY_ID=AKIAABCDEFGHIJKLMNOP";
+    for ending in ["\r", "", "\n", "\r\n"] {
+        for extra_byte in [0, 1] {
+            let dir = repository();
+            let content = format!(
+                "+{}{credential}{ending}",
+                "#".repeat(LIMIT - credential.len() - 1 - usize::from(ending == "\r") + extra_byte)
+            );
+            fs::write(dir.path().join("boundary.env"), &content).unwrap();
+            git(dir.path(), &["add", "."]);
+            git(dir.path(), &["commit", "--quiet", "-m", "Boundary fixture"]);
+            for arguments in [
+                vec!["boundary.env", "--fail-on-unscannable"],
+                vec!["--git-history", "--fail-on-unscannable"],
+            ] {
+                let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+                    .current_dir(dir.path())
+                    .args([
+                        "scan",
+                        "--no-config-discovery",
+                        "--no-baseline-discovery",
+                        "--verbose",
+                    ])
+                    .args(arguments)
+                    .output()
+                    .unwrap();
+                check_boundary_scan(&output, extra_byte == 0);
+            }
+            git(dir.path(), &["rm", "--cached", "boundary.env"]);
+            git(
+                dir.path(),
+                &["commit", "--quiet", "-m", "Remove boundary fixture"],
+            );
+            git(dir.path(), &["add", "boundary.env"]);
+            let output = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+                .current_dir(dir.path())
+                .args([
+                    "scan",
+                    "--staged",
+                    "--no-config-discovery",
+                    "--no-baseline-discovery",
+                    "--verbose",
+                    "--fail-on-unscannable",
+                ])
+                .output()
+                .unwrap();
+            check_boundary_scan(&output, extra_byte == 0);
+
+            let mut child = Command::new(env!("CARGO_BIN_EXE_key-watch"))
+                .args([
+                    "scan",
+                    "--stdin",
+                    "--no-config-discovery",
+                    "--no-baseline-discovery",
+                    "--verbose",
+                ])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(content.as_bytes())
+                .unwrap();
+            check_boundary_scan(&child.wait_with_output().unwrap(), extra_byte == 0);
+        }
+    }
+}
+
+fn check_boundary_scan(output: &Output, accepted: bool) {
+    if accepted {
+        assert_eq!(output.status.code(), Some(1), "{output:?}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["coverage"], "COMPLETE");
+        assert!(
+            report["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|finding| {
+                    finding["plugin_name"] == "AWSKeyDetector" && finding["line_number"] == 1
+                })
+        );
+    } else if let Ok(report) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+        assert_eq!(output.status.code(), Some(1));
+        assert_eq!(report["coverage"], "INCOMPLETE");
+    } else {
+        assert_eq!(output.status.code(), Some(2), "{output:?}");
+        assert!(String::from_utf8_lossy(&output.stderr).contains("Line exceeds"));
+    }
+}
+
+#[test]
+fn git_preserves_unterminated_carriage_return_content() {
+    let dir = repository();
+    fs::write(dir.path().join("ending.env"), "TRAILING\r").unwrap();
+    fs::write(
+        dir.path().join("rules.toml"),
+        "[[rules]]\nname = 'CarriageReturnFixture'\nfinding_type = 'Fixture'\npattern = 'TRAILING\\r$'\n",
+    ).unwrap();
+    git(dir.path(), &["add", "ending.env"]);
+    for mode in ["ending.env", "--staged", "--git-history"] {
+        if mode == "--git-history" {
+            git(dir.path(), &["commit", "--quiet", "-m", "CR fixture"]);
+        }
+        let (output, report) = scan(
+            dir.path(),
+            &[mode, "--config", "rules.toml", "--show-secrets"],
+        );
+        assert_eq!(output.status.code(), Some(1), "{mode}: {output:?}");
+        assert_eq!(report["coverage"], "COMPLETE");
+        assert!(
+            report["findings"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|finding| {
+                    finding["plugin_name"] == "CarriageReturnFixture"
+                        && finding["matched_content"] == "TRAILING\r"
+                }),
+            "{mode}: {report}"
+        );
+    }
+}
+
+#[test]
 fn lockfile_inclusion_is_explicit_and_consistent_across_modes() {
     let dir = repository();
     fs::write(

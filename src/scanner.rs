@@ -202,7 +202,9 @@ fn scan_git_history(
         command,
         |stderr| ScannerError::GitLogNonZero { stderr },
         |reader| {
-            scan_staged_diff_with_limit(
+            let mut sizes = staged::GitObjectSizes::new(&repo_root)?;
+            let mut object_size = |oid: &str| sizes.size(oid);
+            let result = scan_staged_diff_with_limit(
                 reader,
                 &exclude_patterns,
                 excluded_baseline,
@@ -212,8 +214,11 @@ fn scan_git_history(
                 staged::DiffScanPolicy {
                     max_bytes: limits::input_limit(args.max_file_size)?,
                     scan_lockfiles: args.scan_lockfiles,
+                    object_size: &mut object_size,
                 },
-            )
+            )?;
+            sizes.finish()?;
+            Ok(result)
         },
         |source| ScannerError::RunGitLog { source },
     )?;
@@ -275,7 +280,9 @@ fn scan_staged(
         command,
         |stderr| ScannerError::GitDiffNonZero { stderr },
         |reader| {
-            scan_staged_diff_with_limit(
+            let mut sizes = staged::GitObjectSizes::new(&repo_root)?;
+            let mut object_size = |oid: &str| sizes.size(oid);
+            let result = scan_staged_diff_with_limit(
                 reader,
                 &exclude_patterns,
                 excluded_baseline,
@@ -285,8 +292,11 @@ fn scan_staged(
                 staged::DiffScanPolicy {
                     max_bytes: limits::input_limit(args.max_file_size)?,
                     scan_lockfiles: args.scan_lockfiles,
+                    object_size: &mut object_size,
                 },
-            )
+            )?;
+            sizes.finish()?;
+            Ok(result)
         },
         |source| ScannerError::RunGitDiff { source },
     )?;
