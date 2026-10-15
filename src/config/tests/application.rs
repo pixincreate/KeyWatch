@@ -273,11 +273,11 @@ allowlist = ["ABCD-EFGH-JKLM"]
 entropy = 0.0
 
 [[rules]]
-name = "Luhnish"
-pattern = '\b[0-9]{13,16}\b'
-finding_type = "Cardish"
+name = "Verhoeffish"
+pattern = '\b[0-9]{12}\b'
+finding_type = "Idish"
 severity = "HIGH"
-validate = "luhn"
+validate = "verhoeff"
 "#;
     let config: KeywatchConfig = toml::from_str(toml).expect("parse config");
     let mut detectors = Vec::new();
@@ -305,16 +305,16 @@ validate = "luhn"
         "non-allowlisted code must be reported"
     );
 
-    let luhn = detectors
+    let verhoeff = detectors
         .iter()
-        .find(|d| d.name == "Luhnish")
-        .expect("Luhnish should exist");
+        .find(|d| d.name == "Verhoeffish")
+        .expect("Verhoeffish should exist");
     assert!(
-        !reported("card = 4111111111111112", luhn),
-        "Luhn-invalid match must be rejected"
+        !reported("id = 123456789012", verhoeff),
+        "Verhoeff-invalid match must be rejected"
     );
     assert!(
-        reported("card = 4111111111111111", luhn),
-        "Luhn-valid match must be reported"
+        reported("id = 100000000004", verhoeff),
+        "Verhoeff-valid match must be reported"
     );
 }

@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 mod error;
 mod files;
+mod limits;
 mod lines;
 mod staged;
 
@@ -28,7 +29,7 @@ use files::{
     is_default_excluded_file, matches_exclude_patterns, path_has_git_dir,
 };
 use lines::{LineScanContext, scan_file_stream, scan_stream};
-use staged::{StagedScan, scan_git_output, scan_index_blobs, scan_staged_diff};
+use staged::{StagedScan, scan_git_output, scan_index_blobs, scan_staged_diff_with_limit};
 /// Git config that must be overridden for every diff-based scan: the parser
 /// depends on undecorated `diff --git`/`@@`/`+` framing and literal `a/`/`b/`
 /// path prefixes, so user git config that colors, re-prefixes, quotes, or
@@ -49,6 +50,12 @@ const GIT_DIFF_FRAMING_ARGS: &[&str] = &[
     "core.quotePath=false",
     "-c",
     "diff.relative=false",
+    "-c",
+    "diff.srcPrefix=a/",
+    "-c",
+    "diff.dstPrefix=b/",
+    "-c",
+    "diff.interHunkContext=0",
 ];
 
 pub fn run_scan(
@@ -56,22 +63,21 @@ pub fn run_scan(
     config: Option<&KeywatchConfig>,
 ) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
     let detectors = resolve_detectors(args, config)?;
-    // A pattern carrying the dot-matches-newline flag anywhere — `(?s)` or
-    // the grouped `(?s:...)` form — spans lines and must run per-chunk, not
-    // per-line, or multiline secrets slip past it.
-    let (multiline_detectors, line_detectors): (Vec<_>, Vec<_>) = detectors
-        .iter()
-        .partition(|detector| detector.is_multiline());
+    limits::input_limit(args.max_file_size)?;
+    // Line-local anchors retain their behavior. The complete-input pass
+    // reports only matches that actually span lines, without flag guessing.
+    let line_detectors: Vec<_> = detectors.iter().collect();
+    let multiline_detectors = &line_detectors;
 
     // Resolved once: every scan mode must skip the baseline file itself.
     let excluded_baseline = baseline_exclusion(args);
 
-    let (findings, metadata) = if args.git_history {
+    let (findings, mut metadata) = if args.git_history {
         scan_git_history(
             args,
             config,
             excluded_baseline.as_ref(),
-            &multiline_detectors,
+            multiline_detectors,
             &line_detectors,
         )?
     } else if args.staged {
@@ -79,26 +85,45 @@ pub fn run_scan(
             args,
             config,
             excluded_baseline.as_ref(),
-            &multiline_detectors,
+            multiline_detectors,
             &line_detectors,
         )?
     } else if args.stdin {
-        scan_stdin(&multiline_detectors, &line_detectors)?
+        scan_stdin(args, multiline_detectors, &line_detectors)?
     } else {
         scan_filesystem(
             args,
             config,
             excluded_baseline.as_ref(),
-            &multiline_detectors,
+            multiline_detectors,
             &line_detectors,
         )?
     };
 
     // Every mode funnels through here, so deduplication and the canonical
     // order hold for reports, baselines and exit codes alike.
+    limits::check_findings(&findings)?;
     let mut findings = dedupe_findings(findings);
     sort_findings(&mut findings);
+    metadata.detector_fingerprint = detector_fingerprint(&detectors);
     Ok((findings, metadata))
+}
+
+fn detector_fingerprint(detectors: &[Detector]) -> String {
+    use sha2::{Digest, Sha256};
+    let rules: Vec<_> = detectors.iter().map(|detector| serde_json::json!({
+        "name": detector.name,
+        "pattern": detector.regex.as_str(),
+        "finding_type": detector.finding_type,
+        "severity": detector.severity.as_str(),
+        "allowlist": detector.allowlist.iter().map(|regex| regex.as_str()).collect::<Vec<_>>(),
+        "keywords": detector.keywords,
+        "entropy": detector.entropy_threshold,
+        "validator": detector.validator.map(|validator| format!("{validator:?}")),
+    })).collect();
+    hex::encode(Sha256::digest(
+        serde_json::Value::Array(rules).to_string().as_bytes(),
+    ))
 }
 
 /// Builds the detector set for this scan and applies user configuration on
@@ -155,6 +180,9 @@ fn scan_git_history(
             "--no-ext-diff",
             "--no-textconv",
             "--no-color",
+            "--full-index",
+            "--format=",
+            "--no-renames",
         ]);
     // Without a range, walk every ref: a secret committed on a side branch
     // is exactly as leaked as one on the checked-out branch. An explicit
@@ -174,24 +202,50 @@ fn scan_git_history(
         command,
         |stderr| ScannerError::GitLogNonZero { stderr },
         |reader| {
-            scan_staged_diff(
+            let mut sizes = staged::GitObjectSizes::new(&repo_root)?;
+            let mut object_size = |oid: &str| sizes.size(oid);
+            let result = scan_staged_diff_with_limit(
                 reader,
                 &exclude_patterns,
                 excluded_baseline,
                 &repo_root,
                 multiline_detectors,
                 line_detectors,
-            )
+                staged::DiffScanPolicy {
+                    max_bytes: limits::input_limit(args.max_file_size)?,
+                    scan_lockfiles: args.scan_lockfiles,
+                    object_size: &mut object_size,
+                },
+            )?;
+            sizes.finish()?;
+            Ok(result)
         },
         |source| ScannerError::RunGitLog { source },
     )?;
 
     let mut metadata = history.metadata;
-    // Blobs are only re-readable from the index, not from history, so a
-    // git-rendered binary in history is unscannable rather than excluded.
-    metadata.unscannable_files = history.unscannable_from_diff;
-
     let mut findings = history.findings;
+    let (blob_findings, blob_lines, skipped) = staged::scan_history_blobs(
+        &repo_root,
+        &history.history_blobs,
+        Some(limits::input_limit(args.max_file_size)?),
+        multiline_detectors,
+        line_detectors,
+    )?;
+    metadata.files_scanned += history.history_blobs.len() - skipped.len();
+    metadata.total_lines += blob_lines;
+    metadata.unscannable_files.extend(skipped);
+    findings.extend(blob_findings);
+    let shallow = std::process::Command::new("git")
+        .current_dir(&repo_root)
+        .args(["rev-parse", "--is-shallow-repository"])
+        .output()
+        .map_err(|source| ScannerError::RunGitLog { source })?;
+    if !shallow.status.success() || shallow.stdout != b"false\n" {
+        metadata.coverage_warnings.push(
+            "Git history is shallow or its completeness could not be determined; fetch complete history before using a history gate.".to_string(),
+        );
+    }
     sort_findings(&mut findings);
     Ok((findings, metadata))
 }
@@ -216,6 +270,8 @@ fn scan_staged(
         "--no-ext-diff",
         "--no-textconv",
         "--no-color",
+        "--no-renames",
+        "--full-index",
         "--",
     ]);
     command.args(&args.paths);
@@ -224,14 +280,23 @@ fn scan_staged(
         command,
         |stderr| ScannerError::GitDiffNonZero { stderr },
         |reader| {
-            scan_staged_diff(
+            let mut sizes = staged::GitObjectSizes::new(&repo_root)?;
+            let mut object_size = |oid: &str| sizes.size(oid);
+            let result = scan_staged_diff_with_limit(
                 reader,
                 &exclude_patterns,
                 excluded_baseline,
                 &repo_root,
                 multiline_detectors,
                 line_detectors,
-            )
+                staged::DiffScanPolicy {
+                    max_bytes: limits::input_limit(args.max_file_size)?,
+                    scan_lockfiles: args.scan_lockfiles,
+                    object_size: &mut object_size,
+                },
+            )?;
+            sizes.finish()?;
+            Ok(result)
         },
         |source| ScannerError::RunGitDiff { source },
     )?;
@@ -240,11 +305,12 @@ fn scan_staged(
         mut findings,
         mut metadata,
         unscannable_from_diff,
+        ..
     } = staged;
 
     let (blob_findings, blob_lines, skipped) = scan_index_blobs(
         &unscannable_from_diff,
-        args.max_file_size.map(|megabytes| megabytes * 1024 * 1024),
+        Some(limits::input_limit(args.max_file_size)?),
         multiline_detectors,
         line_detectors,
     )?;
@@ -259,13 +325,19 @@ fn scan_staged(
 }
 
 fn scan_stdin(
+    args: &ScanArgs,
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
     let stdin = std::io::stdin();
     let reader = BufReader::new(stdin);
-    let (findings, total_lines) =
-        scan_stream(reader, "<stdin>", multiline_detectors, line_detectors)?;
+    let bytes = limits::read_bounded(reader, "<stdin>", limits::input_limit(args.max_file_size)?)?;
+    let (findings, total_lines) = scan_stream(
+        std::io::Cursor::new(bytes),
+        "<stdin>",
+        multiline_detectors,
+        line_detectors,
+    )?;
 
     let metadata = ScanMetadata {
         files_scanned: 1,
@@ -273,6 +345,7 @@ fn scan_stdin(
         excluded_files: Vec::new(),
         unscannable_files: Vec::new(),
         suppressed_by_baseline: 0,
+        ..Default::default()
     };
 
     Ok((findings, metadata))
@@ -298,16 +371,6 @@ impl FileOutcome {
         }
     }
 
-    fn ignored() -> Self {
-        Self {
-            findings: Vec::new(),
-            lines_seen: 0,
-            scanned: false,
-            excluded: None,
-            unscannable: None,
-        }
-    }
-
     fn unreadable(path: String) -> Self {
         Self {
             findings: Vec::new(),
@@ -326,13 +389,21 @@ fn scan_filesystem(
     multiline_detectors: &[&Detector],
     line_detectors: &[&Detector],
 ) -> Result<(Vec<Finding>, ScanMetadata), ScannerError> {
+    let exclude_patterns = compile_exclude_patterns(args, config)?;
     let mut target_paths: Vec<ScanTarget> = Vec::new();
     let mut unlistable_dirs: Vec<String> = Vec::new();
 
     // Explicit operands are validated strictly: a typo'd path or an operand
     // the scanner will not read (symlink, device, FIFO) must not produce a
     // silent "No secrets found" pass.
+    let mut visited_paths = 0;
     for path_str in &args.paths {
+        if visited_paths >= limits::MAX_PATHS {
+            return Err(ScannerError::ResourceLimit {
+                reason: "Input count exceeds the scan budget".to_string(),
+            });
+        }
+        visited_paths += 1;
         let path = Path::new(path_str);
         let metadata = match fs::symlink_metadata(path) {
             Ok(metadata) => metadata,
@@ -369,7 +440,14 @@ fn scan_filesystem(
                     source,
                 });
             }
-            collect_files(path_str, &mut target_paths, path_str, &mut unlistable_dirs);
+            collect_files(
+                path_str,
+                &mut target_paths,
+                path_str,
+                &mut unlistable_dirs,
+                &exclude_patterns,
+                &mut visited_paths,
+            )?;
         } else {
             return Err(ScannerError::ScanPathUnsupported {
                 path: path_str.clone(),
@@ -394,31 +472,45 @@ fn scan_filesystem(
     }
     let unique_paths: Vec<_> = unique_paths.into_values().collect();
 
-    let exclude_patterns = compile_exclude_patterns(args, config)?;
     let line_scan_context = LineScanContext::new(line_detectors);
     let scan_base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let max_bytes = args.max_file_size.map(|megabytes| megabytes * 1024 * 1024);
+    let max_bytes = Some(limits::input_limit(args.max_file_size)?);
 
     let settings = FileScanSettings {
         exclude_patterns: &exclude_patterns,
         excluded_baseline,
         scan_base_dir: &scan_base_dir,
         max_bytes,
+        scan_lockfiles: args.scan_lockfiles,
     };
-    let results: Vec<FileOutcome> = unique_paths
-        .into_par_iter()
-        .map(|(path, roots)| {
-            scan_one_path(
-                &path,
-                &roots,
-                &settings,
-                multiline_detectors,
-                &line_scan_context,
-            )
-        })
-        .collect();
+    let mut findings = Vec::new();
+    let mut metadata = ScanMetadata::default();
+    for batch in unique_paths.chunks(4) {
+        let results: Vec<FileOutcome> = batch
+            .par_iter()
+            .map(|(path, roots)| {
+                scan_one_path(
+                    path,
+                    roots,
+                    &settings,
+                    multiline_detectors,
+                    &line_scan_context,
+                )
+            })
+            .collect();
 
-    let (findings, mut metadata) = aggregate_file_outcomes(results);
+        let (batch_findings, batch_metadata) = aggregate_file_outcomes(results);
+        findings.extend(batch_findings);
+        limits::check_findings(&findings)?;
+        metadata.files_scanned += batch_metadata.files_scanned;
+        metadata.total_lines += batch_metadata.total_lines;
+        metadata
+            .excluded_files
+            .extend(batch_metadata.excluded_files);
+        metadata
+            .unscannable_files
+            .extend(batch_metadata.unscannable_files);
+    }
     metadata.unscannable_files.extend(unlistable_dirs);
     Ok((findings, metadata))
 }
@@ -456,6 +548,7 @@ struct FileScanSettings<'scan> {
     excluded_baseline: Option<&'scan PathBuf>,
     scan_base_dir: &'scan Path,
     max_bytes: Option<u64>,
+    scan_lockfiles: bool,
 }
 
 fn scan_one_path(
@@ -471,7 +564,7 @@ fn scan_one_path(
 
     if matches_exclude_patterns(path, roots, settings.exclude_patterns)
         || is_baseline_file(path, settings.scan_base_dir, settings.excluded_baseline)
-        || is_default_excluded_file(path)
+        || (!settings.scan_lockfiles && is_default_excluded_file(path))
     {
         return FileOutcome::skipped_but_reported(path.to_string());
     }
@@ -479,13 +572,13 @@ fn scan_one_path(
     let metadata = match fs::symlink_metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return FileOutcome::ignored();
+            return FileOutcome::unreadable(path.to_string());
         }
         Err(_) => return FileOutcome::unreadable(path.to_string()),
     };
     let file_type = metadata.file_type();
     if file_type.is_symlink() || !file_type.is_file() {
-        return FileOutcome::ignored();
+        return FileOutcome::unreadable(path.to_string());
     }
     // Over the size cap: unscannable, never silently clean. The cap bounds
     // scan time on huge single files (throughput is per-file).
@@ -496,7 +589,7 @@ fn scan_one_path(
     let mut reader = match fs::File::open(path) {
         Ok(file) => BufReader::new(file),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return FileOutcome::ignored();
+            return FileOutcome::unreadable(path.to_string());
         }
         Err(_) => return FileOutcome::unreadable(path.to_string()),
     };
@@ -505,15 +598,22 @@ fn scan_one_path(
     // identifies it reliably; decode and scan the text.
     match std::io::BufRead::fill_buf(&mut reader) {
         Ok(head) if head.starts_with(&[0xFF, 0xFE]) || head.starts_with(&[0xFE, 0xFF]) => {
-            let mut bytes = Vec::new();
-            if std::io::Read::read_to_end(&mut reader, &mut bytes).is_err() {
-                return FileOutcome::unreadable(path.to_string());
-            }
+            let bytes = match limits::read_bounded(
+                &mut reader,
+                path,
+                settings.max_bytes.unwrap_or(limits::MAX_INPUT_BYTES),
+            ) {
+                Ok(bytes) => bytes,
+                Err(_) => return FileOutcome::unreadable(path.to_string()),
+            };
             let Some(text) = lines::decode_utf16_bom(&bytes) else {
                 return FileOutcome::unreadable(path.to_string());
             };
             let (findings, total_lines) =
-                lines::scan_content(&text, path, multiline_detectors, line_scan_context);
+                match lines::scan_content(&text, path, multiline_detectors, line_scan_context) {
+                    Ok(scanned) => scanned,
+                    Err(_) => return FileOutcome::unreadable(path.to_string()),
+                };
             return FileOutcome {
                 findings,
                 lines_seen: total_lines,
@@ -525,8 +625,13 @@ fn scan_one_path(
         Ok(_) => {}
         Err(_) => return FileOutcome::unreadable(path.to_string()),
     }
-    let scanned = match scan_file_stream(&mut reader, path, multiline_detectors, line_scan_context)
-    {
+    let scanned = match scan_file_stream(
+        &mut reader,
+        path,
+        multiline_detectors,
+        line_scan_context,
+        settings.max_bytes.unwrap_or(limits::MAX_INPUT_BYTES),
+    ) {
         Ok(scanned) => scanned,
         Err(_) => return FileOutcome::unreadable(path.to_string()),
     };
@@ -579,6 +684,8 @@ fn aggregate_file_outcomes(results: Vec<FileOutcome>) -> (Vec<Finding>, ScanMeta
         excluded_files,
         unscannable_files,
         suppressed_by_baseline: 0,
+        coverage_warnings: Vec::new(),
+        ..Default::default()
     };
 
     (findings, metadata)

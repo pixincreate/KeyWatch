@@ -216,9 +216,11 @@ impl Baseline {
             .map_err(|source| BaselineError::Serialize { source })?;
         json.push('\n');
 
-        fs::write(path, json).map_err(|source| BaselineError::Write {
-            path: path.to_path_buf(),
-            source,
+        crate::utils::atomic_write(path, json.as_bytes()).map_err(|source| {
+            BaselineError::Write {
+                path: path.to_path_buf(),
+                source,
+            }
         })?;
 
         Ok(())

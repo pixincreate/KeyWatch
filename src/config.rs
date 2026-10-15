@@ -41,6 +41,10 @@ pub enum ConfigError {
     Invalid { source: toml::de::Error },
     #[error("custom rule '{name}': {source}")]
     CustomRule { name: String, source: DetectorError },
+    #[error("Unknown detector override '{name}'")]
+    UnknownOverride { name: String },
+    #[error("Duplicate detector name '{name}'")]
+    DuplicateDetector { name: String },
 }
 
 impl KeywatchConfig {
@@ -80,6 +84,27 @@ impl KeywatchConfig {
                     source,
                 })?;
                 staged_detectors.push(detector);
+            }
+        }
+
+        let mut names: std::collections::HashSet<&str> = detectors
+            .iter()
+            .map(|detector| detector.name.as_str())
+            .collect();
+        for detector in &staged_detectors {
+            if !names.insert(&detector.name) {
+                return Err(ConfigError::DuplicateDetector {
+                    name: detector.name.clone(),
+                });
+            }
+        }
+        if let Some(overrides) = &self.overrides {
+            let mut override_names: Vec<_> = overrides.keys().collect();
+            override_names.sort();
+            for name in override_names {
+                if !names.contains(name.as_str()) {
+                    return Err(ConfigError::UnknownOverride { name: name.clone() });
+                }
             }
         }
 
@@ -183,7 +208,8 @@ pub struct CustomRule {
     pub keywords: Option<Vec<String>>,
     /// Minimum Shannon entropy a match must reach to be reported.
     pub entropy: Option<f64>,
-    /// Extra structural check applied to each match, e.g. `validate = "luhn"`.
+    /// Extra structural check applied to each match, e.g.
+    /// `validate = "verhoeff"`.
     pub validate: Option<String>,
     /// Accepted for configuration compatibility and otherwise ignored; earlier
     /// releases parsed the key but never surfaced it.

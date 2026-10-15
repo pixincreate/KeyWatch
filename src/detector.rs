@@ -37,16 +37,14 @@ pub enum DetectorError {
         detector: String,
         source: ParseValidatorError,
     },
+    #[error("entropy threshold in detector '{detector}' must be finite")]
+    InvalidEntropy { detector: String },
 }
 
 /// Extra structural check a detector can require of its matches, for
 /// patterns whose shape alone is too permissive.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ContentValidator {
-    /// Payment card numbers carry a Luhn check digit. Without it, a 13-16
-    /// digit pattern matches every commit hash fragment, timestamp and
-    /// numeric id in a codebase.
-    Luhn,
     /// Aadhaar numbers carry a Verhoeff check digit. Without it, every
     /// 12-digit run (the tail of a UUID, a numeric id) reports HIGH.
     Verhoeff,
@@ -65,7 +63,6 @@ impl FromStr for ContentValidator {
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         match value.trim().to_lowercase().as_str() {
-            "luhn" => Ok(Self::Luhn),
             "verhoeff" => Ok(Self::Verhoeff),
             "supabase-service-role" => Ok(Self::SupabaseServiceRole),
             "github-token-checksum" => Ok(Self::GithubTokenChecksum),
@@ -261,25 +258,6 @@ mod github_checksum_tests {
     }
 }
 
-/// Luhn checksum, ignoring embedded separators.
-fn passes_luhn(matched: &str) -> bool {
-    let digits: Vec<u32> = matched.chars().filter_map(|c| c.to_digit(10)).collect();
-    if !(13..=19).contains(&digits.len()) {
-        return false;
-    }
-    let sum: u32 = digits
-        .iter()
-        .rev()
-        .enumerate()
-        .map(|(index, digit)| match index % 2 {
-            1 if *digit > 4 => digit * 2 - 9,
-            1 => digit * 2,
-            _ => *digit,
-        })
-        .sum();
-    sum % 10 == 0
-}
-
 pub struct Detector {
     pub name: String,
     pub regex: Regex,
@@ -311,6 +289,12 @@ impl Detector {
                 detector: name.to_string(),
                 source,
             })?;
+
+        if entropy_threshold.is_some_and(|threshold| !threshold.is_finite()) {
+            return Err(DetectorError::InvalidEntropy {
+                detector: name.to_string(),
+            });
+        }
 
         let mut compiled_allowlist = Vec::new();
         for pattern in allowlist {
@@ -347,7 +331,6 @@ impl Detector {
     /// Whether a match satisfies the detector's structural validator.
     pub fn passes_validation(&self, matched: &str) -> bool {
         match self.validator {
-            Some(ContentValidator::Luhn) => passes_luhn(matched),
             Some(ContentValidator::Verhoeff) => passes_verhoeff(matched),
             Some(ContentValidator::SupabaseServiceRole) => {
                 Self::passes_supabase_service_role(matched)
@@ -751,23 +734,11 @@ fn initialize_detectors_from_config(
 
 #[cfg(test)]
 mod accept_unit_tests {
-    use super::{Detector, passes_luhn, shannon_entropy};
+    use super::{Detector, shannon_entropy};
 
     fn detector(pattern: &str, keywords: &[&str]) -> Detector {
         let keywords: Vec<String> = keywords.iter().map(|k| k.to_string()).collect();
         Detector::new("T", pattern, "T", "LOW", &[], &keywords, None).expect("valid detector")
-    }
-
-    #[test]
-    fn luhn_accepts_known_cards_and_separators() {
-        assert!(passes_luhn("4111111111111111"));
-        assert!(passes_luhn("4111-1111-1111-1111"));
-        assert!(passes_luhn("4111 1111 1111 1111"));
-        assert!(!passes_luhn("4111111111111112"));
-        assert!(!passes_luhn(""));
-        assert!(!passes_luhn("no digits"));
-        // Below the 13-digit floor.
-        assert!(!passes_luhn("41111111111"));
     }
 
     #[test]
