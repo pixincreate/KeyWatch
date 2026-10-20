@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Breaking changes
+
+- `CreditCardDetector` and the `luhn` validator are removed; payment-card numbers are no longer a finding type, and custom rules that use `validate = "luhn"` must switch to a supported validator
+- Incomplete reports use `INCOMPLETE` instead of `PASS` or `FAIL`.
+  Finding status and coverage are separate fields.
+- `--fail-on-unscannable` applies in every exit mode, and incomplete scans cannot update baselines.
+- Inputs have a 16 MiB ceiling, lines have a 1 MiB ceiling, and scans enforce path and finding budgets.
+  `--max-file-size` can lower the input ceiling but cannot raise it.
+
+### Changed
+
+- Password, Generic Key/Secret, Base64, Random String, IP Address, Email, Certificate, and JWT detectors use narrower shape rules and allowlists.
+  These rules suppress selected declarations, unquoted references, language descriptors, checksum prefixes, loopback addresses, prose mentions, and placeholder signatures.
+- Password matches include complete quoted values and typed Rust `&str` or `&'static str` literals.
+  Generic Key/Secret matches include `/` and `+` instead of stopping at those characters.
+- Password and Generic Key/Secret detectors recognize quoted JSON keys.
+  Generic Key/Secret detection also covers `apikey`, `accesskey`, and `securitykey`.
+- Quoted snake-case and kebab-case values no longer receive a general exemption from Generic Key/Secret detection.
+  Placeholder exemptions match complete, selected values rather than prefixes or arbitrary suffixes.
+- Corrected matches can produce findings that an existing baseline does not suppress.
+  The baseline file format remains unchanged.
+  Review these findings before updating your baseline.
+- Git scans pin path prefixes and hunk context, disclose shallow history, and scan historical text rendered as binary.
+- Custom multiline patterns no longer depend on guessing flags from regex source or fixed overlap windows.
+  Base64-decoded multiline findings use the encoded source line.
+- Report and baseline writes use same-directory atomic replacement and reject destination symlinks or unsafe immediate parent directories.
+- Unknown override names and duplicate detector names fail before configuration changes apply.
+  Recursive scans report skipped symlinks and unreadable entries as incomplete coverage.
+- `--scan-lockfiles` includes lockfiles without removing the default checksum-noise policy.
+- Pre-push hooks and the GitHub Action fail on incomplete coverage.
+  Reinstall hooks to use the changed template.
+- Reports identify the scanner version and effective detector definitions.
+  SARIF locations percent-encode filename characters.
+- A labeled synthetic credential corpus and a repeatable workload benchmark protect detection and coverage contracts.
+
 ## [3.0.0] - 2026-09-14
 
 ### Breaking changes

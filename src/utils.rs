@@ -58,28 +58,82 @@ pub fn display_path(path: &Path) -> String {
     }
 }
 
-/// Writes a report file readable only by its owner.
-///
-/// `File::create` uses 0666 & ~umask, i.e. world-readable by default, and a
-/// report can carry matched text when `--show-secrets` is set. The mode is
-/// also forced on an existing file, whose old (possibly world-readable)
-/// permissions would otherwise survive the rewrite.
+/// Atomically replaces a file with an owner-readable report.
 pub fn write_to_file(path: &str, content: &str) -> Result<()> {
+    atomic_write(Path::new(path), content.as_bytes())
+}
+
+/// Uses a same-directory temporary file. The caller must control the parent
+/// directory and its ancestors; this is not protection against ancestor races.
+pub(crate) fn atomic_write(path: &Path, content: &[u8]) -> Result<()> {
+    use std::fs;
+    use std::io::{Error, ErrorKind};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT: AtomicU64 = AtomicU64::new(0);
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    if fs::symlink_metadata(parent)?.file_type().is_symlink() || is_world_writable(parent) {
+        return Err(Error::new(
+            ErrorKind::PermissionDenied,
+            "Output parent must be a trusted directory",
+        ));
+    }
+    let check_destination = || -> Result<()> {
+        match fs::symlink_metadata(path) {
+            Ok(metadata) if !metadata.file_type().is_file() => Err(Error::new(
+                ErrorKind::InvalidInput,
+                "Output destination must be a regular file, not a symlink",
+            )),
+            Ok(_) => Ok(()),
+            Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error),
+        }
+    };
+    check_destination()?;
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+    for _ in 0..128 {
+        let temporary = parent.join(format!(
+            ".keywatch-write-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        if temporary.file_name() == path.file_name() {
+            continue;
+        }
+        let mut file = match options.open(&temporary) {
+            Ok(file) => file,
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
+        };
+        let result = (|| {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                file.set_permissions(fs::Permissions::from_mode(0o600))?;
+            }
+            file.write_all(content)?;
+            file.sync_all()?;
+            drop(file);
+            check_destination()?;
+            fs::rename(&temporary, path)
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        return result;
     }
-    file.write_all(content.as_bytes())?;
-    Ok(())
+    Err(Error::new(
+        ErrorKind::AlreadyExists,
+        "Cannot reserve an output temporary file",
+    ))
 }
 
 #[cfg(unix)]

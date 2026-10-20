@@ -151,10 +151,10 @@ scan_pushed_refs() {
                 fi
                 ;;
         esac
-        "$KEYWATCH_BIN" scan --git-history --rev-range "$range" --exit-mode critical --no-config-discovery < /dev/null
+        "$KEYWATCH_BIN" scan --git-history --rev-range "$range" --exit-mode critical --no-config-discovery --fail-on-unscannable < /dev/null
         scan_status=$?
         if [ "$scan_status" -eq 1 ]; then
-            echo "ERROR: Secret detected in $local_ref. Run '$KEYWATCH_BIN scan --git-history --rev-range $range --no-config-discovery' to inspect." >&2
+            echo "ERROR: Scan blocked $local_ref because of findings or incomplete coverage. Run '$KEYWATCH_BIN scan --git-history --rev-range $range --no-config-discovery' to inspect." >&2
             status=1
         elif [ "$scan_status" -ne 0 ]; then
             echo "Error: $KEYWATCH_BIN scan failed for $local_ref (exit code: $scan_status)" >&2

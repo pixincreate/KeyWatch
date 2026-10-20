@@ -140,6 +140,8 @@ def write_keywatch_stub(bin_dir: Path) -> None:
         "  if [ \"$1\" = \"--output\" ]; then shift; out=\"$1\"; fi\n"
         "  shift || true\ndone\ncase \"$KEYWATCH_REPORT_MODE\" in\n"
         "  valid) printf '%s\\n' '{\"findings\":[{},{}]}' > \"$out\" ;;\n"
+        "  incomplete) printf '%s\\n' '{\"findings\":[],\"coverage\":\"INCOMPLETE\"}' > \"$out\" ;;\n"
+        "  legacy-incomplete) printf '%s\\n' '{\"findings\":[],\"unscannable\":{\"count\":1}}' > \"$out\" ;;\n"
         "  malformed) printf '%s\\n' 'not-json' > \"$out\" ;;\n  missing) ;;\n  *) exit 99 ;;\nesac\n"
         "exit \"$KEYWATCH_STUB_EXIT\"\n",
     )
@@ -155,7 +157,7 @@ def run_scan_scenarios(scan_block: str) -> None:
             "valid",
             0,
             ("exit_code=0", "findings_count=2"),
-            ("--no-config-discovery", "scan/match.txt"),
+            ("--no-config-discovery", "--fail-on-unscannable", "scan/match.txt"),
             ("scan/*.txt", "--verbose"),
         ),
         ScanScenario(
@@ -176,6 +178,9 @@ def run_scan_scenarios(scan_block: str) -> None:
         ScanScenario("verbose-compact-short-rejected", ".", "-vv", 0, "valid", 1, expected_stderr=("managed by action inputs",)),
         ScanScenario("verbose-mode-long-allowed", ".", "--verbose-mode", 0, "valid", 0, expected_capture=("--verbose-mode",)),
         ScanScenario("scanner-nonzero-propagates", ".", "", 1, "valid", 1, ("exit_code=1", "findings_count=2")),
+        ScanScenario("incomplete-coverage-blocks", ".", "", 0, "incomplete", 1, ("exit_code=1", "findings_count=0")),
+        ScanScenario("legacy-incomplete-blocks", ".", "", 0, "legacy-incomplete", 1, ("exit_code=1", "findings_count=0")),
+        ScanScenario("coverage-override-rejected", ".", "--fail-on-unscannable=false", 0, "valid", 1, expected_stderr=("managed by action inputs",)),
         ScanScenario(
             "missing-report-zero-fails",
             ".",

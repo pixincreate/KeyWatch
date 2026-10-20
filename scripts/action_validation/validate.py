@@ -121,7 +121,7 @@ def main() -> int:
         require(fragment not in shell, f"forbidden shell fragment remains: {fragment}")
 
     require("${{ inputs." not in shell, "inputs must be routed through step env, not run blocks")
-    require("keywatch_args=(scan --no-config-discovery)" in shell, "Action scans must disable untrusted config discovery")
+    require("keywatch_args=(scan --no-config-discovery --fail-on-unscannable)" in shell, "Action scans must disable untrusted config discovery and fail on incomplete coverage")
     require("keywatch_args+=(--config \"$INPUT_CONFIG\")" in shell, "explicit trusted config input must be supported")
     require("read -r -a paths" in shell, "paths input must be parsed without shell evaluation")
     require("compgen -G \"$path_token\"" in shell, "path globs must expand without shell evaluation")
