@@ -6,6 +6,8 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum ScannerError {
+    #[error("Scan resource limit: {reason}")]
+    ResourceLimit { reason: String },
     #[error("{source}")]
     DetectorInit { source: DetectorInitError },
     #[error("{source}")]

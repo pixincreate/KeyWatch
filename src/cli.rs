@@ -142,16 +142,18 @@ pub struct ScanArgs {
     /// --config still loads)
     #[arg(long, default_value_t = false)]
     pub no_repo_config: bool,
-    /// Exit 1 when any scanned file could not be read (Strict exit mode only;
-    /// not applied by --update-baseline)
+    /// Exit 1 when scan coverage is incomplete, in every exit mode
     #[arg(long, default_value_t = false)]
     pub fail_on_unscannable: bool,
     /// Output format for the report (json or sarif)
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     pub format: OutputFormat,
 
-    /// Skip files larger than this many megabytes and report them as
-    /// unscannable (default: no limit)
+    /// Include lockfiles that the default noise policy excludes
+    #[arg(long, default_value_t = false)]
+    pub scan_lockfiles: bool,
+
+    /// Lower the 16 MiB input ceiling and report larger inputs as unscannable
     #[arg(long, value_name = "MB", value_parser = clap::value_parser!(u64).range(1..))]
     pub max_file_size: Option<u64>,
 }

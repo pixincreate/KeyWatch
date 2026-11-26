@@ -2,6 +2,40 @@ use super::{Finding, ScanMetadata, Severity};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+fn artifact_uri(path: &str) -> String {
+    let normalized = if cfg!(windows) {
+        path.replace('\\', "/")
+    } else {
+        path.to_string()
+    };
+    let mut uri = if std::path::Path::new(path).is_absolute() {
+        if cfg!(windows) && normalized.starts_with("//") {
+            "file:".to_string()
+        } else if cfg!(windows) {
+            "file:///".to_string()
+        } else {
+            "file://".to_string()
+        }
+    } else {
+        String::new()
+    };
+    for (index, byte) in normalized.bytes().enumerate() {
+        if byte.is_ascii_alphanumeric()
+            || matches!(byte, b'-' | b'_' | b'.' | b'~' | b'/')
+            || (cfg!(windows)
+                && index == 1
+                && byte == b':'
+                && normalized.as_bytes()[0].is_ascii_alphabetic())
+        {
+            uri.push(char::from(byte));
+        } else {
+            use std::fmt::Write;
+            write!(uri, "%{byte:02X}").expect("Writing to a String cannot fail");
+        }
+    }
+    uri
+}
+
 /// Generate a SARIF 2.1.0 report from findings.
 pub fn create_sarif_report(
     findings: Vec<Finding>,
@@ -98,7 +132,7 @@ pub fn create_sarif_report(
             let level = severity_to_sarif_level(finding.severity);
             let rule_id_clone = rule_id.clone();
             let severity_str = finding.severity.as_str();
-            let uri = finding.file_path;
+            let uri = artifact_uri(&finding.file_path);
             let start_line = finding.line_number;
 
             // No per-rule confidence model exists, so no `precision` claim is
@@ -127,11 +161,36 @@ pub fn create_sarif_report(
         })
         .collect();
 
-    let status = if results.is_empty() { "pass" } else { "fail" };
+    let finding_status = if results.is_empty() { "pass" } else { "fail" };
+    let status = if metadata.is_complete() {
+        finding_status
+    } else {
+        "incomplete"
+    };
 
     // Scan counts only: the BTreeMap serializes in key order, so the payload
     // is deterministic, and no matched content enters the run metadata.
     let mut properties = BTreeMap::new();
+    properties.insert(
+        "detectorFingerprint".to_string(),
+        serde_json::json!(metadata.detector_fingerprint),
+    );
+    properties.insert(
+        "findingStatus".to_string(),
+        serde_json::json!(finding_status),
+    );
+    properties.insert(
+        "coverage".to_string(),
+        serde_json::json!(if metadata.is_complete() {
+            "complete"
+        } else {
+            "incomplete"
+        }),
+    );
+    properties.insert(
+        "coverageWarnings".to_string(),
+        serde_json::json!(metadata.coverage_warnings),
+    );
     properties.insert(
         "status".to_string(),
         serde_json::Value::String(status.to_string()),

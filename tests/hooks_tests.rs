@@ -527,7 +527,7 @@ fn test_pre_push_uses_named_remote_push_url_when_argv_url_is_absent() {
     assert_eq!(
         fs::read_to_string(&marker).expect("read scanner args"),
         format!(
-            "scan --git-history --rev-range {remote_sha}..{local_sha} --exit-mode critical --no-config-discovery\n"
+            "scan --git-history --rev-range {remote_sha}..{local_sha} --exit-mode critical --no-config-discovery --fail-on-unscannable\n"
         )
     );
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
@@ -623,7 +623,7 @@ fn test_pre_push_scans_unnormalizable_remote_when_no_filters_exist() {
     assert_eq!(
         fs::read_to_string(&marker).expect("read scanner args"),
         format!(
-            "scan --git-history --rev-range {local_sha} --exit-mode critical --no-config-discovery\n"
+            "scan --git-history --rev-range {local_sha} --exit-mode critical --no-config-discovery --fail-on-unscannable\n"
         ),
         "a new ref (all-zero remote sha) must scan the full reachable history"
     );
@@ -968,4 +968,50 @@ fn test_pre_push_scans_only_the_pushed_range_end_to_end() {
     );
 
     fs::remove_dir_all(&temp_dir).expect("cleanup temp dir");
+}
+
+#[cfg(unix)]
+#[test]
+fn test_pre_push_blocks_incomplete_history_without_findings() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let git = real_git_path();
+    let run_git = |args: &[&str]| {
+        let output = std::process::Command::new(&git)
+            .args([
+                "-c",
+                "core.hooksPath=/dev/null",
+                "-c",
+                "commit.gpgsign=false",
+            ])
+            .args(args)
+            .current_dir(directory.path())
+            .output()
+            .expect("run git");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8_lossy(&output.stdout).trim().to_string()
+    };
+    run_git(&["init", "--quiet"]);
+    run_git(&["config", "user.email", "fixture@example.com"]);
+    run_git(&["config", "user.name", "Fixture"]);
+    fs::write(directory.path().join("image.dat"), b"ordinary\0binary").unwrap();
+    run_git(&["add", "image.dat"]);
+    run_git(&["commit", "--quiet", "-m", "Binary fixture"]);
+    let tip = run_git(&["rev-parse", "HEAD"]);
+    let hook = generate_pre_push_hook(&hook_install_args(HookType::PrePush, None, None, None));
+    let output = run_hook_with_packaged_keywatch(
+        &hook,
+        directory.path(),
+        &format!("refs/heads/main {tip} refs/heads/main {ZERO_SHA}\n"),
+    );
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("incomplete coverage"));
 }

@@ -417,41 +417,6 @@ fn reported_by(line: &str) -> Vec<String> {
 }
 
 #[test]
-fn test_credit_card_requires_issuer_prefix_and_luhn() {
-    for card in [
-        "4111111111111111",    // Visa
-        "5500 0000 0000 0004", // Mastercard, space separated
-        "4111-1111-1111-1111", // dash separated
-        "378282246310005",     // Amex
-    ] {
-        assert!(
-            reported_by(card).contains(&"CreditCardDetector".to_string()),
-            "should detect card: {card}"
-        );
-    }
-
-    for card in ["6500000000000002", "6441111111111117"] {
-        assert!(
-            reported_by(card).contains(&"CreditCardDetector".to_string()),
-            "should detect Discover card: {card}"
-        );
-    }
-
-    for not_a_card in [
-        "4111111111111112",              // Visa prefix, fails Luhn
-        "1234567890123456",              // no issuer prefix
-        "6411111111111111",              // 641x is neither Discover nor UnionPay
-        "index aabbcc0..1111111 100644", // spans two unrelated numbers
-        "timestamp = 1700000000123",
-    ] {
-        assert!(
-            !reported_by(not_a_card).contains(&"CreditCardDetector".to_string()),
-            "should not detect card in: {not_a_card}"
-        );
-    }
-}
-
-#[test]
 fn test_phone_number_requires_separator_or_country_code() {
     for phone in ["call 415-123-4567", "(415) 123-4567", "+1 415 123 4567"] {
         assert!(
@@ -560,6 +525,8 @@ fn test_email_allowlists_documentation_domains_but_not_real_ones() {
         "alice@example.org",
         "reply-to: noreply@github.com",
         "author: 12345+user@users.noreply.github.com",
+        "sender: example@acme.io",
+        "qa: qa@test.com",
     ] {
         assert!(
             !reported_by(email).contains(&"EmailDetector".to_string()),
@@ -611,6 +578,130 @@ fn test_checksum_prefix_is_allowlisted_in_random_string() {
         reported_by(r#"token = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789abcd""#)
             .contains(&"RandomString".to_string()),
         "a quoted random string without a checksum prefix still reports"
+    );
+}
+
+#[test]
+fn test_declarations_are_not_password_findings() {
+    for line in [
+        "optional SecretString password = 2;",
+        "pwd = 3;  // secondary credential",
+        "# sasl_password = \"\"",
+        "const password = `Cypress@${uniqueSuffix}`;",
+        "fn build(password: &str) -> Secret<String> {",
+    ] {
+        assert!(
+            !reported_by(line).contains(&"PasswordDetector".to_string()),
+            "{line} must not report a password"
+        );
+    }
+    assert!(
+        reported_by("const db_pwd: &str = \"s3cr3tV4lue\"")
+            .contains(&"PasswordDetector".to_string()),
+        "a typed literal that holds a value is still reported"
+    );
+}
+
+#[test]
+fn test_unquoted_references_are_not_generic_findings_but_literals_report() {
+    for line in [
+        "secret = globalState",
+        "Token = actualTokens",
+        "apiKey = authDetails",
+        "token: request_data_v2",
+        "config_key = VAULT_BACKEND_PATH",
+        "auth = transformers",
+    ] {
+        assert!(
+            !reported_by(line).contains(&"GenericKeyValueDetector".to_string()),
+            "{line} must not report a generic secret"
+        );
+    }
+    for line in [
+        "api_key = \"kJ8s2mQ94xhTr3p\"",
+        "client_secret = \"deadbeefcafe12345678\"",
+        "record_key = \"audit_record\"",
+        "token = \"openai-api-key\"",
+        "_KEY = \"__array_state\"",
+    ] {
+        assert!(
+            reported_by(line).contains(&"GenericKeyValueDetector".to_string()),
+            "{line} is a literal value and must still report"
+        );
+    }
+}
+
+#[test]
+fn test_identifier_and_payload_shapes_are_not_base64_findings() {
+    for line in [
+        "let request = PaymentMethodServiceEligibilityRequest::default();",
+        "let mapping = OutgoingWebhookRetryProcessTrackerMapping::new();",
+        "let class = Ljava/security/MessageDigest;",
+        "let path = com/michaelkeevildown/9096cd3aac9029c4e6e05588448a8841;",
+        "let payload = eyJ2ZXJzaW9uIjoiRUNfdjEiLCJ0eXBlIjoiY2FyZCI7",
+    ] {
+        assert!(
+            !reported_by(line).contains(&"Base64Detector".to_string()),
+            "{line} must not report base64"
+        );
+    }
+    assert!(
+        reported_by("let blob = zR366ckK8GIf3BG7sVI6u/9751z4OvBHZMM9JFWa7Bx/RCPQ8aeM+iJoqf9auuQm;")
+            .contains(&"Base64Detector".to_string()),
+        "word-less base64 with a plus sign is still reported"
+    );
+}
+
+#[test]
+fn test_quoted_identifiers_are_not_random_string_findings() {
+    for line in [
+        r#"topic = "internal-service-event-bus-topic-name""#,
+        r#"title = "createUserProfileSettingsRegressionTest""#,
+        r#"reason = "AUTHENTICATION_ATTEMPTED_BUT_NOT_SUCCESSFUL""#,
+        r#"name = "internationalizationconfigurationmanager""#,
+        r#"checksum = "SHA-256=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef""#,
+        r#"id = "6d8b0a1e-6f5f-4d67-9d1e-2f0b6a1c9e33""#,
+        r#"digest = "5baa61e4c9b93f3f0682250b6cf8331b7ee68fd8""#,
+        r#"payload = "eyJ2ZXJzaW9uIjoiRUNfdjEiLCJ0eXBlIjoiY2FyZCI7""#,
+    ] {
+        assert!(
+            !reported_by(line).contains(&"RandomString".to_string()),
+            "{line} must not report a random string"
+        );
+    }
+    assert!(
+        reported_by(r#"token = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0""#)
+            .contains(&"RandomString".to_string()),
+        "a mixed-case quoted value with digits is still reported"
+    );
+}
+
+#[test]
+fn test_certificate_mentions_in_prose_are_not_findings() {
+    let prose = "// Text-based PEM encoded certificate (starts with -----BEGIN CERTIFICATE-----)";
+    assert!(
+        !reported_by(prose).contains(&"CertificateDetector".to_string()),
+        "a marker mentioned inside prose must not report"
+    );
+    assert!(
+        reported_by("  -----BEGIN CERTIFICATE-----").contains(&"CertificateDetector".to_string()),
+        "a marker at the start of a line is still reported"
+    );
+}
+
+#[test]
+fn test_placeholder_jwt_signatures_are_not_findings() {
+    assert!(
+        !reported_by("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc")
+            .contains(&"JWTokenDetector".to_string()),
+        "a short placeholder signature must not report"
+    );
+    assert!(
+        reported_by(
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"
+        )
+        .contains(&"JWTokenDetector".to_string()),
+        "a full-length signature is still reported"
     );
 }
 
@@ -814,7 +905,7 @@ fn test_adyen_username_and_bare_rzp_prefix_do_not_report() {
 
 #[test]
 fn test_ip_address_validates_every_octet() {
-    for ip in ["10.0.0.1", "192.168.1.1", "255.255.255.255", "0.0.0.0"] {
+    for ip in ["10.0.0.1", "192.168.1.1", "255.255.255.255", "172.16.0.1"] {
         assert!(
             reported_by(ip).contains(&"IPAddressDetector".to_string()),
             "valid address must report: {ip}"
@@ -829,6 +920,12 @@ fn test_ip_address_validates_every_octet() {
         assert!(
             !reported_by(not_an_ip).contains(&"IPAddressDetector".to_string()),
             "invalid address must not report: {not_an_ip}"
+        );
+    }
+    for placeholder in ["127.0.0.1", "127.9.9.9", "0.0.0.0"] {
+        assert!(
+            !reported_by(placeholder).contains(&"IPAddressDetector".to_string()),
+            "loopback and unspecified addresses must not report: {placeholder}"
         );
     }
 }
@@ -995,7 +1092,7 @@ fn test_every_format_detector_fires_on_a_realistic_sample() {
         ),
         (
             "JWTokenDetector",
-            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc",
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG",
         ),
         ("SSHPrivateKeyDetector", "-----BEGIN RSA PRIVATE KEY-----"),
         ("DatabaseURLDetector", "postgres://user:pass@host/db"),

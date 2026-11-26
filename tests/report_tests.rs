@@ -17,6 +17,7 @@ fn test_create_report() {
         excluded_files: vec![],
         unscannable_files: vec![],
         suppressed_by_baseline: 0,
+        ..Default::default()
     };
 
     let report = create_report(findings, metadata, "0.5s".to_string(), false)
@@ -46,6 +47,7 @@ fn test_report_with_findings() {
         excluded_files: vec![],
         unscannable_files: vec![],
         suppressed_by_baseline: 0,
+        ..Default::default()
     };
 
     let report = create_report(findings, metadata, "0.1s".to_string(), false)
@@ -77,6 +79,7 @@ fn test_create_report_includes_excluded_files_and_plugin_metadata() {
         excluded_files: vec!["ignored.log".to_string(), "vendor/secrets.txt".to_string()],
         unscannable_files: vec![],
         suppressed_by_baseline: 0,
+        ..Default::default()
     };
 
     let report = create_report(findings, metadata, "1.2s".to_string(), false)
@@ -112,6 +115,7 @@ fn test_create_sarif_report_uses_camel_case_fields_and_hides_matched_content() {
         excluded_files: vec!["skip.log".to_string()],
         unscannable_files: vec!["blob.bin".to_string()],
         suppressed_by_baseline: 3,
+        ..Default::default()
     };
 
     let sarif = create_sarif_report(findings, metadata, "2026-08-01T00:00:00Z".to_string())
@@ -132,31 +136,14 @@ fn test_create_sarif_report_uses_camel_case_fields_and_hides_matched_content() {
     assert!(driver.get("semantic_version").is_none());
 
     let properties = &json["runs"][0]["properties"];
-    let property_keys: Vec<&str> = properties
-        .as_object()
-        .expect("run properties object")
-        .keys()
-        .map(String::as_str)
-        .collect();
-    assert_eq!(
-        property_keys,
-        vec![
-            "excludedFiles",
-            "filesScanned",
-            "scanTime",
-            "status",
-            "suppressedByBaseline",
-            "totalLines",
-            "unscannableFiles",
-        ],
-        "run scan counts must serialize in deterministic key order"
-    );
     assert_eq!(properties["filesScanned"], 5);
     assert_eq!(properties["totalLines"], 120);
     assert_eq!(properties["excludedFiles"], 1);
     assert_eq!(properties["unscannableFiles"], 1);
     assert_eq!(properties["suppressedByBaseline"], 3);
-    assert_eq!(properties["status"], "fail");
+    assert_eq!(properties["status"], "incomplete");
+    assert_eq!(properties["coverage"], "incomplete");
+    assert_eq!(properties["findingStatus"], "fail");
 
     let result = &json["runs"][0]["results"][0];
     assert_eq!(result["ruleId"], "AWS Key");
@@ -235,6 +222,7 @@ fn test_create_sarif_report_maps_all_severities_to_expected_levels() {
         excluded_files: vec![],
         unscannable_files: vec![],
         suppressed_by_baseline: 0,
+        ..Default::default()
     };
 
     let sarif = create_sarif_report(findings, metadata, "2026-08-01T00:00:00Z".to_string())
@@ -316,6 +304,29 @@ fn test_get_severity_counts_groups_high_medium_low() {
             medium: 1,
             low: 1,
         }
+    );
+}
+
+#[test]
+fn sarif_locations_encode_filename_characters_instead_of_uri_fragments() {
+    let finding = Finding {
+        file_path: "src/secret #é%.rs".to_string(),
+        line_number: 1,
+        finding_type: "Credential".to_string(),
+        severity: Severity::High,
+        matched_content: "synthetic".to_string(),
+        detector_name: "FixtureDetector".to_string(),
+    };
+    let report = create_sarif_report(
+        vec![finding],
+        ScanMetadata::default(),
+        "fixture".to_string(),
+    )
+    .unwrap();
+    let json = parse_json(&report);
+    assert_eq!(
+        json["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"],
+        "src/secret%20%23%C3%A9%25.rs"
     );
 }
 

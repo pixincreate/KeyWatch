@@ -85,6 +85,307 @@ fn detectors_config_path() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("detectors.toml")
 }
 
+#[test]
+fn test_typed_password_findings_include_the_complete_literal() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let file = directory.path().join("credentials.rs");
+    for declaration in [
+        r#"const DB_PASSWORD: &str = "OldHarmlessFixture783!";"#,
+        r#"const DB_PASSWORD: &'static str = "OldHarmlessFixture783!";"#,
+        r#"const DB_PASSWORD: &str = "Harmless\"Fixture783!";"#,
+    ] {
+        fs::write(&file, declaration).expect("write fixture");
+        let args = ScanArgs {
+            paths: vec![file.to_string_lossy().into_owned()],
+            no_config_discovery: true,
+            no_baseline_discovery: true,
+            ..Default::default()
+        };
+        let (findings, _) = run_scan(&args, None).expect("scan typed password");
+        let password = findings
+            .iter()
+            .find(|finding| finding.detector_name == "PasswordDetector")
+            .expect("report the typed password");
+        assert_eq!(
+            password.matched_content,
+            declaration
+                .strip_prefix("const DB_")
+                .unwrap()
+                .trim_end_matches(';')
+        );
+        assert_eq!(password.line_number, 1);
+    }
+}
+
+#[test]
+fn test_password_assignments_include_complete_quoted_and_bare_values() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let file = directory.path().join("credentials.txt");
+    for assignment in [
+        r#"pwd="Harmless\"Fixture783!""#,
+        r#"pwd='Harmless\'Fixture783!'"#,
+        "pwd=Correct-Horse-Battery-Staple",
+        r#"PWD: &str = "OldHarmlessFixture783!""#,
+        r#"PWD: &'static str = "OldHarmlessFixture783!""#,
+        r#"PWD: "Correct-Horse-Battery-Staple""#,
+    ] {
+        fs::write(&file, assignment).expect("write fixture");
+        let args = ScanArgs {
+            paths: vec![file.to_string_lossy().into_owned()],
+            no_config_discovery: true,
+            no_baseline_discovery: true,
+            ..Default::default()
+        };
+        let (findings, _) = run_scan(&args, None).expect("scan password");
+        assert!(findings.iter().any(|finding| {
+            finding.detector_name == "PasswordDetector" && finding.matched_content == assignment
+        }));
+    }
+}
+
+#[test]
+fn test_empty_password_literals_and_shell_directory_references_do_not_report() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let file = directory.path().join("credentials.txt");
+    for content in [
+        r#"const DB_PASSWORD: &str = "";"#,
+        r#"const DB_PASSWORD: &'static str = "";"#,
+        r#"const PWD: &'static str = "";"#,
+        r#""password": """#,
+        "password = ''",
+        r#"docker --volume "$PWD:/app""#,
+    ] {
+        fs::write(&file, content).expect("write fixture");
+        let args = ScanArgs {
+            paths: vec![file.to_string_lossy().into_owned()],
+            no_config_discovery: true,
+            no_baseline_discovery: true,
+            ..Default::default()
+        };
+        let (findings, _) = run_scan(&args, None).expect("scan noncredential");
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| finding.detector_name == "PasswordDetector"),
+            "{content} must not report a password: {findings:?}"
+        );
+    }
+}
+
+#[test]
+fn test_generic_credentials_include_complete_values_and_key_aliases() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let file = directory.path().join("credentials.txt");
+    for assignment in [
+        r#"api_key="aB3xK9mQ2pR7/q7""#,
+        r#"api_key='aB3xK9mQ2pR7+q7='"#,
+        "api_key=aB3xK9mQ2pR7/q7",
+        r#"apikey = "aB3xK9mQ2pR7""#,
+        r#"accesskey = "aB3xK9mQ2pR7""#,
+        r#"securitykey = "aB3xK9mQ2pR7""#,
+        r#""api_key": "aB3xK9mQ2pR7/q7""#,
+        r#""apikey": "aB3xK9mQ2pR7+q7=""#,
+        r#"api_key="wJalrXUtnFEMI/aB3xK9mQ2pR7""#,
+    ] {
+        fs::write(&file, assignment).expect("write fixture");
+        let args = ScanArgs {
+            paths: vec![file.to_string_lossy().into_owned()],
+            no_config_discovery: true,
+            no_baseline_discovery: true,
+            ..Default::default()
+        };
+        let (findings, _) = run_scan(&args, None).expect("scan credential");
+        let credential = findings
+            .iter()
+            .find(|finding| finding.detector_name == "GenericKeyValueDetector")
+            .expect("report the generic credential");
+        assert_eq!(
+            credential.matched_content,
+            assignment.trim_start_matches('"')
+        );
+        assert_eq!(credential.line_number, 1);
+    }
+}
+
+#[test]
+fn test_json_credentials_on_one_line_report_separate_complete_values() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let file = directory.path().join("credentials.json");
+    fs::write(
+        &file,
+        r#"{"password":"hunter2", "api_key":"aB3xK9mQ2pR7/q7"}"#,
+    )
+    .expect("write fixture");
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    let (findings, _) = run_scan(&args, None).expect("scan JSON credentials");
+    for (name, matched_content) in [
+        ("PasswordDetector", r#"password":"hunter2""#),
+        ("GenericKeyValueDetector", r#"api_key":"aB3xK9mQ2pR7/q7""#),
+    ] {
+        assert!(findings.iter().any(|finding| {
+            finding.detector_name == name
+                && finding.matched_content == matched_content
+                && finding.line_number == 1
+        }));
+    }
+}
+
+#[test]
+fn test_credential_literals_do_not_borrow_identifier_or_placeholder_exemptions() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let file = directory.path().join("credentials.env");
+    for (assignment, detector_name) in [
+        (r#"api_key = "q7m2_c9v8_x5z1""#, "GenericKeyValueDetector"),
+        (
+            "api_key = aB3xK9mQ2pR7=placeholder",
+            "GenericKeyValueDetector",
+        ),
+        (
+            "api_key = aB3xK9mQ2pR7=globalState",
+            "GenericKeyValueDetector",
+        ),
+        (r#"api_key = "1234-5678-9012""#, "GenericKeyValueDetector"),
+        (r#"api_key = "changemeA7q9Z2""#, "GenericKeyValueDetector"),
+        (
+            r#"api_key = "your-aB3xK9mQ2pR7""#,
+            "GenericKeyValueDetector",
+        ),
+        ("PWD=Correct-Horse-Battery-Staple", "PasswordDetector"),
+        (r#"PASSWORD="dummy7!""#, "PasswordDetector"),
+        (r#"PWD="notdummy9!""#, "PasswordDetector"),
+        (
+            r#"PASSWORD="config.db_password.clone()""#,
+            "PasswordDetector",
+        ),
+    ] {
+        fs::write(&file, assignment).expect("write fixture");
+        let args = ScanArgs {
+            paths: vec![file.to_string_lossy().into_owned()],
+            no_config_discovery: true,
+            no_baseline_discovery: true,
+            ..Default::default()
+        };
+        let (findings, _) = run_scan(&args, None).expect("scan credential literal");
+        assert!(
+            findings.iter().any(|finding| {
+                finding.detector_name == detector_name && finding.matched_content == assignment
+            }),
+            "report the complete credential literal: {assignment}"
+        );
+    }
+}
+
+#[test]
+fn test_workflow_password_references_do_not_hide_literal_values() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("workflow.yml");
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    for (assignment, should_report) in [
+        ("password: ${{ secrets.GITHUB_TOKEN }}", false),
+        ("PASSWORD = ${{secrets.DATABASE_PASSWORD}}", false),
+        (r#"password: "${{ secrets.GITHUB_TOKEN }}""#, true),
+        ("password: ${{ secrets.GITHUB_TOKEN }}Literal783!", true),
+        ("password: ${{ secrets.GITHUB_TOKEN }} Literal783!", true),
+        ("password: ${{ secrets.GITHUB_TOKEN }}: dummy", true),
+        (
+            "password: ${{ secrets.GITHUB_TOKEN }}=config.password",
+            true,
+        ),
+        (
+            "password: ${{ secrets.GITHUB_TOKEN || 'Literal783!' }}",
+            true,
+        ),
+        ("password: ${{ 'Literal783!' }}", true),
+        ("password: ${{ secrets.GITHUB_TOKEN", true),
+    ] {
+        fs::write(&file, assignment).unwrap();
+        let (findings, _) = run_scan(&args, None).unwrap();
+        let password = findings
+            .iter()
+            .find(|finding| finding.detector_name == "PasswordDetector");
+        if should_report {
+            assert_eq!(password.unwrap().matched_content, assignment);
+        } else {
+            assert!(
+                password.is_none(),
+                "Reference reports a password: {assignment}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_mongodb_scheme_references_do_not_consume_unrelated_source() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("source.txt");
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    for source in [
+        "keywords = [\"mongodb://\", \"mongodb+srv://\"]\npattern = \"user:Fixture783!@localhost\"",
+        "mongodb://\nuser:Fixture783!@localhost",
+        "mongodb://user:\nFixture783!@localhost",
+        "mongodb://user:Fixture783!@\nlocalhost",
+    ] {
+        fs::write(&file, source).unwrap();
+        let (findings, _) = run_scan(&args, None).unwrap();
+        assert!(
+            !findings
+                .iter()
+                .any(|finding| { finding.detector_name == "MongoDBConnectionStringDetector" }),
+            "Unrelated source reports a MongoDB credential: {source}"
+        );
+    }
+}
+
+#[test]
+fn test_mongodb_credentials_stop_at_authority_boundaries() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("connections.txt");
+    let authorities = [
+        "mongodb://user:Fixture783!@localhost:27017",
+        "mongodb+srv://user:p%40ss%3Aword%2F783@cluster.example.net",
+        "mongodb://user:Fixture783!@[::1]:27017",
+    ];
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    let mut expected = authorities;
+    expected.sort_unstable();
+    for suffix in ["", "/db?authSource=admin"] {
+        for separator in [",", " ", "\", \""] {
+            let source = authorities
+                .map(|authority| format!("{authority}{suffix}"))
+                .join(separator);
+            fs::write(&file, source).unwrap();
+            let (findings, _) = run_scan(&args, None).unwrap();
+            let mut mongodb: Vec<_> = findings
+                .iter()
+                .filter(|finding| finding.detector_name == "MongoDBConnectionStringDetector")
+                .map(|finding| finding.matched_content.as_str())
+                .collect();
+            mongodb.sort_unstable();
+            assert_eq!(mongodb, expected);
+        }
+    }
+}
+
 fn run_git_history_scan(current_dir: &Path, extra_args: &[&str]) -> Result<Output, String> {
     Command::new(env!("CARGO_BIN_EXE_key-watch"))
         .args(["scan", "--git-history"])
@@ -2737,4 +3038,39 @@ fn test_json_escaped_private_key_is_detected() {
     }
 
     fs::remove_dir_all(&test_dir).expect("cleanup");
+}
+
+#[test]
+fn test_token_references_are_not_literals_but_quoted_values_report() {
+    let directory = tempfile::tempdir().expect("create fixture directory");
+    let file = directory.path().join("credentials.txt");
+    let args = ScanArgs {
+        paths: vec![file.to_string_lossy().into_owned()],
+        no_config_discovery: true,
+        no_baseline_discovery: true,
+        ..Default::default()
+    };
+    let reference = "access_token: router_data_v2";
+    fs::write(&file, reference).expect("write reference");
+    let (findings, metadata) = run_scan(&args, None).expect("scan reference");
+    assert!(metadata.is_complete());
+    assert!(
+        findings.is_empty(),
+        "a reference is not a credential: {findings:?}"
+    );
+
+    let (key, value) = reference.split_once(':').expect("reference assignment");
+    let literal = format!("{key}: {:?}", value.trim());
+    fs::write(&file, &literal).expect("write literal");
+    let (findings, metadata) = run_scan(&args, None).expect("scan literal");
+    assert!(metadata.is_complete());
+    let credential = findings
+        .iter()
+        .find(|finding| finding.detector_name == "GenericKeyValueDetector")
+        .expect("a quoted value must not inherit the reference exemption");
+    assert_eq!(
+        credential.matched_content,
+        format!("token: {:?}", value.trim())
+    );
+    assert_eq!(credential.line_number, 1);
 }
